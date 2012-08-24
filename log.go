@@ -9,18 +9,7 @@ import (
 )
 
 type infoLogging bool
-type debugLogging bool
-
-const debug debugLogging = true
 const info infoLogging = true
-
-var debugLog = log.New(os.Stderr, "\033[34m[DEBUG ", log.LstdFlags)
-
-func (d debugLogging) Printf(format string, args ...interface{}) {
-	if d {
-		debugLog.Printf("]\033[0m "+format, args...)
-	}
-}
 
 func (d infoLogging) Printf(format string, args ...interface{}) {
 	if d {
@@ -33,3 +22,16 @@ func (d infoLogging) Println(args ...interface{}) {
 		log.Println(args...)
 	}
 }
+
+// debug logging
+type debugLogging bool
+const debug debugLogging = true
+
+var debugLog = log.New(os.Stderr, "\033[34m[DEBUG ", log.LstdFlags)
+
+func (d debugLogging) Printf(format string, args ...interface{}) {
+	if d {
+		debugLog.Printf("]\033[0m "+format, args...)
+	}
+}
+
