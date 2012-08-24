@@ -12,7 +12,7 @@ type infoLogging bool
 type debugLogging bool
 
 const debug debugLogging = true
-const info infoLogging = false
+const info infoLogging = true
 
 var debugLog = log.New(os.Stderr, "\033[34m[DEBUG ", log.LstdFlags)
 
