@@ -1,19 +1,34 @@
 package main
 
-import "log"
+// This trick is learnt from a post by Rob Pike
+// https://groups.google.com/d/msg/golang-nuts/gU7oQGoCkmg/j3nNxuS2O_sJ
 
-type loglevel bool
+import (
+	"log"
+	"os"
+)
 
-const debug loglevel = true
-const info loglevel = true
+type infoLogging bool
+type debugLogging bool
 
-func (d loglevel) Printf(format string, args ...interface{}) {
+const debug debugLogging = true
+const info infoLogging = false
+
+var debugLog = log.New(os.Stderr, "\033[34m[DEBUG ", log.LstdFlags)
+
+func (d debugLogging) Printf(format string, args ...interface{}) {
+	if d {
+		debugLog.Printf("]\033[0m "+format, args...)
+	}
+}
+
+func (d infoLogging) Printf(format string, args ...interface{}) {
 	if d {
 		log.Printf(format, args...)
 	}
 }
 
-func (d loglevel) Println(args ...interface{}) {
+func (d infoLogging) Println(args ...interface{}) {
 	if d {
 		log.Println(args...)
 	}
