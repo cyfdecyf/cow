@@ -3,6 +3,8 @@ package main
 // This trick is learnt from a post by Rob Pike
 // https://groups.google.com/d/msg/golang-nuts/gU7oQGoCkmg/j3nNxuS2O_sJ
 
+// For error message, use log pkg directly
+
 import (
 	"log"
 	"os"
