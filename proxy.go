@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -207,24 +206,47 @@ func (c *conn) serve() {
 // noLimit is an effective infinite upper bound for io.LimitedReader
 const noLimit int64 = (1 << 63) - 1
 
+func genRawRequest(r *Request) []byte {
+	// First calculate size of the header
+	var n int = len("  HTTP/1.1\r\n") + 2 // plus the length of the final \r\n
+	n += len(r.Method)
+	n += len(r.URL.Path)
+	for _, l := range r.header {
+		n += len(l) + 2
+	}
+	n += len(r.body)
+
+	// generate header
+	b := make([]byte, n)
+	bp := copy(b, r.Method)
+	bp += copy(b[bp:], " ")
+	bp += copy(b[bp:], r.URL.Path)
+	bp += copy(b[bp:], " ")
+	bp += copy(b[bp:], "HTTP/1.1\r\n")
+	for _, h := range r.header {
+		bp += copy(b[bp:], h)
+		bp += copy(b[bp:], "\r\n")
+	}
+	bp += copy(b[bp:], "\r\n")
+	// TODO check this when testing POST
+	copy(b[bp:], r.body)
+
+	return b
+}
+
 func (c *conn) doReq(r *Request) (err error) {
-	var buf bytes.Buffer
-
-	initial := []string{r.Method, r.URL.Path, "HTTP/1.1\r\n"}
-	buf.WriteString(strings.Join(initial, " "))
-	buf.WriteString(strings.Join(r.header, "\r\n"))
-	buf.WriteString("\r\n\r\n")
-
 	debug.Printf("Connecting to %s\n", r.URL.Host)
 	srvconn, err := net.Dial("tcp", r.URL.Host)
 	if err != nil {
 		return newProxyError("Connecting to %s:", err)
 	}
+	// TODO revisit here when implementing keep-alive
 	defer srvconn.Close()
 
 	// Send request to the server
-	debug.Printf("Sending HTTP request\n%v\n", buf.String())
-	if _, err := srvconn.Write(buf.Bytes()); err != nil {
+	rawReq := genRawRequest(r)
+	debug.Printf("Sending HTTP request\n%v\n", string(rawReq))
+	if _, err := srvconn.Write(rawReq); err != nil {
 		return err
 	}
 
