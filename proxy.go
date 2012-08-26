@@ -108,7 +108,7 @@ func isDigit(b byte) bool {
 	return '0' <= b && b <= '9'
 }
 
-var hostPortRe *regexp.Regexp = regexp.MustCompile("^[^:]*:\\d+$")
+var hostPortRe *regexp.Regexp = regexp.MustCompile("^[^:]+:\\d+$")
 
 func hostHasPort(s string) bool {
 	// Common case should has no port, so check the last char
@@ -120,11 +120,10 @@ func hostHasPort(s string) bool {
 
 func parseHeader(s string) (key, val string, err error) {
 	var f []string
-	if f = strings.SplitN(s, ":", 2); len(f) < 2 {
+	if f = strings.SplitN(strings.ToLower(s), ":", 2); len(f) < 2 {
 		return "", "", nil
 	}
-	key, val = strings.ToLower(strings.TrimSpace(f[0])),
-		strings.ToLower(strings.TrimSpace(f[1]))
+	key, val = strings.TrimSpace(f[0]), strings.TrimSpace(f[1])
 	return
 }
 
