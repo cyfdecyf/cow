@@ -91,12 +91,47 @@ func responseMayHaveBody(method, status string) bool {
 	return !(method == "HEAD" || status == "304" || status == "204" || strings.HasPrefix(status, "1"))
 }
 
-func (r *Request) parseHeader(reader bufio.Reader) {
+// Note header may span more then 1 line, current implementation does not
+// support this
+func splitHeader(s string) []string {
+	f := strings.SplitN(s, ":", 2)
+	for i, _ := range f {
+		f[i] = strings.TrimSpace(f[i])
+	}
+	return f
+}
 
+// Only add headers that are of interest for a proxy into request's header map
+func (r *Request) parseHeader(reader *bufio.Reader) (err error) {
+	// Read request header and body
+	var s string
+	for {
+		if s, err = ReadLine(reader); err != nil {
+			return newHttpError("Reading client request", err)
+		}
+		if lower := strings.ToLower(s); strings.HasPrefix(lower, "proxy-connection") {
+			f := splitHeader(s)
+			if len(f) == 2 {
+				r.header["proxy-connection"] = f[1]
+			} else {
+				// TODO For headers like proxy-connection, I guess not client would
+				// make it spread multiple line. But better to support this.
+				info.Println("Multi-line header not supported")
+			}
+			continue
+		}
+		// debug.Printf("len %d %s", len(s), s)
+		if s == "" {
+			break
+		}
+		r.rawHeader = append(r.rawHeader, s)
+	}
+	return nil
 }
 
 func parseRequest(reader *bufio.Reader) (r *Request, err error) {
 	r = new(Request)
+	r.header = make(Header)
 	var s string
 
 	// parse initial request line
@@ -119,34 +154,11 @@ func parseRequest(reader *bufio.Reader) (r *Request, err error) {
 	}
 
 	// Read request header and body
-	for {
-		if s, err = ReadLine(reader); err != nil {
-			return nil, newProxyError("Reading client request", err)
+	r.parseHeader(reader)
+	if r.Method == "POST" {
+		if r.body, err = ioutil.ReadAll(reader); err != nil {
+			return nil, newProxyError("Reading request body", err)
 		}
-
-		if lower := strings.ToLower(s); strings.HasPrefix(lower, "proxy-connection") {
-			_, val, err := parseHeader(lower)
-			if err != nil {
-				return nil, newProxyError("Parsing request header:", err)
-			}
-			if val == "keep-alive" {
-				// This is proxy related, don't return
-				debug.Printf("proxy-connection keep alive\n")
-			}
-			continue
-		}
-
-		// debug.Printf("len %d %s", len(s), s)
-		if s == "" {
-			// read body and then break, do this only if method is post
-			if r.Method == "POST" {
-				if r.body, err = ioutil.ReadAll(reader); err != nil {
-					return nil, newProxyError("Reading request body", err)
-				}
-			}
-			break
-		}
-		r.rawHeader = append(r.rawHeader, s)
 	}
 
 	return r, nil

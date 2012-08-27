@@ -72,17 +72,6 @@ func newConn(rwc net.Conn) (c *conn) {
 	return
 }
 
-// Note header may span more then 1 line, current implementation does not
-// support this
-func parseHeader(s string) (key, val string, err error) {
-	var f []string
-	if f = strings.SplitN(s, ":", 2); len(f) < 2 {
-		return "", "", &ProxyError{"header not supported: " + s}
-	}
-	key, val = strings.TrimSpace(f[0]), strings.TrimSpace(f[1])
-	return
-}
-
 func (c *conn) serve() {
 	defer c.close()
 	var r *Request
@@ -164,11 +153,11 @@ func (c *conn) doRequest(r *Request) (err error) {
 		if hasBody && !lengthParsed {
 			lower := strings.ToLower(s)
 			if strings.HasPrefix(lower, "content-length") {
-				_, val, err := parseHeader(lower)
-				if err != nil {
-					return newProxyError("Parsing response header:", err)
+				f := splitHeader(lower)
+				if len(f) != 2 {
+					return &ProxyError{"Multi-line header not supported"}
 				}
-				if contLen, err = strconv.ParseInt(val, 10, 64); err != nil {
+				if contLen, err = strconv.ParseInt(f[1], 10, 64); err != nil {
 					return newProxyError("Response content-length:", err)
 				}
 				if contLen == 0 {
