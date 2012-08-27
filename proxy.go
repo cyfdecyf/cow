@@ -4,10 +4,8 @@ import (
 	"bufio"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net"
-	"net/url"
 	"os"
 	"regexp"
 	"strconv"
@@ -95,77 +93,18 @@ func parseHeader(s string) (key, val string, err error) {
 	return
 }
 
-func (c *conn) readRequest() (req *Request, err error) {
-	req = new(Request)
-	var s string
-
-	// parse initial request line
-	if s, err = ReadLine(c.buf.Reader); err != nil {
-		return nil, err
-	}
-
-	var f []string
-	if f = strings.SplitN(s, " ", 3); len(f) < 3 {
-		return nil, &ProxyError{"malformed HTTP request"}
-	}
-	var requestURI string
-	req.Method, requestURI, req.Proto = f[0], f[1], f[2]
-
-	// Parse URI into host and path
-	if req.URL, err = url.ParseRequestURI(requestURI); err != nil {
-		return nil, newProxyError("Parsing request URI", err)
-	}
-	if !hostHasPort(req.URL.Host) {
-		req.URL.Host += ":80"
-	}
-
-	// Read request header and body
-	for {
-		if s, err = ReadLine(c.buf.Reader); err != nil {
-			return nil, newProxyError("Reading client request", err)
-		}
-
-		if lower := strings.ToLower(s); strings.HasPrefix(lower, "proxy-connection") {
-			_, val, err := parseHeader(lower)
-			if err != nil {
-				return nil, newProxyError("Parsing request header:", err)
-			}
-			if val == "keep-alive" {
-				// This is proxy related, don't return
-				debug.Printf("proxy-connection keep alive\n")
-				c.keepAlive = true
-			}
-			continue
-		}
-
-		// debug.Printf("len %d %s", len(s), s)
-		if s == "" {
-			// read body and then break, do this only if method is post
-			if req.Method == "POST" {
-				if req.body, err = ioutil.ReadAll(c.buf); err != nil {
-					return nil, newProxyError("Reading request body", err)
-				}
-			}
-			break
-		}
-		req.header = append(req.header, s)
-	}
-
-	return req, nil
-}
-
 func (c *conn) serve() {
 	defer c.close()
-	var req *Request
+	var r *Request
 	var err error
 	for {
-		if req, err = c.readRequest(); err != nil {
+		if r, err = parseRequest(c.buf.Reader); err != nil {
 			log.Println("Reading client request", err)
 			return
 		}
 		// debug.Printf("%v", req)
 
-		if err = c.doReq(req); err != nil {
+		if err = c.doReq(r); err != nil {
 			log.Println("Doing http request", err)
 			// TODO what's possible error? how to handle?
 		}
@@ -177,34 +116,6 @@ func (c *conn) serve() {
 // noLimit is an effective infinite upper bound for io.LimitedReader
 const noLimit int64 = (1 << 63) - 1
 
-func genRawRequest(r *Request) []byte {
-	// First calculate size of the header
-	var n int = len("  HTTP/1.1\r\n") + 2 // plus the length of the final \r\n
-	n += len(r.Method)
-	n += len(r.URL.Path)
-	for _, l := range r.header {
-		n += len(l) + 2
-	}
-	n += len(r.body)
-
-	// generate header
-	b := make([]byte, n)
-	bp := copy(b, r.Method)
-	bp += copy(b[bp:], " ")
-	bp += copy(b[bp:], r.URL.Path)
-	bp += copy(b[bp:], " ")
-	bp += copy(b[bp:], "HTTP/1.1\r\n")
-	for _, h := range r.header {
-		bp += copy(b[bp:], h)
-		bp += copy(b[bp:], "\r\n")
-	}
-	bp += copy(b[bp:], "\r\n")
-	// TODO check this when testing POST
-	copy(b[bp:], r.body)
-
-	return b
-}
-
 func (c *conn) doReq(r *Request) (err error) {
 	debug.Printf("Connecting to %s\n", r.URL.Host)
 	srvconn, err := net.Dial("tcp", r.URL.Host)
@@ -215,9 +126,8 @@ func (c *conn) doReq(r *Request) (err error) {
 	defer srvconn.Close()
 
 	// Send request to the server
-	rawReq := genRawRequest(r)
-	// debug.Printf("Sending HTTP request\n%v\n", string(rawReq))
-	debug.Printf("Sending HTTP request\n")
+	rawReq := r.genRawRequest()
+	debug.Printf("%v\n", r)
 	if _, err := srvconn.Write(rawReq); err != nil {
 		return err
 	}
@@ -300,5 +210,5 @@ func (c *conn) close() {
 
 func (r *Request) String() string {
 	return fmt.Sprintf("[Request] Method: %s Host: %s Path: %s, Header:\n\t%v\n",
-		r.Method, r.URL.Host, r.URL.Path, strings.Join(r.header, "\n\t"))
+		r.Method, r.URL.Host, r.URL.Path, strings.Join(r.rawHeader, "\n\t"))
 }
