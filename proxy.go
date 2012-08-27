@@ -84,44 +84,22 @@ func newConn(rwc net.Conn) (c *conn) {
 	return
 }
 
-// Almost same with net/textproto/reader.go ReadLine
-func ReadLine(r *bufio.Reader) (string, error) {
-	var line []byte
-	for {
-		l, more, err := r.ReadLine()
-		if err != nil {
-			return "", err
-		}
-
-		if line == nil && !more {
-			return string(l), nil
-		}
-		line = append(line, l...)
-		if !more {
-			break
-		}
-	}
-	return string(line), nil
-}
-
-func isDigit(b byte) bool {
-	return '0' <= b && b <= '9'
-}
-
 var hostPortRe *regexp.Regexp = regexp.MustCompile("^[^:]+:\\d+$")
 
 func hostHasPort(s string) bool {
 	// Common case should has no port, so check the last char
-	if !isDigit(s[len(s)-1]) {
+	if !IsDigit(s[len(s)-1]) {
 		return false
 	}
 	return hostPortRe.MatchString(s)
 }
 
+// Note header may span more then 1 line, current implementation does not
+// support this
 func parseHeader(s string) (key, val string, err error) {
 	var f []string
-	if f = strings.SplitN(strings.ToLower(s), ":", 2); len(f) < 2 {
-		return "", "", nil
+	if f = strings.SplitN(s, ":", 2); len(f) < 2 {
+		return "", "", &ProxyError{"header not supported: " + s}
 	}
 	key, val = strings.TrimSpace(f[0]), strings.TrimSpace(f[1])
 	return
@@ -156,16 +134,20 @@ func (c *conn) readRequest() (req *Request, err error) {
 		if s, err = ReadLine(c.buf.Reader); err != nil {
 			return nil, newProxyError("Reading client request", err)
 		}
-		key, val, err := parseHeader(s)
-		if err != nil {
-			return nil, newProxyError("Parsing request header:", err)
-		}
-		if key == "proxy-connection" && val == "keep-alive" {
-			// This is proxy related, don't return
-			debug.Printf("proxy-connection keep alive\n")
-			c.keepAlive = true
+
+		if lower := strings.ToLower(s); strings.HasPrefix(lower, "proxy-connection") {
+			_, val, err := parseHeader(lower)
+			if err != nil {
+				return nil, newProxyError("Parsing request header:", err)
+			}
+			if val == "keep-alive" {
+				// This is proxy related, don't return
+				debug.Printf("proxy-connection keep alive\n")
+				c.keepAlive = true
+			}
 			continue
 		}
+
 		// debug.Printf("len %d %s", len(s), s)
 		if s == "" {
 			// read body and then break, do this only if method is post
