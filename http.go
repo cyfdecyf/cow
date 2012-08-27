@@ -48,6 +48,7 @@ func parseRequest(reader *bufio.Reader) (r *Request, err error) {
 	if s, err = ReadLine(reader); err != nil {
 		return nil, err
 	}
+	debug.Printf("Request initial line %s", s)
 
 	var f []string
 	if f = strings.SplitN(s, " ", 3); len(f) < 3 {
@@ -99,10 +100,14 @@ func parseRequest(reader *bufio.Reader) (r *Request, err error) {
 }
 
 func (r *Request) genRawRequest() []byte {
+	path := r.URL.Path
+	if path == "" {
+		path = "/"
+	}
 	// First calculate size of the header
 	var n int = len("  HTTP/1.1\r\n") + 2 // plus the length of the final \r\n
 	n += len(r.Method)
-	n += len(r.URL.Path)
+	n += len(path)
 	for _, l := range r.rawHeader {
 		n += len(l) + 2
 	}
@@ -112,7 +117,7 @@ func (r *Request) genRawRequest() []byte {
 	b := make([]byte, n)
 	bp := copy(b, r.Method)
 	bp += copy(b[bp:], " ")
-	bp += copy(b[bp:], r.URL.Path)
+	bp += copy(b[bp:], path)
 	bp += copy(b[bp:], " ")
 	bp += copy(b[bp:], "HTTP/1.1\r\n")
 	for _, h := range r.rawHeader {

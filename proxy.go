@@ -220,9 +220,9 @@ func (c *conn) close() {
 }
 
 func (r *Request) String() (s string) {
-	s = fmt.Sprintf("[Request] %s %s %s", r.Method,
+	s = fmt.Sprintf("[Request] %s Host: %s Path: %s", r.Method,
 		r.URL.Host, r.URL.Path)
-	if false {
+	if true {
 		s += fmt.Sprintf(" Header:\n\t%v\n", strings.Join(r.rawHeader, "\n\t"))
 	}
 	return
