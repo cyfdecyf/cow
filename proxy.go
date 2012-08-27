@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"io"
 	"log"
@@ -145,8 +146,7 @@ func (c *conn) doReq(r *Request) (err error) {
 		return &ProxyError{fmt.Sprintln("malformed HTTP response status line:", s)}
 	}
 	status := f[1]
-	// f[1] contains status code
-	debug.Printf("%v response status %v %v", r.URL, f[1], f[2])
+	reason := f[2]
 	// Send back to client
 	c.buf.WriteString(s)
 	c.buf.WriteString("\r\n")
@@ -154,6 +154,9 @@ func (c *conn) doReq(r *Request) (err error) {
 	hasBody := responseMayHaveBody(r.Method, status)
 	contLen := noLimit
 	lengthParsed := false
+
+	var rawResponse bytes.Buffer // For debugging
+
 	for {
 		// Parse header
 		if s, err = ReadLine(srvReader); err != nil {
@@ -164,7 +167,9 @@ func (c *conn) doReq(r *Request) (err error) {
 		if s == "" {
 			break
 		}
-		debug.Printf("[Response] %v: %v\n", r.URL, s)
+		if debug {
+			rawResponse.WriteString("\n\t" + s)
+		}
 
 		// Only parse header for Content-Length and Transfer-Encoding
 		if hasBody && !lengthParsed {
@@ -184,8 +189,14 @@ func (c *conn) doReq(r *Request) (err error) {
 			}
 		}
 	}
+	if debug {
+		// Wrap inside if to avoid evaluating function arguments
+		debug.Printf("[Response] %s %v %v %v%s", r.Method, r.URL, status, reason,
+			rawResponse.String())
+	}
 	if hasBody {
-		debug.Printf("Sending server response to client, content length %v\n", contLen)
+		debug.Printf("Sending server response to client, content length %v\n",
+			contLen)
 		// Send reply body to client
 		lr := io.LimitReader(srvconn, contLen)
 		if _, err := io.Copy(c.buf.Writer, lr); err != nil && err != io.EOF {
@@ -208,7 +219,11 @@ func (c *conn) close() {
 	}
 }
 
-func (r *Request) String() string {
-	return fmt.Sprintf("[Request] Method: %s Host: %s Path: %s, Header:\n\t%v\n",
-		r.Method, r.URL.Host, r.URL.Path, strings.Join(r.rawHeader, "\n\t"))
+func (r *Request) String() (s string) {
+	s = fmt.Sprintf("[Request] %s %s %s", r.Method,
+		r.URL.Host, r.URL.Path)
+	if false {
+		s += fmt.Sprintf(" Header:\n\t%v\n", strings.Join(r.rawHeader, "\n\t"))
+	}
+	return
 }
