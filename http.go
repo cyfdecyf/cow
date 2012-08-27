@@ -4,18 +4,22 @@ import (
 	"bufio"
 	"fmt"
 	"io/ioutil"
-	"net/url"
 	"strings"
 )
 
 type Request struct {
 	Method string
-	URL    *url.URL
+	URL    *URL
 	Proto  string
 
 	rawHeader []string
 	header    Header
 	body      []byte
+}
+
+type URL struct {
+	Host string
+	Path string
 }
 
 type Header map[string]string
@@ -28,6 +32,57 @@ func (he *HttpError) Error() string { return he.msg }
 
 func newHttpError(msg string, err error) *HttpError {
 	return &HttpError{fmt.Sprintln(msg, err)}
+}
+
+func hostHasPort(s string) bool {
+	// Common case should has no port, check the last char first
+	if !IsDigit(s[len(s)-1]) {
+		return false
+	}
+	// Scan back, make sure we find ':'
+	for i := len(s) - 2; i > 0; i-- {
+		c := s[i]
+		switch {
+		case c == ':':
+			return true
+		case !IsDigit(c):
+			return false
+		}
+	}
+	return false
+}
+
+// net.ParseRequestURI will unescape encoded path, but the proxy don't need
+// Assumes the input rawurl valid. Even if rawurl is not valid, net.Dial
+// will check the correctness of the host.
+func ParseRequestURI(rawurl string) (*URL, error) {
+	if rawurl[0] == '/' {
+		return nil, &HttpError{"Invalid proxy request URI: " + rawurl}
+	}
+
+	var f []string
+	var rest string
+	f = strings.SplitN(rawurl, "://", 2)
+	if len(f) == 1 {
+		rest = f[0]
+	} else {
+		rest = f[1]
+	}
+
+	var host, path string
+	f = strings.SplitN(rest, "/", 2)
+	debug.Printf("raw %s f: %v", rawurl, f)
+	host = f[0]
+	if len(f) == 1 || f[1] == "" {
+		path = "/"
+	} else {
+		path = "/" + f[1]
+	}
+	if !hostHasPort(host) {
+		host += ":80"
+	}
+
+	return &URL{Host: host, Path: path}, nil
 }
 
 // If an http response may have message body
@@ -58,11 +113,9 @@ func parseRequest(reader *bufio.Reader) (r *Request, err error) {
 	r.Method, requestURI, r.Proto = f[0], f[1], f[2]
 
 	// Parse URI into host and path
-	if r.URL, err = url.ParseRequestURI(requestURI); err != nil {
-		return nil, newProxyError("Parsing request URI", err)
-	}
-	if !hostHasPort(r.URL.Host) {
-		r.URL.Host += ":80"
+	r.URL, err = ParseRequestURI(requestURI)
+	if err != nil {
+		return nil, err
 	}
 
 	// Read request header and body

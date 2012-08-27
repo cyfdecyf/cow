@@ -8,7 +8,6 @@ import (
 	"log"
 	"net"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 )
@@ -73,16 +72,6 @@ func newConn(rwc net.Conn) (c *conn) {
 	return
 }
 
-var hostPortRe *regexp.Regexp = regexp.MustCompile("^[^:]+:\\d+$")
-
-func hostHasPort(s string) bool {
-	// Common case should has no port, so check the last char
-	if !IsDigit(s[len(s)-1]) {
-		return false
-	}
-	return hostPortRe.MatchString(s)
-}
-
 // Note header may span more then 1 line, current implementation does not
 // support this
 func parseHeader(s string) (key, val string, err error) {
@@ -105,7 +94,7 @@ func (c *conn) serve() {
 		}
 		// debug.Printf("%v", req)
 
-		if err = c.doReq(r); err != nil {
+		if err = c.doRequest(r); err != nil {
 			log.Println("Doing http request", err)
 			// TODO what's possible error? how to handle?
 		}
@@ -117,7 +106,7 @@ func (c *conn) serve() {
 // noLimit is an effective infinite upper bound for io.LimitedReader
 const noLimit int64 = (1 << 63) - 1
 
-func (c *conn) doReq(r *Request) (err error) {
+func (c *conn) doRequest(r *Request) (err error) {
 	debug.Printf("Connecting to %s\n", r.URL.Host)
 	srvconn, err := net.Dial("tcp", r.URL.Host)
 	if err != nil {
