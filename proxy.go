@@ -29,16 +29,6 @@ type conn struct {
 	// srvconn net.Conn // connection to the server
 }
 
-type Request struct {
-	Method string
-	URL    *url.URL
-	Proto  string
-
-	keepAlive bool
-	header    []string
-	body      []byte
-}
-
 type ProxyError struct {
 	msg string
 }
@@ -173,7 +163,7 @@ func (c *conn) serve() {
 			log.Println("Reading client request", err)
 			return
 		}
-		debug.Printf("%v", req)
+		// debug.Printf("%v", req)
 
 		if err = c.doReq(req); err != nil {
 			log.Println("Doing http request", err)
@@ -226,34 +216,34 @@ func (c *conn) doReq(r *Request) (err error) {
 
 	// Send request to the server
 	rawReq := genRawRequest(r)
-	debug.Printf("Sending HTTP request\n%v\n", string(rawReq))
+	// debug.Printf("Sending HTTP request\n%v\n", string(rawReq))
+	debug.Printf("Sending HTTP request\n")
 	if _, err := srvconn.Write(rawReq); err != nil {
 		return err
 	}
 
 	// Read server reply
-	var s string
-	var f []string
-	hasBody := true
 
 	// parse status line
 	srvReader := bufio.NewReader(srvconn)
+	var s string
 	if s, err = ReadLine(srvReader); err != nil {
 		return newProxyError("Reading Response status line:", err)
 	}
+	var f []string
 	if f = strings.SplitN(s, " ", 3); len(f) < 3 {
 		return &ProxyError{fmt.Sprintln("malformed HTTP response status line:", s)}
 	}
+	status := f[1]
 	// f[1] contains status code
 	debug.Printf("%v response status %v %v", r.URL, f[1], f[2])
-	if f[1] == "304" {
-		hasBody = false
-	}
 	// Send back to client
 	c.buf.WriteString(s)
 	c.buf.WriteString("\r\n")
 
+	hasBody := responseMayHaveBody(r.Method, status)
 	contLen := noLimit
+	lengthParsed := false
 	for {
 		// Parse header
 		if s, err = ReadLine(srvReader); err != nil {
@@ -266,21 +256,26 @@ func (c *conn) doReq(r *Request) (err error) {
 		}
 		debug.Printf("[Response] %v: %v\n", r.URL, s)
 
-		var key, val string
-		if key, val, err = parseHeader(s); err != nil {
-			return newProxyError("Parsing response header:", err)
-		}
-		if key == "content-length" {
-			if contLen, err = strconv.ParseInt(val, 10, 64); err != nil {
-				return newProxyError("Response content-length:", err)
-			}
-			if contLen == 0 {
-				contLen = noLimit
+		// Only parse header for Content-Length and Transfer-Encoding
+		if hasBody && !lengthParsed {
+			lower := strings.ToLower(s)
+			if strings.HasPrefix(lower, "content-length") {
+				_, val, err := parseHeader(lower)
+				if err != nil {
+					return newProxyError("Parsing response header:", err)
+				}
+				if contLen, err = strconv.ParseInt(val, 10, 64); err != nil {
+					return newProxyError("Response content-length:", err)
+				}
+				if contLen == 0 {
+					hasBody = false
+				}
+				lengthParsed = true
 			}
 		}
 	}
 	if hasBody {
-		debug.Printf("Sending server response to client\n")
+		debug.Printf("Sending server response to client, content length %v\n", contLen)
 		// Send reply body to client
 		lr := io.LimitReader(srvconn, contLen)
 		if _, err := io.Copy(c.buf.Writer, lr); err != nil && err != io.EOF {
@@ -297,6 +292,7 @@ func (c *conn) close() {
 		c.buf = nil
 	}
 	if c.cliconn != nil {
+		debug.Printf("client connection closed\n")
 		c.cliconn.Close()
 		c.cliconn = nil
 	}
