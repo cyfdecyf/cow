@@ -80,7 +80,11 @@ func (c *conn) serve() {
 			log.Println("Reading client request", err)
 			return
 		}
-		// debug.Printf("%v", req)
+		if debug {
+			debug.Printf("%v", r)
+		} else {
+			info.Println(r)
+		}
 
 		if err = c.doRequest(r); err != nil {
 			log.Println("Doing http request", err)
@@ -92,8 +96,11 @@ func (c *conn) serve() {
 }
 
 func (c *conn) doRequest(r *Request) (err error) {
-	debug.Printf("Connecting to %s\n", r.URL.Host)
-	srvconn, err := net.Dial("tcp", r.URL.Host)
+	host := r.URL.Host
+	if !hostHasPort(host) {
+		host += ":80"
+	}
+	srvconn, err := net.Dial("tcp", host)
 	if err != nil {
 		return newProxyError("Connecting to %s:", err)
 	}
@@ -101,7 +108,6 @@ func (c *conn) doRequest(r *Request) (err error) {
 	defer srvconn.Close()
 
 	// Send request to the server
-	debug.Printf("%v", r)
 	if _, err := srvconn.Write(r.raw.Bytes()); err != nil {
 		return err
 	}

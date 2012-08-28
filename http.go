@@ -18,10 +18,10 @@ type Request struct {
 }
 
 func (r *Request) String() (s string) {
-	s = fmt.Sprintf("[Request] %s Host: %s Path: %s\n", r.Method,
+	s = fmt.Sprintf("[Request] %s %s%s", r.Method,
 		r.URL.Host, r.URL.Path)
-	if true {
-		s += fmt.Sprintf("%v", r.raw.String())
+	if debug {
+		s += fmt.Sprintf("\n%v", r.raw.String())
 	}
 	return
 }
@@ -115,9 +115,6 @@ func ParseRequestURI(rawurl string) (*URL, error) {
 	} else {
 		path = "/" + f[1]
 	}
-	if !hostHasPort(host) {
-		host += ":80"
-	}
 
 	return &URL{Host: host, Path: path}, nil
 }
@@ -185,19 +182,21 @@ func parseRequest(reader *bufio.Reader) (r *Request, err error) {
 	if err != nil {
 		return nil, err
 	}
-	r.genInitialLine()
+	r.genRequestLine()
 
 	// Read request header
 	r.parseHeader(reader)
 	return r, nil
 }
 
-func (r *Request) genInitialLine() {
+func (r *Request) genRequestLine() {
 	r.raw.WriteString(r.Method)
 	r.raw.WriteString(" ")
 	r.raw.WriteString(r.URL.Path)
 	r.raw.WriteString(" ")
 	r.raw.WriteString("HTTP/1.1\r\n")
+	// TODO remove this after supporting HTTP/1.1 persistent connection
+	r.raw.WriteString("Connection: close\r\n")
 }
 
 // Only put headers of interest for an proxy into header map
