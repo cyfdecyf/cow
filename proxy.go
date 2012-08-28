@@ -105,9 +105,8 @@ func (c *conn) doRequest(r *Request) (err error) {
 	defer srvconn.Close()
 
 	// Send request to the server
-	rawReq := r.genRawRequest()
-	debug.Printf("%v\n", r)
-	if _, err := srvconn.Write(rawReq); err != nil {
+	debug.Printf("%v", r)
+	if _, err := srvconn.Write(r.raw.Bytes()); err != nil {
 		return err
 	}
 
@@ -198,10 +197,10 @@ func (c *conn) close() {
 }
 
 func (r *Request) String() (s string) {
-	s = fmt.Sprintf("[Request] %s Host: %s Path: %s", r.Method,
+	s = fmt.Sprintf("[Request] %s Host: %s Path: %s\n", r.Method,
 		r.URL.Host, r.URL.Path)
 	if true {
-		s += fmt.Sprintf(" Header:\n\t%v\n", strings.Join(r.rawHeader, "\n\t"))
+		s += fmt.Sprintf("%v", r.raw.String())
 	}
 	return
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"io/ioutil"
 	"strings"
@@ -12,9 +13,9 @@ type Request struct {
 	URL    *URL
 	Proto  string
 
-	rawHeader []string
-	header    Header
-	body      []byte
+	raw    bytes.Buffer
+	header Header
+	body   []byte
 }
 
 type URL struct {
@@ -120,11 +121,12 @@ func (r *Request) parseHeader(reader *bufio.Reader) (err error) {
 			}
 			continue
 		}
+		r.raw.WriteString(s)
+		r.raw.WriteString("\r\n")
 		// debug.Printf("len %d %s", len(s), s)
 		if s == "" {
 			break
 		}
-		r.rawHeader = append(r.rawHeader, s)
 	}
 	return nil
 }
@@ -152,6 +154,7 @@ func parseRequest(reader *bufio.Reader) (r *Request, err error) {
 	if err != nil {
 		return nil, err
 	}
+	r.genInitialLine()
 
 	// Read request header and body
 	r.parseHeader(reader)
@@ -164,34 +167,10 @@ func parseRequest(reader *bufio.Reader) (r *Request, err error) {
 	return r, nil
 }
 
-func (r *Request) genRawRequest() []byte {
-	path := r.URL.Path
-	if path == "" {
-		path = "/"
-	}
-	// First calculate size of the header
-	var n int = len("  HTTP/1.1\r\n") + 2 // plus the length of the final \r\n
-	n += len(r.Method)
-	n += len(path)
-	for _, l := range r.rawHeader {
-		n += len(l) + 2
-	}
-	n += len(r.body)
-
-	// generate header
-	b := make([]byte, n)
-	bp := copy(b, r.Method)
-	bp += copy(b[bp:], " ")
-	bp += copy(b[bp:], path)
-	bp += copy(b[bp:], " ")
-	bp += copy(b[bp:], "HTTP/1.1\r\n")
-	for _, h := range r.rawHeader {
-		bp += copy(b[bp:], h)
-		bp += copy(b[bp:], "\r\n")
-	}
-	bp += copy(b[bp:], "\r\n")
-	// TODO check this when testing POST
-	copy(b[bp:], r.body)
-
-	return b
+func (r *Request) genInitialLine() {
+	r.raw.WriteString(r.Method)
+	r.raw.WriteString(" ")
+	r.raw.WriteString(r.URL.Path)
+	r.raw.WriteString(" ")
+	r.raw.WriteString("HTTP/1.1\r\n")
 }
