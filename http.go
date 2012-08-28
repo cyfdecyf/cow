@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -11,10 +12,32 @@ type Request struct {
 	Method string
 	URL    *URL
 	Proto  string
+	Header Header
 
-	raw    bytes.Buffer
-	header Header
-	body   []byte
+	raw bytes.Buffer
+}
+
+func (r *Request) String() (s string) {
+	s = fmt.Sprintf("[Request] %s Host: %s Path: %s\n", r.Method,
+		r.URL.Host, r.URL.Path)
+	if true {
+		s += fmt.Sprintf("%v", r.raw.String())
+	}
+	return
+}
+
+type Response struct {
+	Status  string
+	Reason  string
+	Header  Header
+	ContLen int64 // content length
+	HasBody bool
+
+	raw bytes.Buffer
+}
+
+func (rp *Response) String() string {
+	return rp.raw.String()
 }
 
 type URL struct {
@@ -75,7 +98,6 @@ func ParseRequestURI(rawurl string) (*URL, error) {
 
 	var host, path string
 	f = strings.SplitN(rest, "/", 2)
-	debug.Printf("raw %s f: %v", rawurl, f)
 	host = f[0]
 	if len(f) == 1 || f[1] == "" {
 		path = "/"
@@ -87,12 +109,6 @@ func ParseRequestURI(rawurl string) (*URL, error) {
 	}
 
 	return &URL{Host: host, Path: path}, nil
-}
-
-// If an http response may have message body
-func responseMayHaveBody(method, status string) bool {
-	// when we have tenary search tree, can optimize this a little
-	return !(method == "HEAD" || status == "304" || status == "204" || strings.HasPrefix(status, "1"))
 }
 
 // Note header may span more then 1 line, current implementation does not
@@ -116,7 +132,7 @@ func (r *Request) parseHeader(reader *bufio.Reader) (err error) {
 		if lower := strings.ToLower(s); strings.HasPrefix(lower, "proxy-connection") {
 			f := splitHeader(s)
 			if len(f) == 2 {
-				r.header["proxy-connection"] = f[1]
+				r.Header["proxy-connection"] = f[1]
 			} else {
 				// TODO For headers like proxy-connection, I guess not client would
 				// make it spread multiple line. But better to support this.
@@ -137,14 +153,14 @@ func (r *Request) parseHeader(reader *bufio.Reader) (err error) {
 // Parse the initial line and header, does not touch body
 func parseRequest(reader *bufio.Reader) (r *Request, err error) {
 	r = new(Request)
-	r.header = make(Header)
+	r.Header = make(Header)
 	var s string
 
 	// parse initial request line
 	if s, err = ReadLine(reader); err != nil {
 		return nil, err
 	}
-	debug.Printf("Request initial line %s", s)
+	// debug.Printf("Request initial line %s", s)
 
 	var f []string
 	if f = strings.SplitN(s, " ", 3); len(f) < 3 {
@@ -171,4 +187,76 @@ func (r *Request) genInitialLine() {
 	r.raw.WriteString(r.URL.Path)
 	r.raw.WriteString(" ")
 	r.raw.WriteString("HTTP/1.1\r\n")
+}
+
+// Only put headers of interest for an proxy into header map
+func (rp *Response) parseHeader(reader *bufio.Reader) (err error) {
+	rp.ContLen = int64(-1)
+	lengthParsed := false
+
+	var s string
+	for {
+		// Parse header
+		if s, err = ReadLine(reader); err != nil {
+			return newHttpError("Reading Response header:", err)
+		}
+		rp.raw.WriteString(s)
+		rp.raw.WriteString("\r\n")
+		if s == "" {
+			break
+		}
+
+		// Only parse header for Content-Length and Transfer-Encoding
+		if rp.HasBody && !lengthParsed {
+			lower := strings.ToLower(s)
+			if strings.HasPrefix(lower, "content-length") {
+				f := splitHeader(lower)
+				if len(f) != 2 {
+					return &HttpError{"Multi-line header not supported"}
+				}
+				if rp.ContLen, err = strconv.ParseInt(f[1], 10, 64); err != nil {
+					return newProxyError("Response content-length:", err)
+				}
+				if rp.ContLen == 0 {
+					rp.HasBody = false
+				}
+				lengthParsed = true
+			}
+		}
+	}
+	return nil
+}
+
+// If an http response may have message body
+func responseMayHaveBody(method, status string) bool {
+	// when we have tenary search tree, can optimize this a little
+	return !(method == "HEAD" || status == "304" || status == "204" || strings.HasPrefix(status, "1"))
+}
+
+// Parse response status and headers. The request method is needed to
+// determine if response may have body, also for debugging
+func parseResponse(reader *bufio.Reader, method string) (rp *Response, err error) {
+	rp = new(Response)
+	rp.Header = make(Header)
+
+	var s string
+	if s, err = ReadLine(reader); err != nil {
+		return nil, newHttpError("Reading Response status line:", err)
+	}
+	var f []string
+	if f = strings.SplitN(s, " ", 3); len(f) < 3 {
+		return nil, &HttpError{fmt.Sprintln("malformed HTTP response status line:", s)}
+	}
+	rp.Status = f[1]
+	rp.Reason = f[2]
+	rp.HasBody = responseMayHaveBody(method, rp.Status)
+
+	rp.raw.WriteString(s)
+	rp.raw.WriteString("\r\n")
+
+	if err = rp.parseHeader(reader); err != nil {
+		return nil, err
+	}
+
+	return rp, nil
 }

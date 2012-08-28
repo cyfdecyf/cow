@@ -2,14 +2,11 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"fmt"
 	"io"
 	"log"
 	"net"
 	"os"
-	"strconv"
-	"strings"
 )
 
 // Lots of the code here are learnt from the http package
@@ -114,76 +111,29 @@ func (c *conn) doRequest(r *Request) (err error) {
 	}
 
 	// Read server reply
-
 	// parse status line
 	srvReader := bufio.NewReader(srvconn)
-	var s string
-	if s, err = ReadLine(srvReader); err != nil {
-		return newProxyError("Reading Response status line:", err)
+	response, err := parseResponse(srvReader, r.Method)
+	if err != nil {
+		return err
 	}
-	var f []string
-	if f = strings.SplitN(s, " ", 3); len(f) < 3 {
-		return &ProxyError{fmt.Sprintln("malformed HTTP response status line:", s)}
-	}
-	status := f[1]
-	reason := f[2]
-	// Send back to client
-	c.buf.WriteString(s)
-	c.buf.WriteString("\r\n")
+	c.buf.WriteString(response.raw.String())
 
-	hasBody := responseMayHaveBody(r.Method, status)
-	contLen := int64(-1)
-	lengthParsed := false
-
-	var rawResponse bytes.Buffer // For debugging
-
-	for {
-		// Parse header
-		if s, err = ReadLine(srvReader); err != nil {
-			return newProxyError("Reading Response header:", err)
-		}
-		c.buf.WriteString(s)
-		c.buf.WriteString("\r\n")
-		if s == "" {
-			break
-		}
-		if debug {
-			rawResponse.WriteString("\n\t" + s)
-		}
-
-		// Only parse header for Content-Length and Transfer-Encoding
-		if hasBody && !lengthParsed {
-			lower := strings.ToLower(s)
-			if strings.HasPrefix(lower, "content-length") {
-				f := splitHeader(lower)
-				if len(f) != 2 {
-					return &ProxyError{"Multi-line header not supported"}
-				}
-				if contLen, err = strconv.ParseInt(f[1], 10, 64); err != nil {
-					return newProxyError("Response content-length:", err)
-				}
-				if contLen == 0 {
-					hasBody = false
-				}
-				lengthParsed = true
-			}
-		}
-	}
+	// Wrap inside if to avoid function argument evaluation. Would this work?
 	if debug {
-		// Wrap inside if to avoid evaluating function arguments
-		debug.Printf("[Response] %s %v %v %v%s", r.Method, r.URL, status, reason,
-			rawResponse.String())
+		debug.Printf("[Response] %s %v\n%v", r.Method, r.URL, response)
 	}
-	if hasBody {
+
+	if response.HasBody {
 		debug.Printf("Sending server response to client, content length %v\n",
-			contLen)
+			response.ContLen)
 		// Send reply body to client
 		var lr io.Reader
 		// No content length specified
-		if contLen == -1 {
+		if response.ContLen == -1 {
 			lr = srvconn // io.Copy read 32k each time, no need to use bufio here
 		} else {
-			lr = io.LimitReader(srvconn, contLen)
+			lr = io.LimitReader(srvconn, response.ContLen)
 		}
 		if _, err := io.Copy(c.buf.Writer, lr); err != nil && err != io.EOF {
 			return err
@@ -203,13 +153,4 @@ func (c *conn) close() {
 		c.cliconn.Close()
 		c.cliconn = nil
 	}
-}
-
-func (r *Request) String() (s string) {
-	s = fmt.Sprintf("[Request] %s Host: %s Path: %s\n", r.Method,
-		r.URL.Host, r.URL.Path)
-	if true {
-		s += fmt.Sprintf("%v", r.raw.String())
-	}
-	return
 }
