@@ -29,9 +29,10 @@ func (r *Request) String() (s string) {
 type Response struct {
 	Status  string
 	Reason  string
-	Header  Header
-	ContLen int64 // content length
 	HasBody bool
+
+	ContLen  int64
+	Chunking bool
 
 	raw bytes.Buffer
 }
@@ -51,9 +52,19 @@ func (url *URL) String() string {
 
 type Header map[string]string
 
+// TODO Rename to protocol error just as the http pkg
 type HttpError struct {
 	msg string
 }
+
+// headers of interest to a proxy
+// Define them as constant and use editor's completion to avoid typos
+const (
+	headerContentLength    = "content-length"
+	headerTransferEncoding = "transfer-encoding"
+	headerConnection       = "connection"
+	headerProxyConnection  = "proxy-connection"
+)
 
 func (he *HttpError) Error() string { return he.msg }
 
@@ -129,10 +140,10 @@ func (r *Request) parseHeader(reader *bufio.Reader) (err error) {
 		if s, err = ReadLine(reader); err != nil {
 			return newHttpError("Reading client request", err)
 		}
-		if lower := strings.ToLower(s); strings.HasPrefix(lower, "proxy-connection") {
+		if lower := strings.ToLower(s); strings.HasPrefix(lower, headerProxyConnection) {
 			f := splitHeader(s)
 			if len(f) == 2 {
-				r.Header["proxy-connection"] = f[1]
+				r.Header[headerProxyConnection] = f[1]
 			} else {
 				// TODO For headers like proxy-connection, I guess not client would
 				// make it spread multiple line. But better to support this.
@@ -191,28 +202,34 @@ func (r *Request) genInitialLine() {
 
 // Only put headers of interest for an proxy into header map
 func (rp *Response) parseHeader(reader *bufio.Reader) (err error) {
-	rp.ContLen = int64(-1)
-	lengthParsed := false
-
 	var s string
 	for {
 		// Parse header
 		if s, err = ReadLine(reader); err != nil {
 			return newHttpError("Reading Response header:", err)
 		}
-		rp.raw.WriteString(s)
-		rp.raw.WriteString("\r\n")
 		if s == "" {
+			// TODO remove this when implementing persistent connection
+			rp.raw.WriteString("Proxy-Connection: close\r\n")
+			rp.raw.WriteString("\r\n")
 			break
 		}
 
+		f := splitHeader(s)
+		fieldname := strings.ToLower(f[0])
+		// Don't pass connection header to client
+		if fieldname != headerConnection {
+			rp.raw.WriteString(s)
+			rp.raw.WriteString("\r\n")
+		} else {
+			continue
+		}
+
 		// Only parse header for Content-Length and Transfer-Encoding
-		if rp.HasBody && !lengthParsed {
-			lower := strings.ToLower(s)
-			if strings.HasPrefix(lower, "content-length") {
-				f := splitHeader(lower)
+		if rp.HasBody {
+			if fieldname == headerContentLength {
 				if len(f) != 2 {
-					return &HttpError{"Multi-line header not supported"}
+					return &HttpError{"Multi-line header not supported: " + s}
 				}
 				if rp.ContLen, err = strconv.ParseInt(f[1], 10, 64); err != nil {
 					return newProxyError("Response content-length:", err)
@@ -220,7 +237,14 @@ func (rp *Response) parseHeader(reader *bufio.Reader) (err error) {
 				if rp.ContLen == 0 {
 					rp.HasBody = false
 				}
-				lengthParsed = true
+			} else if fieldname == headerTransferEncoding {
+				fieldval := strings.ToLower(f[1])
+				if fieldval == "chunked" {
+					debug.Printf("chunked transfer detected\n")
+					rp.Chunking = true
+				} else {
+					debug.Printf("transfer-encoding: %s not supported", fieldval)
+				}
 			}
 		}
 	}
@@ -237,7 +261,6 @@ func responseMayHaveBody(method, status string) bool {
 // determine if response may have body, also for debugging
 func parseResponse(reader *bufio.Reader, method string) (rp *Response, err error) {
 	rp = new(Response)
-	rp.Header = make(Header)
 
 	var s string
 	if s, err = ReadLine(reader); err != nil {

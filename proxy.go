@@ -7,6 +7,8 @@ import (
 	"log"
 	"net"
 	"os"
+	"strconv"
+	"strings"
 )
 
 // Lots of the code here are learnt from the http package
@@ -113,34 +115,93 @@ func (c *conn) doRequest(r *Request) (err error) {
 	// Read server reply
 	// parse status line
 	srvReader := bufio.NewReader(srvconn)
-	response, err := parseResponse(srvReader, r.Method)
+	rp, err := parseResponse(srvReader, r.Method)
 	if err != nil {
-		return err
+		return
 	}
-	c.buf.WriteString(response.raw.String())
+	c.buf.WriteString(rp.raw.String())
 
 	// Wrap inside if to avoid function argument evaluation. Would this work?
 	if debug {
-		debug.Printf("[Response] %s %v\n%v", r.Method, r.URL, response)
+		debug.Printf("[Response] %s %v\n%v", r.Method, r.URL, rp)
 	}
 
-	if response.HasBody {
-		debug.Printf("Sending server response to client, content length %v\n",
-			response.ContLen)
-		// Send reply body to client
-		var lr io.Reader
-		// No content length specified
-		if response.ContLen == -1 {
-			lr = srvconn // io.Copy read 32k each time, no need to use bufio here
-		} else {
-			lr = io.LimitReader(srvconn, response.ContLen)
-		}
-		if _, err := io.Copy(c.buf.Writer, lr); err != nil && err != io.EOF {
-			return err
-		}
+	if err = c.sendResponseBody(srvReader, rp); err != nil {
+		return
 	}
 	c.buf.Flush()
 	return nil
+}
+
+// Send response body if header specifies content length
+func (c *conn) sendResponseBodyWithContLen(srvReader *bufio.Reader, contLen int64) (err error) {
+	debug.Printf("Sending response to client, content length %d\n", contLen)
+	lr := io.LimitReader(srvReader, contLen)
+	_, err = io.Copy(c.buf.Writer, lr)
+	return
+}
+
+// Send response body if header specifies chunked encoding
+func (c *conn) sendResponseBodyChunked(srvReader *bufio.Reader) (err error) {
+	debug.Printf("Sending chunked response to client\n")
+
+	for {
+		var s string
+		// Read chunk size line, ignore chunk extension if any
+		if s, err = ReadLine(srvReader); err != nil {
+			return newProxyError("Reading chunk size", err)
+		}
+		// debug.Printf("chunk size line %s", s)
+		f := strings.SplitN(s, ";", 2)
+		var size int64
+		if size, err = strconv.ParseInt(f[0], 16, 64); err != nil {
+			return newProxyError("Chunk size not valid", err)
+		}
+		c.buf.WriteString(s)
+		c.buf.WriteString("\r\n")
+
+		if size == 0 { // end of chunked data, ignore any trailers
+			break
+		}
+
+		// Read chunk data and send to client
+		b := make([]byte, size+2) // include the ending \r\n
+		var readcnt int
+		if readcnt, err = io.ReadFull(srvReader, b); err != nil {
+			return newProxyError("Reading chunked data from server", err)
+		}
+		if int64(readcnt) != size+2 {
+			debug.Printf("read cnt %d not equal to chunk size %d\n", readcnt, size)
+		}
+		// debug.Printf("chunk data\n%s", string(b))
+		// XXX maybe this kind of error handling should be passed to the
+		// client? But if the proxy doesn't know when to stop reading from the
+		// server, the only way to avoid blocked reading is to set read time
+		// out on server connection. Would that be easier?
+		if b[len(b)-2] != '\r' || b[len(b)-1] != '\n' {
+			return newProxyError("Malformed chunked data: "+string(b), err)
+		}
+		c.buf.WriteString(string(b))
+	}
+	return nil
+}
+
+// Send response body to client.
+func (c *conn) sendResponseBody(srvReader *bufio.Reader, rp *Response) (err error) {
+	if !rp.HasBody {
+		return
+	}
+
+	if rp.Chunking {
+		err = c.sendResponseBodyChunked(srvReader)
+	} else if rp.ContLen != 0 {
+		err = c.sendResponseBodyWithContLen(srvReader, rp.ContLen)
+	} else {
+		return &ProxyError{"Can't determine response length and not chunked encoding"}
+	}
+
+	c.buf.Flush()
+	return
 }
 
 func (c *conn) close() {
