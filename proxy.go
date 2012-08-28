@@ -91,7 +91,11 @@ func (c *conn) serve() {
 			// TODO what's possible error? how to handle?
 		}
 
-		break
+		if !r.KeepAlive {
+			debug.Printf("Proxy connection close\n")
+			break
+		}
+		debug.Printf("Proxy connection keep-alive, serving next request\n")
 	}
 }
 
@@ -104,6 +108,7 @@ func (c *conn) doRequest(r *Request) (err error) {
 	if err != nil {
 		return newProxyError("Connecting to %s:", err)
 	}
+	debug.Printf("Connected to %s\n", r.URL.Host)
 	// TODO revisit here when implementing keep-alive
 	defer srvconn.Close()
 

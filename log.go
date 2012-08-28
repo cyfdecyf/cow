@@ -11,6 +11,7 @@ import (
 )
 
 type infoLogging bool
+
 const info infoLogging = true
 
 func (d infoLogging) Printf(format string, args ...interface{}) {
@@ -27,6 +28,7 @@ func (d infoLogging) Println(args ...interface{}) {
 
 // debug logging
 type debugLogging bool
+
 const debug debugLogging = true
 
 var debugLog = log.New(os.Stderr, "\033[34m[DEBUG ", log.LstdFlags)
@@ -36,4 +38,3 @@ func (d debugLogging) Printf(format string, args ...interface{}) {
 		debugLog.Printf("]\033[0m "+format, args...)
 	}
 }
-

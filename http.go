@@ -14,6 +14,8 @@ type Request struct {
 	Proto  string
 	Header Header
 
+	KeepAlive bool
+
 	raw bytes.Buffer
 }
 
@@ -104,6 +106,10 @@ func ParseRequestURI(rawurl string) (*URL, error) {
 	if len(f) == 1 {
 		rest = f[0]
 	} else {
+		scheme := f[0]
+		if scheme != "http" && scheme != "https" {
+			return nil, &HttpError{scheme + " protocol not supported"}
+		}
 		rest = f[1]
 	}
 
@@ -137,14 +143,22 @@ func (r *Request) parseHeader(reader *bufio.Reader) (err error) {
 		if s, err = ReadLine(reader); err != nil {
 			return newHttpError("Reading client request", err)
 		}
-		if lower := strings.ToLower(s); strings.HasPrefix(lower, headerProxyConnection) {
-			f := splitHeader(s)
-			if len(f) == 2 {
-				r.Header[headerProxyConnection] = f[1]
-			} else {
+		f := splitHeader(s)
+		fieldname := strings.ToLower(f[0])
+		// RFC2616 only says about "Connection", no "Proxy-Connection", but firefox
+		// send this header.
+		// See more at http://homepage.ntlworld.com/jonathan.deboynepollard/FGA/web-proxy-connection-header.html
+		if fieldname == headerProxyConnection || fieldname == headerConnection {
+			if len(f) != 2 {
 				// TODO For headers like proxy-connection, I guess not client would
 				// make it spread multiple line. But better to support this.
-				info.Println("Multi-line header not supported")
+				return &HttpError{"Multi-line header not supported"}
+			}
+			fieldval := strings.ToLower(f[1])
+			if fieldval == "keep-alive" {
+				r.KeepAlive = true
+			} else {
+				r.KeepAlive = false
 			}
 			continue
 		}
@@ -208,8 +222,10 @@ func (rp *Response) parseHeader(reader *bufio.Reader) (err error) {
 			return newHttpError("Reading Response header:", err)
 		}
 		if s == "" {
-			// TODO remove this when implementing persistent connection
-			rp.raw.WriteString("Proxy-Connection: close\r\n")
+			// TODO What if the client sends close?
+			// Though firefox sends Proxy-Connection in request, sending Connection back
+			// in response also works
+			rp.raw.WriteString("Connection: Keep-Alive\r\n")
 			rp.raw.WriteString("\r\n")
 			break
 		}
