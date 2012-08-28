@@ -92,9 +92,6 @@ func (c *conn) serve() {
 	}
 }
 
-// noLimit is an effective infinite upper bound for io.LimitedReader
-const noLimit int64 = (1 << 63) - 1
-
 func (c *conn) doRequest(r *Request) (err error) {
 	debug.Printf("Connecting to %s\n", r.URL.Host)
 	srvconn, err := net.Dial("tcp", r.URL.Host)
@@ -135,7 +132,7 @@ func (c *conn) doRequest(r *Request) (err error) {
 	c.buf.WriteString("\r\n")
 
 	hasBody := responseMayHaveBody(r.Method, status)
-	contLen := noLimit
+	contLen := int64(-1)
 	lengthParsed := false
 
 	var rawResponse bytes.Buffer // For debugging
@@ -181,7 +178,13 @@ func (c *conn) doRequest(r *Request) (err error) {
 		debug.Printf("Sending server response to client, content length %v\n",
 			contLen)
 		// Send reply body to client
-		lr := io.LimitReader(srvconn, contLen)
+		var lr io.Reader
+		// No content length specified
+		if contLen == -1 {
+			lr = srvconn // io.Copy read 32k each time, no need to use bufio here
+		} else {
+			lr = io.LimitReader(srvconn, contLen)
+		}
 		if _, err := io.Copy(c.buf.Writer, lr); err != nil && err != io.EOF {
 			return err
 		}
