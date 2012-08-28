@@ -50,14 +50,14 @@ func (py *Proxy) Serve() {
 	info.Println("COW proxy listening", py.addr)
 
 	for {
-		rwc, err := ln.Accept()
+		clientConn, err := ln.Accept()
 		if err != nil {
 			log.Println("Client connection:", err)
 			continue
 		}
-		info.Println("New Client:", rwc.RemoteAddr())
+		info.Println("New Client:", clientConn.RemoteAddr())
 
-		c := newConn(rwc)
+		c := newConn(clientConn)
 		go c.serve()
 	}
 }
@@ -77,7 +77,10 @@ func (c *conn) serve() {
 	var err error
 	for {
 		if r, err = parseRequest(c.buf.Reader); err != nil {
-			log.Println("Reading client request", err)
+			// io.EOF means the client connection is closed
+			if err != io.EOF {
+				log.Println("Reading client request", err)
+			}
 			return
 		}
 		if debug {
@@ -86,16 +89,32 @@ func (c *conn) serve() {
 			info.Println(r)
 		}
 
+		// TODO Need to do the request in a goroutine to support pipelining?
+		// If so, how to maintain the order of finishing request?
+		// Consider pipelining later as this is just performance improvement.
 		if err = c.doRequest(r); err != nil {
 			log.Println("Doing http request", err)
-			// TODO what's possible error? how to handle?
-		}
-
-		if !r.KeepAlive {
-			debug.Printf("Proxy connection close\n")
 			break
 		}
-		debug.Printf("Proxy connection keep-alive, serving next request\n")
+
+		// How to detect closed client connection?
+		// Reading client connection will encounter EOF and detect that the
+		// connection has been closed.
+
+		// Firefox will create 6 persistent connections to the proxy server.
+		// If opening many connections is not a problem, then nothing need
+		// to be done.
+		// Otherwise, set a read time out and close connection upon timeout.
+		// This should not cause problem as
+		// 1. I didn't see any independent message sent by firefox in order to
+		//    close a persistent connection
+		// 2. Sending Connection: Keep-Alive but actually closing the
+		//    connection cause no problem for firefox. (The client should be
+		//    able to detect closed connection and open a new one.)
+		if !r.KeepAlive {
+			break
+		}
+		// debug.Printf("Proxy connection keep-alive, serving next request\n")
 	}
 }
 
@@ -145,7 +164,10 @@ func (c *conn) doRequest(r *Request) (err error) {
 }
 
 // Send response body if header specifies content length
-func (c *conn) sendResponseBodyWithContLen(srvReader *bufio.Reader, contLen int64) (err error) {
+func (c *conn) sendResponseBodyWithContLen(srvReader *bufio.Reader,
+	contLen int64) (err error) {
+	// TODO using bufio.Reader may cause block because it doesn't know how many
+	// bytes can be read. Need to first drain the buffer, and then send the left
 	debug.Printf("Sending response to client, content length %d\n", contLen)
 	lr := io.LimitReader(srvReader, contLen)
 	_, err = io.Copy(c.buf.Writer, lr)
@@ -177,12 +199,8 @@ func (c *conn) sendResponseBodyChunked(srvReader *bufio.Reader) (err error) {
 
 		// Read chunk data and send to client
 		b := make([]byte, size+2) // include the ending \r\n
-		var readcnt int
-		if readcnt, err = io.ReadFull(srvReader, b); err != nil {
+		if _, err = io.ReadFull(srvReader, b); err != nil {
 			return newProxyError("Reading chunked data from server", err)
-		}
-		if int64(readcnt) != size+2 {
-			debug.Printf("read cnt %d not equal to chunk size %d\n", readcnt, size)
 		}
 		// debug.Printf("chunk data\n%s", string(b))
 		// XXX maybe this kind of error handling should be passed to the
@@ -221,7 +239,7 @@ func (c *conn) close() {
 		c.buf = nil
 	}
 	if c.cliconn != nil {
-		debug.Printf("client connection closed\n")
+		info.Printf("Client %v connection closed\n", c.cliconn.RemoteAddr())
 		c.cliconn.Close()
 		c.cliconn = nil
 	}
