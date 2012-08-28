@@ -109,6 +109,12 @@ func (c *conn) doRequest(r *Request) (err error) {
 	if _, err := srvconn.Write(r.raw.Bytes()); err != nil {
 		return err
 	}
+	// Send request body
+	if r.Method == "POST" {
+		if _, err = io.Copy(srvconn, c.buf.Reader); err != nil {
+			return newProxyError("Sending request body to server", err)
+		}
+	}
 
 	// Read server reply
 

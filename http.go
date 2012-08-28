@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
-	"io/ioutil"
 	"strings"
 )
 
@@ -21,6 +20,10 @@ type Request struct {
 type URL struct {
 	Host string
 	Path string
+}
+
+func (url *URL) String() string {
+	return fmt.Sprintf("%s%s", url.Host, url.Path)
 }
 
 type Header map[string]string
@@ -131,6 +134,7 @@ func (r *Request) parseHeader(reader *bufio.Reader) (err error) {
 	return nil
 }
 
+// Parse the initial line and header, does not touch body
 func parseRequest(reader *bufio.Reader) (r *Request, err error) {
 	r = new(Request)
 	r.header = make(Header)
@@ -156,14 +160,8 @@ func parseRequest(reader *bufio.Reader) (r *Request, err error) {
 	}
 	r.genInitialLine()
 
-	// Read request header and body
+	// Read request header
 	r.parseHeader(reader)
-	if r.Method == "POST" {
-		if r.body, err = ioutil.ReadAll(reader); err != nil {
-			return nil, newProxyError("Reading request body", err)
-		}
-	}
-
 	return r, nil
 }
 
