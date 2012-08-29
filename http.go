@@ -290,12 +290,20 @@ func parseResponse(reader *bufio.Reader, method string) (rp *Response, err error
 	rp = new(Response)
 
 	var s string
+START:
 	if s, err = ReadLine(reader); err != nil {
 		return nil, newHttpError("Reading Response status line:", err)
 	}
 	var f []string
 	if f = strings.SplitN(s, " ", 3); len(f) < 3 {
 		return nil, &HttpError{fmt.Sprintln("malformed HTTP response status line:", s)}
+	}
+	// Handle 1xx response
+	if f[1] == "100" {
+		if err = readCheckCRLF(reader); err != nil {
+			return nil, newHttpError("Reading CRLF after 1xx response", err)
+		}
+		goto START
 	}
 	rp.Status = f[1]
 	rp.Reason = f[2]
