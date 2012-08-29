@@ -71,6 +71,18 @@ func newClientConn(rwc net.Conn) (c *clientConn) {
 	return
 }
 
+func (c *clientConn) close() {
+	if c.buf != nil {
+		c.buf.Flush()
+		c.buf = nil
+	}
+	if c.netconn != nil {
+		info.Printf("Client %v connection closed\n", c.netconn.RemoteAddr())
+		c.netconn.Close()
+		c.netconn = nil
+	}
+}
+
 func (c *clientConn) serve() {
 	defer c.close()
 	var r *Request
@@ -143,9 +155,9 @@ func (c *clientConn) doRequest(r *Request) (err error) {
 	}
 	// Send request body
 	if r.Method == "POST" {
-		// TODO we may need to parse content-length
-		if _, err = io.Copy(srvconn, c.buf.Reader); err != nil {
-			return newProxyError("Sending request body to server", err)
+		srvWriter := bufio.NewWriter(srvconn)
+		if err = sendBody(srvWriter, c.buf.Reader, r.Chunking, r.ContLen); err != nil {
+			return newProxyError("Sending request body", err)
 		}
 	}
 
@@ -167,33 +179,35 @@ func (c *clientConn) doRequest(r *Request) (err error) {
 		debug.Printf("[Response] %s %v\n%v", r.Method, r.URL, rp)
 	}
 
-	if err = c.sendResponseBody(srvReader, rp); err != nil {
-		return err
+	if rp.HasBody {
+		if err = sendBody(c.buf.Writer, srvReader, rp.Chunking, rp.ContLen); err != nil {
+			return err
+		}
 	}
 	debug.Printf("Finished request %s %s\n", r.Method, r.URL)
 	return nil
 }
 
 // Send response body if header specifies content length
-func sendBodyWithContLen(writer *bufio.Writer, reader *bufio.Reader, contLen int64) (err error) {
+func sendBodyWithContLen(w *bufio.Writer, r *bufio.Reader, contLen int64) (err error) {
 	debug.Printf("Sending body with content length %d\n", contLen)
 	// CopyN will copy n bytes unless there's error of EOF. For EOF, it means
 	// the connection is closed, return will propagate till serv function and
 	// close client connection.
-	if _, err = io.CopyN(writer, reader, contLen); err != nil {
+	if _, err = io.CopyN(w, r, contLen); err != nil {
 		return newProxyError("Sending response body to client", err)
 	}
 	return nil
 }
 
 // Send response body if header specifies chunked encoding
-func sendBodyChunked(writer *bufio.Writer, reader *bufio.Reader) (err error) {
+func sendBodyChunked(w *bufio.Writer, r *bufio.Reader) (err error) {
 	debug.Printf("Sending chunked body\n")
 
 	for {
 		var s string
 		// Read chunk size line, ignore chunk extension if any
-		if s, err = ReadLine(reader); err != nil {
+		if s, err = ReadLine(r); err != nil {
 			return newProxyError("Reading chunk size", err)
 		}
 		// debug.Printf("chunk size line %s", s)
@@ -202,15 +216,15 @@ func sendBodyChunked(writer *bufio.Writer, reader *bufio.Reader) (err error) {
 		if size, err = strconv.ParseInt(f[0], 16, 64); err != nil {
 			return newProxyError("Chunk size not valid", err)
 		}
-		writer.WriteString(s)
-		writer.WriteString("\r\n")
+		w.WriteString(s)
+		w.WriteString("\r\n")
 
 		if size == 0 { // end of chunked data, ignore any trailers
 			goto END
 		}
 
 		// Read chunk data and send to client
-		if _, err = io.CopyN(writer, reader, size); err != nil {
+		if _, err = io.CopyN(w, r, size); err != nil {
 			return newProxyError("Reading chunked data from server", err)
 		}
 	END:
@@ -218,46 +232,30 @@ func sendBodyChunked(writer *bufio.Writer, reader *bufio.Reader) (err error) {
 		// client? But if the proxy doesn't know when to stop reading from the
 		// server, the only way to avoid blocked reading is to set read time
 		// out on server connection. Would that be easier?
-		if err = readCheckCRLF(reader); err != nil {
+		if err = readCheckCRLF(r); err != nil {
 			return newProxyError("Reading chunked data CRLF", err)
 		}
-		writer.WriteString("\r\n")
+		w.WriteString("\r\n")
 	}
 	return nil
 }
 
-// Send response body to client.
-func (c *clientConn) sendResponseBody(srvReader *bufio.Reader, rp *Response) (err error) {
-	if !rp.HasBody {
-		return
-	}
-
-	if rp.Chunking {
-		err = sendBodyChunked(c.buf.Writer, srvReader)
-	} else if rp.ContLen != 0 {
-		err = sendBodyWithContLen(c.buf.Writer, srvReader, rp.ContLen)
+// Send message body
+func sendBody(w *bufio.Writer, r *bufio.Reader, chunk bool, contLen int64) (err error) {
+	if chunk {
+		err = sendBodyChunked(w, r)
+	} else if contLen >= 0 {
+		err = sendBodyWithContLen(w, r, contLen)
 	} else {
 		// Maybe because this is an HTTP/1.0 server. Just read and wait connection close
-		debug.Printf("Can't determine response length and not chunked encoding\n")
-		if _, err = io.Copy(c.buf.Writer, srvReader); err != nil {
+		info.Printf("Can't determine body length and not chunked encoding\n")
+		if _, err = io.Copy(w, r); err != nil {
 			return err
 		}
 	}
 
-	if err = c.buf.Flush(); err != nil {
-		return newProxyError("Flushing response body to client", err)
+	if err = w.Flush(); err != nil {
+		return newProxyError("Flushing body to client", err)
 	}
 	return
-}
-
-func (c *clientConn) close() {
-	if c.buf != nil {
-		c.buf.Flush()
-		c.buf = nil
-	}
-	if c.netconn != nil {
-		info.Printf("Client %v connection closed\n", c.netconn.RemoteAddr())
-		c.netconn.Close()
-		c.netconn = nil
-	}
 }

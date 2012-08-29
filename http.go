@@ -15,6 +15,8 @@ type Request struct {
 	Proto  string
 	Header Header
 
+	ContLen   int64
+	Chunking  bool
 	KeepAlive bool
 
 	raw bytes.Buffer
@@ -162,6 +164,13 @@ func (r *Request) parseHeader(reader *bufio.Reader) (err error) {
 				r.KeepAlive = false
 			}
 			continue
+		} else if fieldname == headerContentLength {
+			if len(f) != 2 {
+				return &HttpError{"Multi-line header not supported"}
+			}
+			if r.ContLen, err = strconv.ParseInt(f[1], 10, 64); err != nil {
+				return newProxyError("Request content-length:", err)
+			}
 		}
 		r.raw.WriteString(s)
 		r.raw.WriteString("\r\n")
@@ -176,6 +185,7 @@ func (r *Request) parseHeader(reader *bufio.Reader) (err error) {
 // Parse the initial line and header, does not touch body
 func parseRequest(reader *bufio.Reader) (r *Request, err error) {
 	r = new(Request)
+	r.ContLen = -1
 	r.Header = make(Header)
 	var s string
 
@@ -210,7 +220,7 @@ func (r *Request) genRequestLine() {
 	r.raw.WriteString(r.URL.Path)
 	r.raw.WriteString(" ")
 	r.raw.WriteString("HTTP/1.1\r\n")
-	// TODO remove this after supporting HTTP/1.1 persistent connection
+	// TODO Set this to Keep-Alive after supporting HTTP/1.1 persistent connection
 	r.raw.WriteString("Connection: close\r\n")
 }
 
@@ -288,6 +298,7 @@ func responseMayHaveBody(method, status string) bool {
 // determine if response may have body, also for debugging
 func parseResponse(reader *bufio.Reader, method string) (rp *Response, err error) {
 	rp = new(Response)
+	rp.ContLen = -1
 
 	var s string
 START:
