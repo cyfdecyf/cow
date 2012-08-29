@@ -186,7 +186,6 @@ func sendBodyWithContLen(writer *bufio.Writer, reader *bufio.Reader, contLen int
 func sendBodyChunked(writer *bufio.Writer, reader *bufio.Reader) (err error) {
 	debug.Printf("Sending chunked body\n")
 
-	b := make([]byte, 2) // buffer for chunked transfer
 	for {
 		var s string
 		// Read chunk size line, ignore chunk extension if any
@@ -215,11 +214,8 @@ func sendBodyChunked(writer *bufio.Writer, reader *bufio.Reader) (err error) {
 		// client? But if the proxy doesn't know when to stop reading from the
 		// server, the only way to avoid blocked reading is to set read time
 		// out on server connection. Would that be easier?
-		if _, err = io.ReadFull(reader, b); err != nil {
+		if err = readCheckCRLF(reader); err != nil {
 			return newProxyError("Reading chunked data CRLF", err)
-		}
-		if b[0] != '\r' || b[1] != '\n' {
-			return newProxyError("Reading chunked data, not ending with CRLF", err)
 		}
 		writer.WriteString("\r\n")
 	}

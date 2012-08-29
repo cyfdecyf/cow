@@ -10,9 +10,10 @@ import (
 	"os"
 )
 
-type infoLogging bool
-
 const info infoLogging = true
+const debug debugLogging = true
+
+type infoLogging bool
 
 func (d infoLogging) Printf(format string, args ...interface{}) {
 	if d {
@@ -28,8 +29,6 @@ func (d infoLogging) Println(args ...interface{}) {
 
 // debug logging
 type debugLogging bool
-
-const debug debugLogging = true
 
 var debugLog = log.New(os.Stderr, "\033[34m[DEBUG ", log.LstdFlags)
 

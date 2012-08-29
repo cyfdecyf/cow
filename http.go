@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 )
@@ -211,6 +212,18 @@ func (r *Request) genRequestLine() {
 	r.raw.WriteString("HTTP/1.1\r\n")
 	// TODO remove this after supporting HTTP/1.1 persistent connection
 	r.raw.WriteString("Connection: close\r\n")
+}
+
+var crlfBuf = make([]byte, 2)
+
+func readCheckCRLF(reader *bufio.Reader) error {
+	if _, err := io.ReadFull(reader, crlfBuf); err != nil {
+		return err
+	}
+	if crlfBuf[0] != '\r' || crlfBuf[1] != '\n' {
+		return &HttpError{"Not CRLF"}
+	}
+	return nil
 }
 
 // Only put headers of interest for an proxy into header map
