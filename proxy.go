@@ -17,10 +17,10 @@ type Proxy struct {
 	addr string // listen address
 }
 
-type conn struct {
+type clientConn struct {
 	keepAlive bool
 	buf       *bufio.ReadWriter
-	cliconn   net.Conn // connection to the proxy client
+	netconn   net.Conn // connection to the proxy client
 	// TODO is it possible that one proxy connection is used to server all the client request?
 	// Make things simple at this moment and disable http request keep-alive
 	// srvconn net.Conn // connection to the server
@@ -50,20 +50,20 @@ func (py *Proxy) Serve() {
 	info.Println("COW proxy listening", py.addr)
 
 	for {
-		clientConn, err := ln.Accept()
+		conn, err := ln.Accept()
 		if err != nil {
 			log.Println("Client connection:", err)
 			continue
 		}
-		info.Println("New Client:", clientConn.RemoteAddr())
+		info.Println("New Client:", conn.RemoteAddr())
 
-		c := newConn(clientConn)
+		c := newClientConn(conn)
 		go c.serve()
 	}
 }
 
-func newConn(rwc net.Conn) (c *conn) {
-	c = &conn{cliconn: rwc}
+func newClientConn(rwc net.Conn) (c *clientConn) {
+	c = &clientConn{netconn: rwc}
 	// http pkg uses io.LimitReader with no limit to create a reader, why?
 	br := bufio.NewReader(rwc)
 	bw := bufio.NewWriter(rwc)
@@ -71,7 +71,7 @@ func newConn(rwc net.Conn) (c *conn) {
 	return
 }
 
-func (c *conn) serve() {
+func (c *clientConn) serve() {
 	defer c.close()
 	var r *Request
 	var err error
@@ -118,7 +118,7 @@ func (c *conn) serve() {
 	}
 }
 
-func (c *conn) doRequest(r *Request) (err error) {
+func (c *clientConn) doRequest(r *Request) (err error) {
 	host := r.URL.Host
 	if !hostHasPort(host) {
 		host += ":80"
@@ -164,10 +164,9 @@ func (c *conn) doRequest(r *Request) (err error) {
 }
 
 // Send response body if header specifies content length
-func (c *conn) sendResponseBodyWithContLen(srvReader *bufio.Reader,
-	contLen int64) (err error) {
 	// TODO using bufio.Reader may cause block because it doesn't know how many
 	// bytes can be read. Need to first drain the buffer, and then send the left
+func (c *clientConn) sendResponseBodyWithContLen(srvReader *bufio.Reader, contLen int64) (err error) {
 	debug.Printf("Sending response to client, content length %d\n", contLen)
 	lr := io.LimitReader(srvReader, contLen)
 	_, err = io.Copy(c.buf.Writer, lr)
@@ -175,7 +174,7 @@ func (c *conn) sendResponseBodyWithContLen(srvReader *bufio.Reader,
 }
 
 // Send response body if header specifies chunked encoding
-func (c *conn) sendResponseBodyChunked(srvReader *bufio.Reader) (err error) {
+func (c *clientConn) sendResponseBodyChunked(srvReader *bufio.Reader) (err error) {
 	debug.Printf("Sending chunked response to client\n")
 
 	for {
@@ -216,7 +215,7 @@ func (c *conn) sendResponseBodyChunked(srvReader *bufio.Reader) (err error) {
 }
 
 // Send response body to client.
-func (c *conn) sendResponseBody(srvReader *bufio.Reader, rp *Response) (err error) {
+func (c *clientConn) sendResponseBody(srvReader *bufio.Reader, rp *Response) (err error) {
 	if !rp.HasBody {
 		return
 	}
@@ -233,14 +232,14 @@ func (c *conn) sendResponseBody(srvReader *bufio.Reader, rp *Response) (err erro
 	return
 }
 
-func (c *conn) close() {
+func (c *clientConn) close() {
 	if c.buf != nil {
 		c.buf.Flush()
 		c.buf = nil
 	}
-	if c.cliconn != nil {
-		info.Printf("Client %v connection closed\n", c.cliconn.RemoteAddr())
-		c.cliconn.Close()
-		c.cliconn = nil
+	if c.netconn != nil {
+		info.Printf("Client %v connection closed\n", c.netconn.RemoteAddr())
+		c.netconn.Close()
+		c.netconn = nil
 	}
 }
