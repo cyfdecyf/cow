@@ -150,8 +150,8 @@ func (c *clientConn) doRequest(r *Request) (err error) {
 	debug.Printf("Connected to %s\n", r.URL.Host)
 
 	// Send request to the server
-	if _, err := srvconn.Write(r.raw.Bytes()); err != nil {
-		return err
+	if _, err = srvconn.Write(r.raw.Bytes()); err != nil {
+		return
 	}
 	// Send request body
 	if r.Method == "POST" {
@@ -166,7 +166,7 @@ func (c *clientConn) doRequest(r *Request) (err error) {
 	srvReader := bufio.NewReader(srvconn)
 	rp, err := parseResponse(srvReader, r.Method)
 	if err != nil {
-		return err
+		return
 	}
 	c.buf.WriteString(rp.raw.String())
 	// Flush response header to the client earlier
@@ -181,23 +181,26 @@ func (c *clientConn) doRequest(r *Request) (err error) {
 
 	if rp.HasBody {
 		if err = sendBody(c.buf.Writer, srvReader, rp.Chunking, rp.ContLen); err != nil {
-			return err
+			return
 		}
 	}
 	debug.Printf("Finished request %s %s\n", r.Method, r.URL)
-	return nil
+	return
 }
 
 // Send response body if header specifies content length
 func sendBodyWithContLen(w *bufio.Writer, r *bufio.Reader, contLen int64) (err error) {
 	debug.Printf("Sending body with content length %d\n", contLen)
+	if contLen == 0 {
+		return
+	}
 	// CopyN will copy n bytes unless there's error of EOF. For EOF, it means
 	// the connection is closed, return will propagate till serv function and
 	// close client connection.
 	if _, err = io.CopyN(w, r, contLen); err != nil {
 		return newProxyError("Sending response body to client", err)
 	}
-	return nil
+	return
 }
 
 // Send response body if header specifies chunked encoding
@@ -237,7 +240,7 @@ func sendBodyChunked(w *bufio.Writer, r *bufio.Reader) (err error) {
 		}
 		w.WriteString("\r\n")
 	}
-	return nil
+	return
 }
 
 // Send message body
@@ -250,7 +253,7 @@ func sendBody(w *bufio.Writer, r *bufio.Reader, chunk bool, contLen int64) (err 
 		// Maybe because this is an HTTP/1.0 server. Just read and wait connection close
 		info.Printf("Can't determine body length and not chunked encoding\n")
 		if _, err = io.Copy(w, r); err != nil {
-			return err
+			return
 		}
 	}
 

@@ -9,15 +9,18 @@ import (
 	"strings"
 )
 
+type Header struct {
+	ContLen   int64
+	Chunking  bool
+	KeepAlive bool
+}
+
 type Request struct {
 	Method string
 	URL    *URL
 	Proto  string
-	Header Header
 
-	ContLen   int64
-	Chunking  bool
-	KeepAlive bool
+	Header
 
 	raw bytes.Buffer
 }
@@ -36,8 +39,7 @@ type Response struct {
 	Reason  string
 	HasBody bool
 
-	ContLen  int64
-	Chunking bool
+	Header
 
 	raw bytes.Buffer
 }
@@ -55,15 +57,16 @@ func (url *URL) String() string {
 	return fmt.Sprintf("%s%s", url.Host, url.Path)
 }
 
-type Header map[string]string
-
 // TODO Rename to protocol error just as the http pkg
 type HttpError struct {
 	msg string
 }
 
 // headers of interest to a proxy
-// Define them as constant and use editor's completion to avoid typos
+// Define them as constant and use editor's completion to avoid typos.
+// Note RFC2616 only says about "Connection", no "Proxy-Connection", but firefox
+// send this header.
+// See more at http://homepage.ntlworld.com/jonathan.deboynepollard/FGA/web-proxy-connection-header.html
 const (
 	headerContentLength    = "content-length"
 	headerTransferEncoding = "transfer-encoding"
@@ -128,65 +131,74 @@ func ParseRequestURI(rawurl string) (*URL, error) {
 	return &URL{Host: host, Path: path}, nil
 }
 
-// Note header may span more then 1 line, current implementation does not
-// support this
-func splitHeader(s string) []string {
-	f := strings.SplitN(s, ":", 2)
-	for i, _ := range f {
-		f[i] = strings.TrimSpace(f[i])
+func splitHeader(s string) (name, val string, err error) {
+	var f []string
+	if f = strings.SplitN(strings.ToLower(s), ":", 2); len(f) != 2 {
+		// TODO Fix this when encounter such web servers
+		return "", "", &HttpError{"Multi-line header not supported"}
 	}
-	return f
+	return f[0], f[1], nil
 }
 
-// Only add headers that are of interest for a proxy into request's header map
-func (r *Request) parseHeader(reader *bufio.Reader) (err error) {
+func (h *Header) parseContentLength(s string) (err error) {
+	h.ContLen, err = strconv.ParseInt(strings.TrimSpace(s), 10, 64)
+	return err
+}
+
+func (h *Header) parseConnection(s string) error {
+	h.KeepAlive = strings.Contains(s, "keep-alive")
+	return nil
+}
+
+func (h *Header) parseTransferEncoding(s string) error {
+	h.Chunking = strings.Contains(s, "chunked")
+	return nil
+}
+
+type HeaderParserFunc func(*Header, string) error
+
+// Using Go's method expression
+var headerParser = map[string]HeaderParserFunc{
+	headerConnection:       (*Header).parseConnection,
+	headerProxyConnection:  (*Header).parseConnection,
+	headerContentLength:    (*Header).parseContentLength,
+	headerTransferEncoding: (*Header).parseTransferEncoding,
+}
+
+// Only add headers that are of interest for a proxy into request's header map.
+func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, addHeader string) (err error) {
 	// Read request header and body
-	var s string
+	var s, name, val string
 	for {
 		if s, err = ReadLine(reader); err != nil {
-			return newHttpError("Reading client request", err)
+			return
 		}
-		f := splitHeader(s)
-		fieldname := strings.ToLower(f[0])
-		// RFC2616 only says about "Connection", no "Proxy-Connection", but firefox
-		// send this header.
-		// See more at http://homepage.ntlworld.com/jonathan.deboynepollard/FGA/web-proxy-connection-header.html
-		if fieldname == headerProxyConnection || fieldname == headerConnection {
-			if len(f) != 2 {
-				// TODO For headers like proxy-connection, I guess not client would
-				// make it spread multiple line. But better to support this.
-				return &HttpError{"Multi-line header not supported"}
-			}
-			fieldval := strings.ToLower(f[1])
-			if fieldval == "keep-alive" {
-				r.KeepAlive = true
-			} else {
-				r.KeepAlive = false
-			}
-			continue
-		} else if fieldname == headerContentLength {
-			if len(f) != 2 {
-				return &HttpError{"Multi-line header not supported"}
-			}
-			if r.ContLen, err = strconv.ParseInt(f[1], 10, 64); err != nil {
-				return newProxyError("Request content-length:", err)
-			}
-		}
-		r.raw.WriteString(s)
-		r.raw.WriteString("\r\n")
-		// debug.Printf("len %d %s", len(s), s)
 		if s == "" {
+			raw.WriteString(addHeader)
+			raw.WriteString("\r\n")
 			break
 		}
+		if name, val, err = splitHeader(s); err != nil {
+			return newProxyError("Parsing request header:", err)
+		}
+		if parseFunc, ok := headerParser[name]; ok {
+			parseFunc(h, val)
+			if name == headerConnection || name == headerProxyConnection {
+				// Don't pass connection header to server or client
+				continue
+			}
+		}
+		raw.WriteString(s)
+		raw.WriteString("\r\n")
+		// debug.Printf("len %d %s", len(s), s)
 	}
-	return nil
+	return
 }
 
 // Parse the initial line and header, does not touch body
 func parseRequest(reader *bufio.Reader) (r *Request, err error) {
 	r = new(Request)
 	r.ContLen = -1
-	r.Header = make(Header)
 	var s string
 
 	// parse initial request line
@@ -210,7 +222,9 @@ func parseRequest(reader *bufio.Reader) (r *Request, err error) {
 	r.genRequestLine()
 
 	// Read request header
-	r.parseHeader(reader)
+	if err = r.parseHeader(reader, &r.raw, ""); err != nil {
+		return nil, newHttpError("Parsing request header", err)
+	}
 	return r, nil
 }
 
@@ -232,58 +246,6 @@ func readCheckCRLF(reader *bufio.Reader) error {
 	}
 	if crlfBuf[0] != '\r' || crlfBuf[1] != '\n' {
 		return &HttpError{"Not CRLF"}
-	}
-	return nil
-}
-
-// Only put headers of interest for an proxy into header map
-func (rp *Response) parseHeader(reader *bufio.Reader) (err error) {
-	var s string
-	for {
-		// Parse header
-		if s, err = ReadLine(reader); err != nil {
-			return newHttpError("Reading Response header:", err)
-		}
-		if s == "" {
-			// TODO What if the client sends close?
-			// Though firefox sends Proxy-Connection in request, sending Connection back
-			// in response also works
-			rp.raw.WriteString("Connection: Keep-Alive\r\n")
-			rp.raw.WriteString("\r\n")
-			break
-		}
-
-		f := splitHeader(s)
-		fieldname := strings.ToLower(f[0])
-		// Don't pass connection header to client
-		if fieldname != headerConnection {
-			rp.raw.WriteString(s)
-			rp.raw.WriteString("\r\n")
-		} else {
-			continue
-		}
-
-		// Only parse header for Content-Length and Transfer-Encoding
-		if rp.HasBody {
-			if fieldname == headerContentLength {
-				if len(f) != 2 {
-					return &HttpError{"Multi-line header not supported: " + s}
-				}
-				if rp.ContLen, err = strconv.ParseInt(f[1], 10, 64); err != nil {
-					return newProxyError("Response content-length:", err)
-				}
-				if rp.ContLen == 0 {
-					rp.HasBody = false
-				}
-			} else if fieldname == headerTransferEncoding {
-				fieldval := strings.ToLower(f[1])
-				if fieldval == "chunked" {
-					rp.Chunking = true
-				} else {
-					debug.Printf("transfer-encoding: %s not supported", fieldval)
-				}
-			}
-		}
 	}
 	return nil
 }
@@ -323,7 +285,7 @@ START:
 	rp.raw.WriteString(s)
 	rp.raw.WriteString("\r\n")
 
-	if err = rp.parseHeader(reader); err != nil {
+	if err = rp.parseHeader(reader, &rp.raw, "Connection: Keep-Alive\r\n"); err != nil {
 		return nil, err
 	}
 
