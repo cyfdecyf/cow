@@ -255,7 +255,6 @@ func (rp *Response) parseHeader(reader *bufio.Reader) (err error) {
 			} else if fieldname == headerTransferEncoding {
 				fieldval := strings.ToLower(f[1])
 				if fieldval == "chunked" {
-					debug.Printf("chunked transfer detected\n")
 					rp.Chunking = true
 				} else {
 					debug.Printf("transfer-encoding: %s not supported", fieldval)
