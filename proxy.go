@@ -203,13 +203,14 @@ func (c *clientConn) sendResponseBodyChunked(srvReader *bufio.Reader) (err error
 		c.buf.WriteString("\r\n")
 
 		if size == 0 { // end of chunked data, ignore any trailers
-			break
+			goto END
 		}
 
 		// Read chunk data and send to client
 		if _, err = io.CopyN(c.buf.Writer, srvReader, size); err != nil {
 			return newProxyError("Reading chunked data from server", err)
 		}
+	END:
 		// XXX maybe this kind of error handling should be passed to the
 		// client? But if the proxy doesn't know when to stop reading from the
 		// server, the only way to avoid blocked reading is to set read time
