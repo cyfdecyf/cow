@@ -93,11 +93,12 @@ func (c *clientConn) serve() {
 		// If so, how to maintain the order of finishing request?
 		// Consider pipelining later as this is just performance improvement.
 		if err = c.doRequest(r); err != nil {
-			// Server connection error should not close client connection
-			// because this connection is between the proxy and the web
-			// server, e.g. EOF. If this kind of error lead to client
-			// connection close, the proxy will detect this later.
-			log.Println("Doing http request", err)
+			log.Println("Doing request %s %s:", r.Method, r.URL, err)
+			// TODO Should server connection error close client connection?
+			// Possible error:
+			// 1. the proxy can't find the host
+			// 2. broken pipe to the client
+			break
 		}
 
 		// How to detect closed client connection?
@@ -127,7 +128,10 @@ func (c *clientConn) doRequest(r *Request) (err error) {
 	}
 	srvconn, err := net.Dial("tcp", host)
 	if err != nil {
-		return newProxyError("Connecting to %s:", err)
+		// TODO Find a way report no host error to client. Send back web page?
+		// It's weird here, sometimes nslookup can finding host, but net.Dial
+		// can't
+		return newProxyError("Connecting to: "+host, err)
 	}
 	// TODO revisit here when implementing keep-alive
 	defer srvconn.Close()
