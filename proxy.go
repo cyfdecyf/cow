@@ -44,7 +44,7 @@ func NewProxy(addr string) (proxy *Proxy) {
 func (py *Proxy) Serve() {
 	ln, err := net.Listen("tcp", py.addr)
 	if err != nil {
-		log.Println("Server create failed:", err)
+		log.Println("Server creation failed:", err)
 		os.Exit(1)
 	}
 	info.Println("COW proxy listening", py.addr)
@@ -162,14 +162,13 @@ func (c *clientConn) doRequest(r *Request) (err error) {
 	}
 
 	// Read server reply
-	// parse status line
 	srvReader := bufio.NewReader(srvconn)
 	rp, err := parseResponse(srvReader, r.Method)
 	if err != nil {
 		return
 	}
 	c.buf.WriteString(rp.raw.String())
-	// Flush response header to the client earlier
+	// Flush response header to the client ASAP
 	if err = c.buf.Flush(); err != nil {
 		return newProxyError("Flushing response header to client", err)
 	}
