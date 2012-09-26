@@ -21,6 +21,7 @@ type Request struct {
 	Proto  string
 
 	Header
+	isConnect bool
 
 	raw bytes.Buffer
 }
@@ -179,7 +180,7 @@ func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, addHeader 
 			break
 		}
 		if name, val, err = splitHeader(s); err != nil {
-			return newProxyError("Parsing request header:", err)
+			return
 		}
 		if parseFunc, ok := headerParser[name]; ok {
 			parseFunc(h, val)
@@ -191,6 +192,19 @@ func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, addHeader 
 		raw.WriteString(s)
 		raw.WriteString("\r\n")
 		// debug.Printf("len %d %s", len(s), s)
+	}
+	return
+}
+
+// Consume all http header. Used for CONNECT method.
+func drainHeader(reader *bufio.Reader) (err error) {
+	// Read request header and body
+	var s string
+	for {
+		s, err = ReadLine(reader)
+		if s == "" || err != nil {
+			return
+		}
 	}
 	return
 }
@@ -217,15 +231,24 @@ func parseRequest(reader *bufio.Reader) (r *Request, err error) {
 	// Parse URI into host and path
 	r.URL, err = ParseRequestURI(requestURI)
 	if err != nil {
-		return nil, err
+		return
 	}
+	if r.Method == "CONNECT" {
+		// Consume remaining header and just return. Headers are not used for
+		// CONNECT method.
+		r.isConnect = true
+		r.KeepAlive = false
+		err = drainHeader(reader)
+		return
+	}
+
 	r.genRequestLine()
 
 	// Read request header
 	if err = r.parseHeader(reader, &r.raw, ""); err != nil {
 		return nil, newHttpError("Parsing request header", err)
 	}
-	return r, nil
+	return
 }
 
 func (r *Request) genRequestLine() {

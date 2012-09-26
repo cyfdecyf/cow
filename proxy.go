@@ -33,7 +33,7 @@ type ProxyError struct {
 func (pe *ProxyError) Error() string { return pe.msg }
 
 func newProxyError(msg string, err error) *ProxyError {
-	return &ProxyError{fmt.Sprintln(msg, err)}
+	return &ProxyError{fmt.Sprint(msg, err)}
 }
 
 func NewProxy(addr string) (proxy *Proxy) {
@@ -62,10 +62,14 @@ func (py *Proxy) Serve() {
 	}
 }
 
+// Explicitly specify buffer size to avoid unnecessary copy using
+// bufio.Reader's Read
+const bufSize = 4096
+
 func newClientConn(rwc net.Conn) (c *clientConn) {
 	c = &clientConn{netconn: rwc}
 	// http pkg uses io.LimitReader with no limit to create a reader, why?
-	br := bufio.NewReader(rwc)
+	br := bufio.NewReaderSize(rwc, bufSize)
 	bw := bufio.NewWriter(rwc)
 	c.buf = bufio.NewReadWriter(br, bw)
 	return
@@ -123,11 +127,19 @@ func (c *clientConn) serve() {
 			info.Println(r)
 		}
 
+		if r.isConnect {
+			err = c.doConnect(r)
+			if err != nil {
+				log.Println(err)
+			}
+			return
+		}
+
 		// TODO Need to do the request in a goroutine to support pipelining?
 		// If so, how to maintain the order of finishing request?
 		// Consider pipelining later as this is just performance improvement.
 		if err = c.doRequest(r); err != nil {
-			log.Println("Doing request %s %s:", r.Method, r.URL, err)
+			log.Println("Doing request:", r.Method, r.URL, err)
 			// TODO Should server connection error close client connection?
 			// Possible error:
 			// 1. the proxy can't find the host
@@ -155,7 +167,65 @@ func (c *clientConn) serve() {
 	}
 }
 
+func copyData(dst net.Conn, src *bufio.Reader, dbgmsg string) (err error) {
+	buf := make([]byte, bufSize)
+	for err == nil {
+		n, err := src.Read(buf)
+		if err != nil && err != io.EOF {
+			return newProxyError(dbgmsg+" reading data", err)
+		}
+		_, err = dst.Write(buf[0:n])
+		if err != nil {
+			err = newProxyError(dbgmsg+" writing data", err)
+		}
+	}
+	return
+}
+
+func (c *clientConn) doConnect(r *Request) (err error) {
+	host := r.URL.Host
+	if !hostHasPort(host) {
+		host += ":80"
+	}
+	srvconn, err := net.Dial("tcp", host)
+	if err != nil {
+		// TODO how to respond error connection?
+		return newProxyError("doConnect Connecting to: "+host, err)
+	}
+	// defer must come after error checking because srvconn maybe null in case of error
+	defer srvconn.Close()
+	debug.Printf("Connected to %s Sending 200 Connection established to client\n", host)
+	// TODO Send response to client
+	c.buf.WriteString("HTTP/1.0 200 Connection established\r\nProxy-agent: cow-proxy/0.1\r\n\r\n")
+	c.buf.Writer.Flush()
+
+	errchan := make(chan error)
+	// Must wait this goroutine finish before returning from this function.
+	// Otherwise, the server/client may have been closed and thus cause nil
+	// pointer deference
+	go func() {
+		err := copyData(c.netconn, bufio.NewReaderSize(srvconn, bufSize), "server->client")
+		errchan <- err
+	}()
+
+	err = copyData(srvconn, c.buf.Reader, "client->server")
+	if err != io.EOF {
+		err = newProxyError("doConnect:", err)
+	}
+
+	// wait goroutine finish
+	err2 := <-errchan
+	if err2 != io.EOF {
+		err = newProxyError(" "+err.Error(), err2)
+	}
+	if err == io.EOF {
+		err = nil
+	}
+	return
+}
+
 func (c *clientConn) doRequest(r *Request) (err error) {
+	// TODO should reuse connection to implement keep-alive
 	host := r.URL.Host
 	if !hostHasPort(host) {
 		host += ":80"
