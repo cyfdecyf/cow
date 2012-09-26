@@ -92,26 +92,8 @@ func (c *clientConn) serve() {
 	var r *Request
 	var err error
 
-	// The current implementation serves client request one by one. For each
-	// request:
-	// 1. Parse client HTTP request
-	// 2. Connect to the server and send the request, send the response
-	//    back to the client
-	// We need to know whether a response is finished so we can start to serve
-	// another request. That's why we need to parse content-length header and
-	// chunked encoding.
-
-	// TODO If we are going to handle client request using 2 goroutines, one
-	// to receive client requests and send it to the web server, the other
-	// goroutine just pass data received from the server to the client, then
-	// we don't need to parse the response. But persistent connection may
-	// require response header parsing and thus don't allow this response pass
-	// through.
-
-	// The code for content-length and chunked encoding parsing will always be
-	// necessary because http request sent to proxy is different from the one
-	// directly sent to web server, the proxy needs to construct the http
-	// request.
+	// Refer to implementation.md for the design choices on parsing the request
+	// and response.
 
 	for {
 		if r, err = parseRequest(c.buf.Reader); err != nil {
