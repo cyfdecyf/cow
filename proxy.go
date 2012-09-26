@@ -219,8 +219,6 @@ func (c *clientConn) doRequest(r *Request) (err error) {
 		// can't
 		return newProxyError("Connecting to: "+host, err)
 	}
-	// TODO revisit here when implementing keep-alive
-	defer srvconn.Close()
 	debug.Printf("Connected to %s\n", r.URL.Host)
 
 	// Send request to the server
@@ -229,35 +227,44 @@ func (c *clientConn) doRequest(r *Request) (err error) {
 	}
 	// Send request body
 	if r.Method == "POST" {
-		srvWriter := bufio.NewWriter(srvconn)
-		if err = sendBody(srvWriter, c.buf.Reader, r.Chunking, r.ContLen); err != nil {
+		if err = sendBody(bufio.NewWriter(srvconn), c.buf.Reader, r.Chunking, r.ContLen); err != nil {
 			return newProxyError("Sending request body", err)
 		}
 	}
 
 	// Read server reply
 	srvReader := bufio.NewReader(srvconn)
-	rp, err := parseResponse(srvReader, r.Method)
-	if err != nil {
-		return
-	}
-	c.buf.WriteString(rp.raw.String())
-	// Flush response header to the client ASAP
-	if err = c.buf.Flush(); err != nil {
-		return newProxyError("Flushing response header to client", err)
-	}
-
-	// Wrap inside if to avoid function argument evaluation. Would this work?
-	if debug {
-		debug.Printf("[Response] %s %v\n%v", r.Method, r.URL, rp)
-	}
-
-	if rp.HasBody {
-		if err = sendBody(c.buf.Writer, srvReader, rp.Chunking, rp.ContLen); err != nil {
+	go func() {
+		err := copyData(c.netconn, srvReader, "doRequest server->client")
+		if err != nil {
+			info.Println(err)
+		}
+		srvconn.Close()
+	}()
+	// The original response parsing code.
+	/*
+		rp, err := parseResponse(srvReader, r.Method)
+		if err != nil {
 			return
 		}
-	}
-	debug.Printf("Finished request %s %s\n", r.Method, r.URL)
+		c.buf.WriteString(rp.raw.String())
+		// Flush response header to the client ASAP
+		if err = c.buf.Flush(); err != nil {
+			return newProxyError("Flushing response header to client", err)
+		}
+
+		// Wrap inside if to avoid function argument evaluation. Would this work?
+		if debug {
+			debug.Printf("[Response] %s %v\n%v", r.Method, r.URL, rp)
+		}
+
+		if rp.HasBody {
+			if err = sendBody(c.buf.Writer, srvReader, rp.Chunking, rp.ContLen); err != nil {
+				return
+			}
+		}
+		debug.Printf("Finished request %s %s\n", r.Method, r.URL)
+	*/
 	return
 }
 
