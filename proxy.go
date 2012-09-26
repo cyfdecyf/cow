@@ -134,16 +134,19 @@ func (c *clientConn) serve() {
 
 func copyData(dst net.Conn, src *bufio.Reader, dbgmsg string) (err error) {
 	buf := make([]byte, bufSize)
-	for err == nil {
-		n, err := src.Read(buf)
-		if err != nil && err != io.EOF {
-			errl.Printf("%s reading data: %v\n", dbgmsg, err)
-			return err
+	var n int
+	for {
+		n, err = src.Read(buf)
+		if err != nil {
+			if err != io.EOF {
+				errl.Printf("%s reading data: %v\n", dbgmsg, err)
+			}
+			return
 		}
 		_, err = dst.Write(buf[0:n])
 		if err != nil {
 			errl.Printf("%s writing data: %v\n", dbgmsg, err)
-			return err
+			return
 		}
 	}
 	return
@@ -209,8 +212,8 @@ func (c *clientConn) getConnection(host string) (srvconn net.Conn, err error) {
 		go func() {
 			// TODO this is a place to detect blocked sites
 			err := copyData(c.netconn, bufio.NewReader(srvconn), "doRequest server->client")
-			if err != nil {
-				errl.Printf("%v\n", err)
+			if err != nil && err != io.EOF {
+				errl.Printf("getConnection goroutine sending response to client: %v\n", err)
 			}
 			c.removeConnection(host)
 		}()
