@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"strconv"
@@ -29,8 +30,10 @@ type Request struct {
 func (r *Request) String() (s string) {
 	s = fmt.Sprintf("[Request] %s %s%s", r.Method,
 		r.URL.Host, r.URL.Path)
-	if debug {
+	if false {
 		s += fmt.Sprintf("\n%v", r.raw.String())
+	} else {
+		s += fmt.Sprintln()
 	}
 	return
 }
@@ -58,11 +61,6 @@ func (url *URL) String() string {
 	return fmt.Sprintf("%s%s", url.Host, url.Path)
 }
 
-// TODO Rename to protocol error just as the http pkg
-type HttpError struct {
-	msg string
-}
-
 // headers of interest to a proxy
 // Define them as constant and use editor's completion to avoid typos.
 // Note RFC2616 only says about "Connection", no "Proxy-Connection", but firefox
@@ -74,12 +72,6 @@ const (
 	headerConnection       = "connection"
 	headerProxyConnection  = "proxy-connection"
 )
-
-func (he *HttpError) Error() string { return he.msg }
-
-func newHttpError(msg string, err error) *HttpError {
-	return &HttpError{fmt.Sprintln(msg, err)}
-}
 
 func hostHasPort(s string) bool {
 	// Common case should has no port, check the last char first
@@ -104,7 +96,7 @@ func hostHasPort(s string) bool {
 // will check the correctness of the host.
 func ParseRequestURI(rawurl string) (*URL, error) {
 	if rawurl[0] == '/' {
-		return nil, &HttpError{"Invalid proxy request URI: " + rawurl}
+		return nil, errors.New("Invalid proxy request URI: " + rawurl)
 	}
 
 	var f []string
@@ -115,7 +107,7 @@ func ParseRequestURI(rawurl string) (*URL, error) {
 	} else {
 		scheme := f[0]
 		if scheme != "http" && scheme != "https" {
-			return nil, &HttpError{scheme + " protocol not supported"}
+			return nil, errors.New(scheme + " protocol not supported")
 		}
 		rest = f[1]
 	}
@@ -136,7 +128,7 @@ func splitHeader(s string) (name, val string, err error) {
 	var f []string
 	if f = strings.SplitN(strings.ToLower(s), ":", 2); len(f) != 2 {
 		// TODO Fix this when encounter such web servers
-		return "", "", &HttpError{"Multi-line header not supported"}
+		return "", "", errors.New("Multi-line header not supported")
 	}
 	return f[0], f[1], nil
 }
@@ -212,6 +204,7 @@ func drainHeader(reader *bufio.Reader) (err error) {
 // Parse the initial line and header, does not touch body
 func parseRequest(reader *bufio.Reader) (r *Request, err error) {
 	r = new(Request)
+	r.KeepAlive = true
 	r.ContLen = -1
 	var s string
 
@@ -223,7 +216,7 @@ func parseRequest(reader *bufio.Reader) (r *Request, err error) {
 
 	var f []string
 	if f = strings.SplitN(s, " ", 3); len(f) < 3 {
-		return nil, &HttpError{"malformed HTTP request"}
+		return nil, errors.New("malformed HTTP request")
 	}
 	var requestURI string
 	r.Method, requestURI, r.Proto = f[0], f[1], f[2]
@@ -246,7 +239,8 @@ func parseRequest(reader *bufio.Reader) (r *Request, err error) {
 
 	// Read request header
 	if err = r.parseHeader(reader, &r.raw, ""); err != nil {
-		return nil, newHttpError("Parsing request header", err)
+		errl.Printf("Parsing request header: %v\n", err)
+		return nil, err
 	}
 	return
 }
@@ -257,8 +251,7 @@ func (r *Request) genRequestLine() {
 	r.raw.WriteString(r.URL.Path)
 	r.raw.WriteString(" ")
 	r.raw.WriteString("HTTP/1.1\r\n")
-	// TODO Set this to Keep-Alive after supporting HTTP/1.1 persistent connection
-	r.raw.WriteString("Connection: close\r\n")
+	r.raw.WriteString("Connection: Keep-Alive\r\n")
 }
 
 var crlfBuf = make([]byte, 2)
@@ -268,7 +261,7 @@ func readCheckCRLF(reader *bufio.Reader) error {
 		return err
 	}
 	if crlfBuf[0] != '\r' || crlfBuf[1] != '\n' {
-		return &HttpError{"Not CRLF"}
+		return errors.New("Not CRLF")
 	}
 	return nil
 }
@@ -288,16 +281,18 @@ func parseResponse(reader *bufio.Reader, method string) (rp *Response, err error
 	var s string
 START:
 	if s, err = ReadLine(reader); err != nil {
-		return nil, newHttpError("Reading Response status line:", err)
+		errl.Printf("Reading Response status line: %v\n", err)
+		return nil, err
 	}
 	var f []string
 	if f = strings.SplitN(s, " ", 3); len(f) < 3 {
-		return nil, &HttpError{fmt.Sprintln("malformed HTTP response status line:", s)}
+		return nil, errors.New(fmt.Sprintf("malformed HTTP response status line: %s\n", s))
 	}
 	// Handle 1xx response
 	if f[1] == "100" {
 		if err = readCheckCRLF(reader); err != nil {
-			return nil, newHttpError("Reading CRLF after 1xx response", err)
+			errl.Printf("Reading CRLF after 1xx response: %v\n", err)
+			return nil, err
 		}
 		goto START
 	}

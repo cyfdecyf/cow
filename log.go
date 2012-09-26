@@ -12,6 +12,7 @@ import (
 
 const info infoLogging = true
 const debug debugLogging = true
+const errl errorLogging = true
 
 type infoLogging bool
 
@@ -35,5 +36,15 @@ var debugLog = log.New(os.Stderr, "\033[34m[DEBUG ", log.LstdFlags)
 func (d debugLogging) Printf(format string, args ...interface{}) {
 	if d {
 		debugLog.Printf("]\033[0m "+format, args...)
+	}
+}
+
+type errorLogging bool
+
+var errorLog = log.New(os.Stderr, "\033[31m[ERROR ", log.LstdFlags)
+
+func (d errorLogging) Printf(format string, args ...interface{}) {
+	if d {
+		errorLog.Printf("]\033[0m "+format, args...)
 	}
 }
