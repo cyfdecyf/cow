@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"syscall"
 )
 
 // Lots of the code here are learnt from the http package
@@ -20,10 +21,8 @@ type Proxy struct {
 type clientConn struct {
 	keepAlive bool
 	buf       *bufio.ReadWriter
-	netconn   net.Conn // connection to the proxy client
-	// TODO is it possible that one proxy connection is used to server all the client request?
-	// Make things simple at this moment and disable http request keep-alive
-	// srvconn net.Conn // connection to the server
+	netconn   net.Conn            // connection to the proxy client
+	srvconn   map[string]net.Conn // connection to the server, host:port as key
 }
 
 type ProxyError struct {
@@ -67,7 +66,7 @@ func (py *Proxy) Serve() {
 const bufSize = 4096
 
 func newClientConn(rwc net.Conn) (c *clientConn) {
-	c = &clientConn{netconn: rwc}
+	c = &clientConn{netconn: rwc, srvconn: map[string]net.Conn{}}
 	// http pkg uses io.LimitReader with no limit to create a reader, why?
 	br := bufio.NewReaderSize(rwc, bufSize)
 	bw := bufio.NewWriter(rwc)
@@ -94,7 +93,6 @@ func (c *clientConn) serve() {
 
 	// Refer to implementation.md for the design choices on parsing the request
 	// and response.
-
 	for {
 		if r, err = parseRequest(c.buf.Reader); err != nil {
 			// io.EOF means the client connection is closed
@@ -191,18 +189,50 @@ func (c *clientConn) doConnect(r *Request) (err error) {
 	}()
 
 	err = copyData(srvconn, c.buf.Reader, "client->server")
-	if err != io.EOF {
-		err = newProxyError("doConnect:", err)
-	}
 
 	// wait goroutine finish
 	err2 := <-errchan
 	if err2 != io.EOF {
-		err = newProxyError(" "+err.Error(), err2)
+		return err2
 	}
 	if err == io.EOF {
 		err = nil
 	}
+	return
+}
+
+func (c *clientConn) getConnection(host string) (srvconn net.Conn, err error) {
+	// Must declare ok outside of if statement. Using short variable declarations
+	// will create local variable to the if statement.
+	var ok bool
+	if srvconn, ok = c.srvconn[host]; !ok {
+		srvconn, err = net.Dial("tcp", host)
+		if err != nil {
+			// TODO Find a way report no host error to client. Send back web page?
+			// It's weird here, sometimes nslookup can finding host, but net.Dial
+			// can't
+			errl.Printf("Connecting to: %s %v\n", host, err)
+			return nil, err
+		}
+		debug.Printf("Connected to %s\n", host)
+		c.srvconn[host] = srvconn
+
+		// start goroutine to send response to client
+		go func() {
+			// TODO this is a place to detect blocked sites
+			err := copyData(c.netconn, bufio.NewReader(srvconn), "doRequest server->client")
+			if err != nil {
+				errl.Printf("%v\n", err)
+			}
+			c.removeConnection(host)
+		}()
+	}
+	return
+}
+
+func (c *clientConn) removeConnection(host string) (err error) {
+	err = c.srvconn[host].Close()
+	delete(c.srvconn, host)
 	return
 }
 
@@ -212,35 +242,36 @@ func (c *clientConn) doRequest(r *Request) (err error) {
 	if !hostHasPort(host) {
 		host += ":80"
 	}
-	srvconn, err := net.Dial("tcp", host)
-	if err != nil {
-		// TODO Find a way report no host error to client. Send back web page?
-		// It's weird here, sometimes nslookup can finding host, but net.Dial
-		// can't
-		return newProxyError("Connecting to: "+host, err)
-	}
-	debug.Printf("Connected to %s\n", r.URL.Host)
 
-	// Send request to the server
-	if _, err = srvconn.Write(r.raw.Bytes()); err != nil {
+RETRY:
+	srvconn, err := c.getConnection(host)
+	if err != nil {
 		return
 	}
+	// Send request to the server
+	if _, err = srvconn.Write(r.raw.Bytes()); err != nil {
+		// The srv connection maybe already closed.
+		// Need to delete the connection and reconnect in that case.
+		errl.Printf("writing to connection error: %v\n", err)
+		if err == syscall.EPIPE {
+			c.removeConnection(host)
+			goto RETRY
+		} else {
+			return err
+		}
+	}
+
 	// Send request body
 	if r.Method == "POST" {
 		if err = sendBody(bufio.NewWriter(srvconn), c.buf.Reader, r.Chunking, r.ContLen); err != nil {
-			return newProxyError("Sending request body", err)
+			errl.Printf("Sending request body: %v\n", err)
+			return err
 		}
 	}
 
-	// Read server reply
-	srvReader := bufio.NewReader(srvconn)
-	go func() {
-		err := copyData(c.netconn, srvReader, "doRequest server->client")
-		if err != nil {
-			info.Println(err)
-		}
-		srvconn.Close()
-	}()
+	// Read server reply is handled in the goroutine started when creating the
+	// server connection
+
 	// The original response parsing code.
 	/*
 		rp, err := parseResponse(srvReader, r.Method)

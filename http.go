@@ -29,8 +29,10 @@ type Request struct {
 func (r *Request) String() (s string) {
 	s = fmt.Sprintf("[Request] %s %s%s", r.Method,
 		r.URL.Host, r.URL.Path)
-	if debug {
+	if false {
 		s += fmt.Sprintf("\n%v", r.raw.String())
+	} else {
+		s += fmt.Sprintln()
 	}
 	return
 }
@@ -212,6 +214,7 @@ func drainHeader(reader *bufio.Reader) (err error) {
 // Parse the initial line and header, does not touch body
 func parseRequest(reader *bufio.Reader) (r *Request, err error) {
 	r = new(Request)
+	r.KeepAlive = true
 	r.ContLen = -1
 	var s string
 
@@ -257,8 +260,7 @@ func (r *Request) genRequestLine() {
 	r.raw.WriteString(r.URL.Path)
 	r.raw.WriteString(" ")
 	r.raw.WriteString("HTTP/1.1\r\n")
-	// TODO Set this to Keep-Alive after supporting HTTP/1.1 persistent connection
-	r.raw.WriteString("Connection: close\r\n")
+	r.raw.WriteString("Connection: Keep-Alive\r\n")
 }
 
 var crlfBuf = make([]byte, 2)
