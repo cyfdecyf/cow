@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"fmt"
 	"io"
 	"log"
 	"net"
@@ -23,16 +22,6 @@ type clientConn struct {
 	buf       *bufio.ReadWriter
 	netconn   net.Conn            // connection to the proxy client
 	srvconn   map[string]net.Conn // connection to the server, host:port as key
-}
-
-type ProxyError struct {
-	msg string
-}
-
-func (pe *ProxyError) Error() string { return pe.msg }
-
-func newProxyError(msg string, err error) *ProxyError {
-	return &ProxyError{fmt.Sprint(msg, err)}
 }
 
 func NewProxy(addr string) (proxy *Proxy) {
@@ -97,7 +86,7 @@ func (c *clientConn) serve() {
 		if r, err = parseRequest(c.buf.Reader); err != nil {
 			// io.EOF means the client connection is closed
 			if err != io.EOF {
-				log.Println("Reading client request", err)
+				errl.Printf("Reading client request: %v\n", err)
 			}
 			return
 		}
@@ -108,20 +97,16 @@ func (c *clientConn) serve() {
 		}
 
 		if r.isConnect {
-			err = c.doConnect(r)
-			if err != nil {
-				log.Println(err)
+			if err = c.doConnect(r); err != nil {
+				errl.Printf("Doing connect: %v\n", err)
 			}
 			return
 		}
 
-		// TODO Need to do the request in a goroutine to support pipelining?
-		// If so, how to maintain the order of finishing request?
-		// Consider pipelining later as this is just performance improvement.
 		if err = c.doRequest(r); err != nil {
-			log.Println("Doing request:", r.Method, r.URL, err)
+			errl.Printf("Doing request: %s %s %v\n", r.Method, r.URL, err)
 			// TODO Should server connection error close client connection?
-			// Possible error:
+			// Possible error here:
 			// 1. the proxy can't find the host
 			// 2. broken pipe to the client
 			break
@@ -152,11 +137,13 @@ func copyData(dst net.Conn, src *bufio.Reader, dbgmsg string) (err error) {
 	for err == nil {
 		n, err := src.Read(buf)
 		if err != nil && err != io.EOF {
-			return newProxyError(dbgmsg+" reading data", err)
+			errl.Printf("%s reading data: %v\n", dbgmsg, err)
+			return err
 		}
 		_, err = dst.Write(buf[0:n])
 		if err != nil {
-			err = newProxyError(dbgmsg+" writing data", err)
+			errl.Printf("%s writing data: %v\n", dbgmsg, err)
+			return err
 		}
 	}
 	return
@@ -170,7 +157,8 @@ func (c *clientConn) doConnect(r *Request) (err error) {
 	srvconn, err := net.Dial("tcp", host)
 	if err != nil {
 		// TODO how to respond error connection?
-		return newProxyError("doConnect Connecting to: "+host, err)
+		errl.Printf("doConnect Connecting to: %s %v\n", host, err)
+		return err
 	}
 	// defer must come after error checking because srvconn maybe null in case of error
 	defer srvconn.Close()
@@ -281,7 +269,8 @@ RETRY:
 		c.buf.WriteString(rp.raw.String())
 		// Flush response header to the client ASAP
 		if err = c.buf.Flush(); err != nil {
-			return newProxyError("Flushing response header to client", err)
+			errl.Printf("Flushing response header to client: %v\n", err)
+			return err
 		}
 
 		// Wrap inside if to avoid function argument evaluation. Would this work?
@@ -309,7 +298,8 @@ func sendBodyWithContLen(w *bufio.Writer, r *bufio.Reader, contLen int64) (err e
 	// the connection is closed, return will propagate till serv function and
 	// close client connection.
 	if _, err = io.CopyN(w, r, contLen); err != nil {
-		return newProxyError("Sending response body to client", err)
+		errl.Printf("Sending response body to client %v\n", err)
+		return err
 	}
 	return
 }
@@ -322,13 +312,15 @@ func sendBodyChunked(w *bufio.Writer, r *bufio.Reader) (err error) {
 		var s string
 		// Read chunk size line, ignore chunk extension if any
 		if s, err = ReadLine(r); err != nil {
-			return newProxyError("Reading chunk size", err)
+			errl.Printf("Reading chunk size: %v\n", err)
+			return err
 		}
 		// debug.Printf("chunk size line %s", s)
 		f := strings.SplitN(s, ";", 2)
 		var size int64
 		if size, err = strconv.ParseInt(f[0], 16, 64); err != nil {
-			return newProxyError("Chunk size not valid", err)
+			errl.Printf("Chunk size not valid: %v\n", err)
+			return err
 		}
 		w.WriteString(s)
 		w.WriteString("\r\n")
@@ -339,7 +331,8 @@ func sendBodyChunked(w *bufio.Writer, r *bufio.Reader) (err error) {
 
 		// Read chunk data and send to client
 		if _, err = io.CopyN(w, r, size); err != nil {
-			return newProxyError("Reading chunked data from server", err)
+			errl.Printf("Reading chunked data from server: %v\n", err)
+			return err
 		}
 	END:
 		// XXX maybe this kind of error handling should be passed to the
@@ -347,7 +340,8 @@ func sendBodyChunked(w *bufio.Writer, r *bufio.Reader) (err error) {
 		// server, the only way to avoid blocked reading is to set read time
 		// out on server connection. Would that be easier?
 		if err = readCheckCRLF(r); err != nil {
-			return newProxyError("Reading chunked data CRLF", err)
+			errl.Printf("Reading chunked data CRLF: %v\n", err)
+			return err
 		}
 		w.WriteString("\r\n")
 	}
@@ -369,7 +363,8 @@ func sendBody(w *bufio.Writer, r *bufio.Reader, chunk bool, contLen int64) (err 
 	}
 
 	if err = w.Flush(); err != nil {
-		return newProxyError("Flushing body to client", err)
+		errl.Printf("Flushing body to client %v\n", err)
+		return err
 	}
 	return
 }
