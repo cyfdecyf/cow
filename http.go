@@ -32,8 +32,6 @@ func (r *Request) String() (s string) {
 		r.URL.Host, r.URL.Path)
 	if false {
 		s += fmt.Sprintf("\n%v", r.raw.String())
-	} else {
-		s += fmt.Sprintln()
 	}
 	return
 }

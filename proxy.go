@@ -17,16 +17,33 @@ type Proxy struct {
 	addr string // listen address
 }
 
-type clientConn struct {
-	keepAlive bool
-	buf       *bufio.ReadWriter
-	netconn   net.Conn            // connection to the proxy client
-	srvconn   map[string]net.Conn // connection to the server, host:port as key
+type Handler interface {
+	ServeRequest(*Request, *clientConn) error
+	Close() error
 }
 
-func NewProxy(addr string) (proxy *Proxy) {
-	proxy = &Proxy{addr: addr}
-	return
+type directHandler struct {
+	net.Conn
+}
+
+type clientConn struct {
+	buf     *bufio.ReadWriter
+	conn    net.Conn           // connection to the proxy client
+	handler map[string]Handler // request handler, host:port as key
+}
+
+type proxyError string
+
+func (e proxyError) Error() string {
+	return string(e)
+}
+
+var (
+	errPIPE = proxyError("Error: broken pipe")
+)
+
+func NewProxy(addr string) *Proxy {
+	return &Proxy{addr: addr}
 }
 
 func (py *Proxy) Serve() {
@@ -55,7 +72,7 @@ func (py *Proxy) Serve() {
 const bufSize = 4096
 
 func newClientConn(rwc net.Conn) (c *clientConn) {
-	c = &clientConn{netconn: rwc, srvconn: map[string]net.Conn{}}
+	c = &clientConn{conn: rwc, handler: map[string]Handler{}}
 	// http pkg uses io.LimitReader with no limit to create a reader, why?
 	br := bufio.NewReaderSize(rwc, bufSize)
 	bw := bufio.NewWriter(rwc)
@@ -68,10 +85,10 @@ func (c *clientConn) close() {
 		c.buf.Flush()
 		c.buf = nil
 	}
-	if c.netconn != nil {
-		info.Printf("Client %v connection closed\n", c.netconn.RemoteAddr())
-		c.netconn.Close()
-		c.netconn = nil
+	if c.conn != nil {
+		info.Printf("Client %v connection closed\n", c.conn.RemoteAddr())
+		c.conn.Close()
+		c.conn = nil
 	}
 }
 
@@ -79,6 +96,7 @@ func (c *clientConn) serve() {
 	defer c.close()
 	var r *Request
 	var err error
+	var handler Handler
 
 	// Refer to implementation.md for the design choices on parsing the request
 	// and response.
@@ -91,25 +109,27 @@ func (c *clientConn) serve() {
 			return
 		}
 		if debug {
-			debug.Printf("%v", r)
+			debug.Printf("%v\n", r)
 		} else {
 			info.Println(r)
 		}
 
-		if r.isConnect {
-			if err = c.doConnect(r); err != nil {
-				errl.Printf("Doing connect: %v\n", err)
-			}
-			return
+	RETRY:
+		if handler, err = c.getHandler(r); err == nil {
+			err = handler.ServeRequest(r, c)
 		}
 
-		if err = c.doRequest(r); err != nil {
-			errl.Printf("Doing request: %s %s %v\n", r.Method, r.URL, err)
-			// TODO Should server connection error close client connection?
+		if err != nil {
+			c.removeHandler(r)
+			if err == errPIPE {
+				debug.Printf("Retrying request %v\n", r)
+				goto RETRY
+			}
+			// TODO not all error should end the client connection
 			// Possible error here:
 			// 1. the proxy can't find the host
 			// 2. broken pipe to the client
-			break
+			return
 		}
 
 		// How to detect closed client connection?
@@ -152,34 +172,92 @@ func copyData(dst net.Conn, src *bufio.Reader, dbgmsg string) (err error) {
 	return
 }
 
-func (c *clientConn) doConnect(r *Request) (err error) {
+func (c *clientConn) getHandler(r *Request) (handler Handler, err error) {
+	handler, ok := c.handler[r.URL.Host]
+	// create different handler based on whether the request is blocked by [GFW] 
+	if !ok {
+		return c.createDirectHandler(r)
+	}
+	return
+}
+
+func (c *clientConn) createDirectHandler(r *Request) (handler Handler, err error) {
+	var srvconn net.Conn
 	host := r.URL.Host
-	if !hostHasPort(host) {
+	if !hostHasPort(r.URL.Host) {
 		host += ":80"
 	}
-	srvconn, err := net.Dial("tcp", host)
+	if srvconn, err = net.Dial("tcp", host); err != nil {
+		// TODO Find a way report no host error to client. Send back web page?
+		// Time out is very likely to be caused by [GFW]
+		errl.Printf("Connecting to: %s %v\n", r.URL.Host, err)
+		return nil, err
+	}
+	debug.Printf("Connected to %s\n", r.URL.Host)
+	handler = &directHandler{srvconn}
+	if r.isConnect {
+		// Don't put connection for CONNECT method for reuse
+		return
+	}
+	c.handler[r.URL.Host] = handler
+	// start goroutine to send response to client
+	go func() {
+		// TODO this is a place to detect [GFW] blocked site
+		copyData(c.conn, bufio.NewReader(srvconn), "getHandler doRequest server->client")
+		// XXX It's possbile that request is being sent through the connection
+		// when we try to remove it. Is there possible error here? The sending
+		// side will discover closed connection, so maybe not a big problem.
+		c.removeHandler(r)
+	}()
+	return
+}
+
+func (c *clientConn) removeHandler(r *Request) (err error) {
+	handler, ok := c.handler[r.URL.Host]
+	delete(c.handler, r.URL.Host)
+	if ok {
+		handler.Close()
+	}
+	return
+}
+
+// Serve client request directly (without using any parent proxy)
+func (srvconn *directHandler) ServeRequest(r *Request, c *clientConn) (err error) {
+	if r.isConnect {
+		if err = srvconn.doConnect(r, c); err != nil {
+			errl.Printf("Doing connect: %v\n", err)
+		}
+		return
+	}
+
+	if err = srvconn.doRequest(r, c); err != nil {
+		errl.Printf("Doing request: %s %s %v\n", r.Method, r.URL, err)
+		return
+	}
+	return
+}
+
+var connEstablished = []byte("HTTP/1.0 200 Connection established\r\nProxy-agent: cow-proxy/0.1\r\n\r\n")
+
+func (srvconn *directHandler) doConnect(r *Request, c *clientConn) (err error) {
+	defer srvconn.Close()
+	debug.Printf("Sending 200 Connection established to %s client\n", r.URL.Host)
+	_, err = c.conn.Write(connEstablished)
 	if err != nil {
-		// TODO how to respond error connection?
-		errl.Printf("doConnect Connecting to: %s %v\n", host, err)
+		errl.Printf("Error sending 200 Connecion established\n")
 		return err
 	}
-	// defer must come after error checking because srvconn maybe null in case of error
-	defer srvconn.Close()
-	debug.Printf("Connected to %s Sending 200 Connection established to client\n", host)
-	// TODO Send response to client
-	c.buf.WriteString("HTTP/1.0 200 Connection established\r\nProxy-agent: cow-proxy/0.1\r\n\r\n")
-	c.buf.Writer.Flush()
 
 	errchan := make(chan error)
 	// Must wait this goroutine finish before returning from this function.
 	// Otherwise, the server/client may have been closed and thus cause nil
 	// pointer deference
 	go func() {
-		err := copyData(c.netconn, bufio.NewReaderSize(srvconn, bufSize), "server->client")
+		err := copyData(c.conn, bufio.NewReaderSize(srvconn, bufSize), "doConnect server->client")
 		errchan <- err
 	}()
 
-	err = copyData(srvconn, c.buf.Reader, "client->server")
+	err = copyData(srvconn, c.buf.Reader, "doConnect client->server")
 
 	// wait goroutine finish
 	err2 := <-errchan
@@ -192,61 +270,14 @@ func (c *clientConn) doConnect(r *Request) (err error) {
 	return
 }
 
-func (c *clientConn) getConnection(host string) (srvconn net.Conn, err error) {
-	// Must declare ok outside of if statement. Using short variable declarations
-	// will create local variable to the if statement.
-	var ok bool
-	if srvconn, ok = c.srvconn[host]; !ok {
-		srvconn, err = net.Dial("tcp", host)
-		if err != nil {
-			// TODO Find a way report no host error to client. Send back web page?
-			// It's weird here, sometimes nslookup can finding host, but net.Dial
-			// can't
-			errl.Printf("Connecting to: %s %v\n", host, err)
-			return nil, err
-		}
-		debug.Printf("Connected to %s\n", host)
-		c.srvconn[host] = srvconn
-
-		// start goroutine to send response to client
-		go func() {
-			// TODO this is a place to detect blocked sites
-			err := copyData(c.netconn, bufio.NewReader(srvconn), "doRequest server->client")
-			if err != nil && err != io.EOF {
-				errl.Printf("getConnection goroutine sending response to client: %v\n", err)
-			}
-			c.removeConnection(host)
-		}()
-	}
-	return
-}
-
-func (c *clientConn) removeConnection(host string) (err error) {
-	err = c.srvconn[host].Close()
-	delete(c.srvconn, host)
-	return
-}
-
-func (c *clientConn) doRequest(r *Request) (err error) {
-	// TODO should reuse connection to implement keep-alive
-	host := r.URL.Host
-	if !hostHasPort(host) {
-		host += ":80"
-	}
-
-RETRY:
-	srvconn, err := c.getConnection(host)
-	if err != nil {
-		return
-	}
+func (srvconn directHandler) doRequest(r *Request, c *clientConn) (err error) {
 	// Send request to the server
 	if _, err = srvconn.Write(r.raw.Bytes()); err != nil {
 		// The srv connection maybe already closed.
 		// Need to delete the connection and reconnect in that case.
 		errl.Printf("writing to connection error: %v\n", err)
 		if err == syscall.EPIPE {
-			c.removeConnection(host)
-			goto RETRY
+			return errPIPE
 		} else {
 			return err
 		}
