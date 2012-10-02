@@ -126,9 +126,6 @@ func (c *clientConn) serve() {
 		if handler, err = c.getHandler(r); err == nil {
 			err = handler.ServeRequest(r, c)
 		}
-		if r.isConnect {
-			return
-		}
 
 		if err != nil {
 			if err == errPIPE {
@@ -241,17 +238,19 @@ func (c *clientConn) createDirectHandler(r *Request) (Handler, error) {
 
 	handler := &directHandler{Conn: srvconn, stop: make(chan bool)}
 	c.handler[r.URL.Host] = handler
-	// start goroutine to send response to client
-	c.handlerGrp.Add(1)
-	go func() {
-		copyData(c.conn, bufio.NewReader(srvconn), handler.stop,
-			"createDirectHandler doRequest server->client")
-		// XXX It's possbile that request is being sent through the connection
-		// when we try to remove it. Is there possible error here? The sending
-		// side will discover closed connection, so not a big problem.
-		c.removeHandler(r)
-		c.handlerGrp.Done()
-	}()
+	if directPassResponse {
+		// start goroutine to send response to client
+		c.handlerGrp.Add(1)
+		go func() {
+			copyData(c.conn, bufio.NewReader(srvconn), handler.stop,
+				"createDirectHandler doRequest server->client")
+			// XXX It's possbile that request is being sent through the connection
+			// when we try to remove it. Is there possible error here? The sending
+			// side will discover closed connection, so not a big problem.
+			c.removeHandler(r)
+			c.handlerGrp.Done()
+		}()
+	}
 	return handler, err
 }
 
@@ -331,8 +330,10 @@ func (srvconn directHandler) doRequest(r *Request, c *clientConn) (err error) {
 	// server connection
 
 	// The original response parsing code.
-	/*
-		rp, err := parseResponse(srvReader, r.Method)
+	if !directPassResponse {
+		srvReader := bufio.NewReader(srvconn)
+		var rp *Response
+		rp, err = parseResponse(srvReader, r.Method)
 		if err != nil {
 			return
 		}
@@ -354,7 +355,8 @@ func (srvconn directHandler) doRequest(r *Request, c *clientConn) (err error) {
 			}
 		}
 		debug.Printf("Finished request %s %s\n", r.Method, r.URL)
-	*/
+	}
+
 	return
 }
 
