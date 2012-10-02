@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"runtime"
 	"runtime/pprof"
 )
 
@@ -29,6 +30,8 @@ func main() {
 			}
 		}()
 	}
+
+	runtime.GOMAXPROCS(2)
 
 	py := NewProxy("localhost:9000")
 	py.Serve()
