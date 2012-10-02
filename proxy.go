@@ -6,8 +6,10 @@ import (
 	"log"
 	"net"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 )
 
@@ -20,16 +22,19 @@ type Proxy struct {
 type Handler interface {
 	ServeRequest(*Request, *clientConn) error
 	Close() error
+	NotifyStop()
 }
 
 type directHandler struct {
 	net.Conn
+	stop chan bool // Used to notify the handler to stop execution
 }
 
 type clientConn struct {
-	buf     *bufio.ReadWriter
-	conn    net.Conn           // connection to the proxy client
-	handler map[string]Handler // request handler, host:port as key
+	buf        *bufio.ReadWriter
+	conn       net.Conn           // connection to the proxy client
+	handler    map[string]Handler // request handler, host:port as key
+	handlerGrp sync.WaitGroup     // Wait all handler to finish before close
 }
 
 type proxyError string
@@ -81,6 +86,10 @@ func newClientConn(rwc net.Conn) (c *clientConn) {
 }
 
 func (c *clientConn) close() {
+	for _, h := range c.handler {
+		h.NotifyStop()
+	}
+	c.handlerGrp.Wait()
 	if c.buf != nil {
 		c.buf.Flush()
 		c.buf = nil
@@ -90,6 +99,7 @@ func (c *clientConn) close() {
 		c.conn.Close()
 		c.conn = nil
 	}
+	runtime.GC()
 }
 
 func (c *clientConn) serve() {
@@ -97,6 +107,8 @@ func (c *clientConn) serve() {
 	var r *Request
 	var err error
 	var handler Handler
+
+	addr := c.conn.RemoteAddr()
 
 	// Refer to implementation.md for the design choices on parsing the request
 	// and response.
@@ -108,20 +120,19 @@ func (c *clientConn) serve() {
 			}
 			return
 		}
-		if debug {
-			debug.Printf("%v\n", r)
-		} else {
-			info.Println(r)
-		}
+		debug.Printf("%v: %v\n", addr, r)
 
 	RETRY:
 		if handler, err = c.getHandler(r); err == nil {
 			err = handler.ServeRequest(r, c)
 		}
+		if r.isConnect {
+			return
+		}
 
 		if err != nil {
-			c.removeHandler(r)
 			if err == errPIPE {
+				c.removeHandler(r)
 				debug.Printf("Retrying request %v\n", r)
 				goto RETRY
 			}
@@ -152,20 +163,48 @@ func (c *clientConn) serve() {
 	}
 }
 
-func copyData(dst net.Conn, src *bufio.Reader, dbgmsg string) (err error) {
+func hasMessage(c chan bool) bool {
+	select {
+	case <-c:
+		return true
+	default:
+		return false
+	}
+	return false
+}
+
+func copyData(dst net.Conn, src *bufio.Reader, stop chan bool, dbgmsg string) (err error) {
 	buf := make([]byte, bufSize)
 	var n int
 	for {
+		if stop != nil && hasMessage(stop) {
+			return
+		}
 		n, err = src.Read(buf)
 		if err != nil {
-			if err != io.EOF {
-				errl.Printf("%s reading data: %v\n", dbgmsg, err)
+			if err == io.EOF {
+				return
 			}
+			if ne, ok := err.(*net.OpError); ok {
+				if ne.Err == syscall.ECONNRESET {
+					return
+				}
+			}
+			errl.Printf("%s read data: %v\n", dbgmsg, err)
+			return
+		}
+
+		if stop != nil && hasMessage(stop) {
 			return
 		}
 		_, err = dst.Write(buf[0:n])
 		if err != nil {
-			errl.Printf("%s writing data: %v\n", dbgmsg, err)
+			if ne, ok := err.(*net.OpError); ok {
+				if ne.Err == syscall.EPIPE {
+					return
+				}
+			}
+			errl.Printf("%s write data: %v\n", dbgmsg, err)
 			return
 		}
 	}
@@ -181,12 +220,13 @@ func (c *clientConn) getHandler(r *Request) (handler Handler, err error) {
 	return
 }
 
-func (c *clientConn) createDirectHandler(r *Request) (handler Handler, err error) {
-	var srvconn net.Conn
+func (c *clientConn) createDirectHandler(r *Request) (Handler, error) {
+	var err error
 	host := r.URL.Host
 	if !hostHasPort(r.URL.Host) {
 		host += ":80"
 	}
+	var srvconn net.Conn
 	if srvconn, err = net.Dial("tcp", host); err != nil {
 		// TODO Find a way report no host error to client. Send back web page?
 		// Time out is very likely to be caused by [GFW]
@@ -194,22 +234,29 @@ func (c *clientConn) createDirectHandler(r *Request) (handler Handler, err error
 		return nil, err
 	}
 	debug.Printf("Connected to %s\n", r.URL.Host)
-	handler = &directHandler{srvconn}
 	if r.isConnect {
 		// Don't put connection for CONNECT method for reuse
-		return
+		return &directHandler{Conn: srvconn}, err
 	}
+
+	handler := &directHandler{Conn: srvconn, stop: make(chan bool)}
 	c.handler[r.URL.Host] = handler
 	// start goroutine to send response to client
+	c.handlerGrp.Add(1)
 	go func() {
-		// TODO this is a place to detect [GFW] blocked site
-		copyData(c.conn, bufio.NewReader(srvconn), "getHandler doRequest server->client")
+		copyData(c.conn, bufio.NewReader(srvconn), handler.stop,
+			"createDirectHandler doRequest server->client")
 		// XXX It's possbile that request is being sent through the connection
 		// when we try to remove it. Is there possible error here? The sending
-		// side will discover closed connection, so maybe not a big problem.
+		// side will discover closed connection, so not a big problem.
 		c.removeHandler(r)
+		c.handlerGrp.Done()
 	}()
-	return
+	return handler, err
+}
+
+func (h *directHandler) NotifyStop() {
+	h.stop <- true
 }
 
 func (c *clientConn) removeHandler(r *Request) (err error) {
@@ -224,24 +271,16 @@ func (c *clientConn) removeHandler(r *Request) (err error) {
 // Serve client request directly (without using any parent proxy)
 func (srvconn *directHandler) ServeRequest(r *Request, c *clientConn) (err error) {
 	if r.isConnect {
-		if err = srvconn.doConnect(r, c); err != nil {
-			errl.Printf("Doing connect: %v\n", err)
-		}
-		return
+		return srvconn.doConnect(r, c)
 	}
-
-	if err = srvconn.doRequest(r, c); err != nil {
-		errl.Printf("Doing request: %s %s %v\n", r.Method, r.URL, err)
-		return
-	}
-	return
+	return srvconn.doRequest(r, c)
 }
 
 var connEstablished = []byte("HTTP/1.0 200 Connection established\r\nProxy-agent: cow-proxy/0.1\r\n\r\n")
 
 func (srvconn *directHandler) doConnect(r *Request, c *clientConn) (err error) {
 	defer srvconn.Close()
-	debug.Printf("Sending 200 Connection established to %s client\n", r.URL.Host)
+	debug.Printf("Sending 200 Connection established to %s\n", r.URL.Host)
 	_, err = c.conn.Write(connEstablished)
 	if err != nil {
 		errl.Printf("Error sending 200 Connecion established\n")
@@ -253,19 +292,16 @@ func (srvconn *directHandler) doConnect(r *Request, c *clientConn) (err error) {
 	// Otherwise, the server/client may have been closed and thus cause nil
 	// pointer deference
 	go func() {
-		err := copyData(c.conn, bufio.NewReaderSize(srvconn, bufSize), "doConnect server->client")
+		err := copyData(c.conn, bufio.NewReaderSize(srvconn, bufSize), nil, "doConnect server->client")
 		errchan <- err
 	}()
 
-	err = copyData(srvconn, c.buf.Reader, "doConnect client->server")
+	err = copyData(srvconn, c.buf.Reader, nil, "doConnect client->server")
 
 	// wait goroutine finish
 	err2 := <-errchan
 	if err2 != io.EOF {
 		return err2
-	}
-	if err == io.EOF {
-		err = nil
 	}
 	return
 }

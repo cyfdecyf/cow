@@ -228,7 +228,6 @@ func parseRequest(reader *bufio.Reader) (r *Request, err error) {
 		// Consume remaining header and just return. Headers are not used for
 		// CONNECT method.
 		r.isConnect = true
-		r.KeepAlive = false
 		err = drainHeader(reader)
 		return
 	}
