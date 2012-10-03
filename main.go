@@ -13,9 +13,6 @@ var c = make(chan os.Signal, 1)
 
 var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
 
-// Whether pass response directly in separate goroutine or parse response
-var directPassResponse = true
-
 func main() {
 	flag.Parse()
 	if *cpuprofile != "" {

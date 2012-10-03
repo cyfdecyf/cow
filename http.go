@@ -103,7 +103,7 @@ func ParseRequestURI(rawurl string) (*URL, error) {
 	if len(f) == 1 {
 		rest = f[0]
 	} else {
-		scheme := f[0]
+		scheme := strings.ToLower(f[0])
 		if scheme != "http" && scheme != "https" {
 			return nil, errors.New(scheme + " protocol not supported")
 		}
@@ -279,7 +279,9 @@ func parseResponse(reader *bufio.Reader, method string) (rp *Response, err error
 	var s string
 START:
 	if s, err = ReadLine(reader); err != nil {
-		errl.Printf("Reading Response status line: %v\n", err)
+		if err != io.EOF {
+			errl.Printf("Reading Response status line: %v\n", err)
+		}
 		return nil, err
 	}
 	var f []string
