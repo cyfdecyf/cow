@@ -22,6 +22,8 @@ Parsing responses allow the proxy to put server connections back to a pool, thus
 
 After supporting `CONNECT`, I realized that I can use a separate goroutine to read HTTP response from the server and pass it directly back to the client. This approach doesn't need to parse response to know when the response ends and then starts to process another request.
 
+**Update: not parsing HTTP response do have some problems.** Refer to section "But response parsing is necessary".
+
 This approach has several implications needs to be considered:
 
 - The proxy doesn't know whether the web server closes the connection by setting the header "Connection: close"
@@ -42,8 +44,14 @@ I choosed not parsing the response because:
   - Need additional goroutine to handle response, so hard to say this definitely has better performance
   - If we are going to support HTTP pipelining, we may still need to handle response in separate goroutine
 
-This choice has great impact on supporting persistent connection. I don't have the time to implement both approaches to compare the effort and performance.
+### But response parsing is necessary ###
 
-Hope this is the right choice.
+I've got a bug in handling HTTP response 302 when not parsing the response.
 
-Even I choose to not parse the request, the code for content-length and chunked encoding parsing will still be necessary because http request handling need these methods.
+When trying to visit "youku.com", it gives a "302" response with "Connection: close". The browser doesn't close the connection and still tries to get more content from the server after seeing the response.
+
+I tried polipo and see it will send back "302" response along with a "Content-Length: 0" to indicate the client that the response has finished.
+
+To add this kind of response editing capability for my proxy, I have to parse HTTP response.
+
+So the current solution is to parse the response in the a separate goroutine, which doesn't require lots of code change against the not parsing approach.
