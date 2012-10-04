@@ -415,7 +415,7 @@ func sendBodyChunked(w *bufio.Writer, r *bufio.Reader) (err error) {
 		// debug.Println("Chunk size line", s)
 		f := strings.SplitN(s, ";", 2)
 		var size int64
-		if size, err = strconv.ParseInt(f[0], 16, 64); err != nil {
+		if size, err = strconv.ParseInt(strings.TrimSpace(f[0]), 16, 64); err != nil {
 			errl.Println("Chunk size not valid:", err)
 			return err
 		}
