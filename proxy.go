@@ -25,9 +25,13 @@ type Handler interface {
 	NotifyStop()
 }
 
+// Number of the simultaneous requests in the pipeline
+const requestNum = 5
+
 type directHandler struct {
 	net.Conn
-	stop chan bool // Used to notify the handler to stop execution
+	stop    chan bool     // Used to notify the handler to stop execution
+	request chan *Request // Pass HTTP method from request reader to response reader
 }
 
 type clientConn struct {
@@ -108,8 +112,6 @@ func (c *clientConn) serve() {
 	var err error
 	var handler Handler
 
-	addr := c.conn.RemoteAddr()
-
 	// Refer to implementation.md for the design choices on parsing the request
 	// and response.
 	for {
@@ -120,7 +122,9 @@ func (c *clientConn) serve() {
 			}
 			return
 		}
-		debug.Printf("%v: %v\n", addr, r)
+		if debug {
+			debug.Printf("[Request] %v %v\n", c.conn.RemoteAddr(), r)
+		}
 
 	RETRY:
 		if handler, err = c.getHandler(r); err == nil {
@@ -129,7 +133,7 @@ func (c *clientConn) serve() {
 
 		if err != nil {
 			if err == errPIPE {
-				c.removeHandler(r)
+				c.removeHandler(r.URL.Host)
 				debug.Printf("Retrying request %v\n", r)
 				goto RETRY
 			}
@@ -160,23 +164,10 @@ func (c *clientConn) serve() {
 	}
 }
 
-func hasMessage(c chan bool) bool {
-	select {
-	case <-c:
-		return true
-	default:
-		return false
-	}
-	return false
-}
-
-func copyData(dst net.Conn, src *bufio.Reader, stop chan bool, dbgmsg string) (err error) {
+func copyData(dst net.Conn, src *bufio.Reader, dbgmsg string) (err error) {
 	buf := make([]byte, bufSize)
 	var n int
 	for {
-		if stop != nil && hasMessage(stop) {
-			return
-		}
 		n, err = src.Read(buf)
 		if err != nil {
 			if err == io.EOF {
@@ -191,9 +182,6 @@ func copyData(dst net.Conn, src *bufio.Reader, stop chan bool, dbgmsg string) (e
 			return
 		}
 
-		if stop != nil && hasMessage(stop) {
-			return
-		}
 		_, err = dst.Write(buf[0:n])
 		if err != nil {
 			if ne, ok := err.(*net.OpError); ok {
@@ -202,6 +190,64 @@ func copyData(dst net.Conn, src *bufio.Reader, stop chan bool, dbgmsg string) (e
 				}
 			}
 			errl.Printf("%s write data: %v\n", dbgmsg, err)
+			return
+		}
+	}
+	return
+}
+
+func hasMessage(c chan bool) bool {
+	select {
+	case <-c:
+		return true
+	default:
+		return false
+	}
+	return false
+}
+
+func (c *clientConn) readResponse(srvReader *bufio.Reader, rCh chan *Request,
+	stop chan bool) (err error) {
+	var rp *Response
+	var r *Request
+	for {
+		if hasMessage(stop) {
+			debug.Printf("readResponse stop requested\n")
+			break
+		}
+		rp, err = parseResponse(srvReader)
+		if err != nil {
+			if err != io.EOF {
+				errl.Printf("%v parseResponse for %v return %v\n", c.conn.RemoteAddr(), r, err)
+			}
+			break
+		}
+
+		c.buf.WriteString(rp.raw.String())
+		// Flush response header to the client ASAP, so closed server
+		// connection can be detected ASAP
+		if err = c.buf.Flush(); err != nil {
+			errl.Printf("Flushing response header to client: %v\n", err)
+			break
+		}
+
+		r = <-rCh // Must come after parseResponse, so 
+		// Wrap inside if to avoid function argument evaluation.
+		if debug {
+			debug.Printf("[Response] %v %s %v %v", c.conn.RemoteAddr(), r.Method, r.URL, rp)
+		}
+
+		if rp.hasBody(r.Method) {
+			if err = sendBody(c.buf.Writer, srvReader, rp.Chunking, rp.ContLen); err != nil {
+				errl.Printf("readResponse sendBody %v\n", err)
+				break
+			}
+		}
+		if debug {
+			debug.Printf("[Finished] %v request %s %s\n", c.conn.RemoteAddr(), r.Method, r.URL)
+		}
+
+		if !rp.KeepAlive {
 			return
 		}
 	}
@@ -236,21 +282,22 @@ func (c *clientConn) createDirectHandler(r *Request) (Handler, error) {
 		return &directHandler{Conn: srvconn}, err
 	}
 
-	handler := &directHandler{Conn: srvconn, stop: make(chan bool)}
+	handler := &directHandler{Conn: srvconn,
+		stop: make(chan bool), request: make(chan *Request, requestNum)}
 	c.handler[r.URL.Host] = handler
-	if directPassResponse {
-		// start goroutine to send response to client
-		c.handlerGrp.Add(1)
-		go func() {
-			copyData(c.conn, bufio.NewReader(srvconn), handler.stop,
-				"createDirectHandler doRequest server->client")
-			// XXX It's possbile that request is being sent through the connection
-			// when we try to remove it. Is there possible error here? The sending
-			// side will discover closed connection, so not a big problem.
-			c.removeHandler(r)
-			c.handlerGrp.Done()
-		}()
-	}
+
+	// start goroutine to send response to client
+	c.handlerGrp.Add(1)
+	go func() {
+		c.readResponse(bufio.NewReader(srvconn), handler.request, handler.stop)
+		// XXX It's possbile that request is being sent through the connection
+		// when we try to remove it. Is there possible error here? The sending
+		// side will discover closed connection, so not a big problem.
+		debug.Printf("Closing srv conn %v\n", srvconn.RemoteAddr())
+		c.removeHandler(r.URL.Host)
+		c.handlerGrp.Done()
+	}()
+
 	return handler, err
 }
 
@@ -258,10 +305,10 @@ func (h *directHandler) NotifyStop() {
 	h.stop <- true
 }
 
-func (c *clientConn) removeHandler(r *Request) (err error) {
-	handler, ok := c.handler[r.URL.Host]
-	delete(c.handler, r.URL.Host)
+func (c *clientConn) removeHandler(host string) (err error) {
+	handler, ok := c.handler[host]
 	if ok {
+		delete(c.handler, host)
 		handler.Close()
 	}
 	return
@@ -279,10 +326,12 @@ var connEstablished = []byte("HTTP/1.0 200 Connection established\r\nProxy-agent
 
 func (srvconn *directHandler) doConnect(r *Request, c *clientConn) (err error) {
 	defer srvconn.Close()
-	debug.Printf("Sending 200 Connection established to %s\n", r.URL.Host)
+	if debug {
+		debug.Printf("%v 200 Connection established to %s\n", c.conn.RemoteAddr(), r.URL.Host)
+	}
 	_, err = c.conn.Write(connEstablished)
 	if err != nil {
-		errl.Printf("Error sending 200 Connecion established\n")
+		errl.Printf("%v Error sending 200 Connecion established\n", c.conn.RemoteAddr())
 		return err
 	}
 
@@ -291,11 +340,11 @@ func (srvconn *directHandler) doConnect(r *Request, c *clientConn) (err error) {
 	// Otherwise, the server/client may have been closed and thus cause nil
 	// pointer deference
 	go func() {
-		err := copyData(c.conn, bufio.NewReaderSize(srvconn, bufSize), nil, "doConnect server->client")
+		err := copyData(c.conn, bufio.NewReaderSize(srvconn, bufSize), "doConnect server->client")
 		errchan <- err
 	}()
 
-	err = copyData(srvconn, c.buf.Reader, nil, "doConnect client->server")
+	err = copyData(srvconn, c.buf.Reader, "doConnect client->server")
 
 	// wait goroutine finish
 	err2 := <-errchan
@@ -328,41 +377,15 @@ func (srvconn directHandler) doRequest(r *Request, c *clientConn) (err error) {
 
 	// Read server reply is handled in the goroutine started when creating the
 	// server connection
-
-	// The original response parsing code.
-	if !directPassResponse {
-		srvReader := bufio.NewReader(srvconn)
-		var rp *Response
-		rp, err = parseResponse(srvReader, r.Method)
-		if err != nil {
-			return
-		}
-		c.buf.WriteString(rp.raw.String())
-		// Flush response header to the client ASAP
-		if err = c.buf.Flush(); err != nil {
-			errl.Printf("Flushing response header to client: %v\n", err)
-			return err
-		}
-
-		// Wrap inside if to avoid function argument evaluation. Would this work?
-		if debug {
-			debug.Printf("[Response] %s %v\n%v", r.Method, r.URL, rp)
-		}
-
-		if rp.HasBody {
-			if err = sendBody(c.buf.Writer, srvReader, rp.Chunking, rp.ContLen); err != nil {
-				return
-			}
-		}
-		debug.Printf("Finished request %s %s\n", r.Method, r.URL)
-	}
+	// Send request method to response read goroutine
+	srvconn.request <- r
 
 	return
 }
 
 // Send response body if header specifies content length
 func sendBodyWithContLen(w *bufio.Writer, r *bufio.Reader, contLen int64) (err error) {
-	debug.Printf("Sending body with content length %d\n", contLen)
+	// debug.Printf("Sending body with content length %d\n", contLen)
 	if contLen == 0 {
 		return
 	}
@@ -380,14 +403,15 @@ func sendBodyWithContLen(w *bufio.Writer, r *bufio.Reader, contLen int64) (err e
 func sendBodyChunked(w *bufio.Writer, r *bufio.Reader) (err error) {
 	debug.Printf("Sending chunked body\n")
 
-	for {
+	done := false
+	for !done {
 		var s string
 		// Read chunk size line, ignore chunk extension if any
 		if s, err = ReadLine(r); err != nil {
 			errl.Printf("Reading chunk size: %v\n", err)
 			return err
 		}
-		// debug.Printf("chunk size line %s", s)
+		// debug.Printf("Chunk size line %s", s)
 		f := strings.SplitN(s, ";", 2)
 		var size int64
 		if size, err = strconv.ParseInt(f[0], 16, 64); err != nil {
@@ -398,15 +422,15 @@ func sendBodyChunked(w *bufio.Writer, r *bufio.Reader) (err error) {
 		w.WriteString("\r\n")
 
 		if size == 0 { // end of chunked data, ignore any trailers
-			goto END
+			done = true
+		} else {
+			// Read chunk data and send to client
+			if _, err = io.CopyN(w, r, size); err != nil {
+				errl.Printf("Reading chunked data from server: %v\n", err)
+				return err
+			}
 		}
 
-		// Read chunk data and send to client
-		if _, err = io.CopyN(w, r, size); err != nil {
-			errl.Printf("Reading chunked data from server: %v\n", err)
-			return err
-		}
-	END:
 		// XXX maybe this kind of error handling should be passed to the
 		// client? But if the proxy doesn't know when to stop reading from the
 		// server, the only way to avoid blocked reading is to set read time
@@ -432,6 +456,10 @@ func sendBody(w *bufio.Writer, r *bufio.Reader, chunk bool, contLen int64) (err 
 		if _, err = io.Copy(w, r); err != nil {
 			return
 		}
+	}
+
+	if err != nil {
+		return
 	}
 
 	if err = w.Flush(); err != nil {

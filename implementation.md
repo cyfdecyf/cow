@@ -55,3 +55,10 @@ I tried polipo and see it will send back "302" response along with a "Content-Le
 To add this kind of response editing capability for my proxy, I have to parse HTTP response.
 
 So the current solution is to parse the response in the a separate goroutine, which doesn't require lots of code change against the not parsing approach.
+
+# Error printing policy #
+
+The goal is **make it easy to find the exact error location**.
+
+- Error should be printed as early as possible
+- If an error happens in a function which will be invoked at multiple places, print the error at the call site
