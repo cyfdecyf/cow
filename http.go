@@ -28,7 +28,7 @@ type Request struct {
 }
 
 func (r *Request) String() (s string) {
-	s = fmt.Sprintf("[Request] %s %s%s", r.Method,
+	s = fmt.Sprintf("%s %s%s", r.Method,
 		r.URL.Host, r.URL.Path)
 	if false {
 		s += fmt.Sprintf("\n%v", r.raw.String())
@@ -37,9 +37,8 @@ func (r *Request) String() (s string) {
 }
 
 type Response struct {
-	Status  string
-	Reason  string
-	HasBody bool
+	Status string
+	Reason string
 
 	Header
 
@@ -47,7 +46,13 @@ type Response struct {
 }
 
 func (rp *Response) String() string {
-	return rp.raw.String()
+	var r string
+	if false {
+		r = rp.raw.String()
+	} else {
+		r = fmt.Sprintf("%s %s", rp.Status, rp.Reason)
+	}
+	return r
 }
 
 type URL struct {
@@ -265,14 +270,16 @@ func readCheckCRLF(reader *bufio.Reader) error {
 }
 
 // If an http response may have message body
-func responseMayHaveBody(method, status string) bool {
+func (rp *Response) hasBody(method string) bool {
 	// when we have tenary search tree, can optimize this a little
-	return !(method == "HEAD" || status == "304" || status == "204" || strings.HasPrefix(status, "1"))
+	return !(method == "HEAD" ||
+		rp.Status == "304" ||
+		rp.Status == "204" ||
+		strings.HasPrefix(rp.Status, "1"))
 }
 
-// Parse response status and headers. The request method is needed to
-// determine if response may have body, also for debugging
-func parseResponse(reader *bufio.Reader, method string) (rp *Response, err error) {
+// Parse response status and headers.
+func parseResponse(reader *bufio.Reader) (rp *Response, err error) {
 	rp = new(Response)
 	rp.ContLen = -1
 
@@ -298,7 +305,6 @@ START:
 	}
 	rp.Status = f[1]
 	rp.Reason = f[2]
-	rp.HasBody = responseMayHaveBody(method, rp.Status)
 
 	rp.raw.WriteString(s)
 	rp.raw.WriteString("\r\n")

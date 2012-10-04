@@ -123,7 +123,7 @@ func (c *clientConn) serve() {
 			return
 		}
 		if debug {
-			debug.Printf("%v: %v\n", c.conn.RemoteAddr(), r)
+			debug.Printf("[Request] %v %v\n", c.conn.RemoteAddr(), r)
 		}
 
 	RETRY:
@@ -133,7 +133,7 @@ func (c *clientConn) serve() {
 
 		if err != nil {
 			if err == errPIPE {
-				c.removeHandler(r)
+				c.removeHandler(r.URL.Host)
 				debug.Printf("Retrying request %v\n", r)
 				goto RETRY
 			}
@@ -206,38 +206,46 @@ func hasMessage(c chan bool) bool {
 	return false
 }
 
-func (c *clientConn) readResponse(srvReader *bufio.Reader, rCh chan *Request, stop chan bool) (err error) {
+func (c *clientConn) readResponse(srvReader *bufio.Reader, rCh chan *Request,
+	stop chan bool) (err error) {
 	var rp *Response
 	var r *Request
 	for {
 		if hasMessage(stop) {
+			debug.Printf("readResponse stop requested\n")
 			break
 		}
-		r = <-rCh
-		rp, err = parseResponse(srvReader, r.Method)
+		rp, err = parseResponse(srvReader)
 		if err != nil {
-			errl.Printf("%v parseResponse for %v return %v\n", c.conn.RemoteAddr(), r, err)
+			if err != io.EOF {
+				errl.Printf("%v parseResponse for %v return %v\n", c.conn.RemoteAddr(), r, err)
+			}
 			break
 		}
 
 		c.buf.WriteString(rp.raw.String())
-		// Flush response header to the client ASAP
+		// Flush response header to the client ASAP, so closed server
+		// connection can be detected ASAP
 		if err = c.buf.Flush(); err != nil {
 			errl.Printf("Flushing response header to client: %v\n", err)
 			break
 		}
 
+		r = <-rCh // Must come after parseResponse, so 
 		// Wrap inside if to avoid function argument evaluation.
 		if debug {
-			debug.Printf("%v [Response] %s %v\n%v", c.conn.RemoteAddr(), r.Method, r.URL, rp)
+			debug.Printf("[Response] %v %s %v %v", c.conn.RemoteAddr(), r.Method, r.URL, rp)
 		}
 
-		if rp.HasBody {
+		if rp.hasBody(r.Method) {
 			if err = sendBody(c.buf.Writer, srvReader, rp.Chunking, rp.ContLen); err != nil {
+				errl.Printf("readResponse sendBody %v\n", err)
 				break
 			}
 		}
-		debug.Printf("Finished request %s %s\n", r.Method, r.URL)
+		if debug {
+			debug.Printf("[Finished] %v request %s %s\n", c.conn.RemoteAddr(), r.Method, r.URL)
+		}
 
 		if !rp.KeepAlive {
 			return
@@ -281,14 +289,12 @@ func (c *clientConn) createDirectHandler(r *Request) (Handler, error) {
 	// start goroutine to send response to client
 	c.handlerGrp.Add(1)
 	go func() {
-		if err := c.readResponse(bufio.NewReader(srvconn), handler.request, handler.stop); err != nil {
-			errl.Printf("readResponse return error %v\n", err)
-		}
+		c.readResponse(bufio.NewReader(srvconn), handler.request, handler.stop)
 		// XXX It's possbile that request is being sent through the connection
 		// when we try to remove it. Is there possible error here? The sending
 		// side will discover closed connection, so not a big problem.
 		debug.Printf("Closing srv conn %v\n", srvconn.RemoteAddr())
-		c.removeHandler(r)
+		c.removeHandler(r.URL.Host)
 		c.handlerGrp.Done()
 	}()
 
@@ -299,10 +305,10 @@ func (h *directHandler) NotifyStop() {
 	h.stop <- true
 }
 
-func (c *clientConn) removeHandler(r *Request) (err error) {
-	handler, ok := c.handler[r.URL.Host]
-	delete(c.handler, r.URL.Host)
+func (c *clientConn) removeHandler(host string) (err error) {
+	handler, ok := c.handler[host]
 	if ok {
+		delete(c.handler, host)
 		handler.Close()
 	}
 	return
@@ -320,10 +326,12 @@ var connEstablished = []byte("HTTP/1.0 200 Connection established\r\nProxy-agent
 
 func (srvconn *directHandler) doConnect(r *Request, c *clientConn) (err error) {
 	defer srvconn.Close()
-	debug.Printf("Sending 200 Connection established to %s\n", r.URL.Host)
+	if debug {
+		debug.Printf("%v 200 Connection established to %s\n", c.conn.RemoteAddr(), r.URL.Host)
+	}
 	_, err = c.conn.Write(connEstablished)
 	if err != nil {
-		errl.Printf("Error sending 200 Connecion established\n")
+		errl.Printf("%v Error sending 200 Connecion established\n", c.conn.RemoteAddr())
 		return err
 	}
 
