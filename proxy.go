@@ -68,7 +68,7 @@ func (py *Proxy) Serve() {
 			info.Println("Client connection:", err)
 			continue
 		}
-		debug.Printf("New Client: %v\n", conn.RemoteAddr())
+		debug.Println("New Client:", conn.RemoteAddr())
 		c := newClientConn(conn)
 		go c.serve()
 	}
@@ -116,7 +116,7 @@ func (c *clientConn) serve() {
 		if r, err = parseRequest(c.buf.Reader); err != nil {
 			// io.EOF means the client connection is closed
 			if err != io.EOF {
-				errl.Printf("Reading client request: %v\n", err)
+				errl.Println("Reading client request:", err)
 			}
 			return
 		}
@@ -132,7 +132,7 @@ func (c *clientConn) serve() {
 		if err != nil {
 			if err == errPIPE {
 				c.removeHandler(r.URL.Host)
-				debug.Printf("Retrying request %v\n", r)
+				debug.Println("Retrying request:", r)
 				goto RETRY
 			}
 			// TODO not all error should end the client connection
@@ -210,7 +210,7 @@ func (c *clientConn) readResponse(srvReader *bufio.Reader, rCh chan *Request,
 	var r *Request
 	for {
 		if hasMessage(stop) {
-			debug.Printf("readResponse stop requested\n")
+			debug.Println("readResponse stop requested")
 			break
 		}
 		rp, err = parseResponse(srvReader)
@@ -226,7 +226,7 @@ func (c *clientConn) readResponse(srvReader *bufio.Reader, rCh chan *Request,
 		// Flush response header to the client ASAP, so closed server
 		// connection can be detected ASAP
 		if err = c.buf.Flush(); err != nil {
-			errl.Printf("Flushing response header to client: %v\n", err)
+			errl.Println("Flushing response header to client:", err)
 			break
 		}
 
@@ -238,7 +238,7 @@ func (c *clientConn) readResponse(srvReader *bufio.Reader, rCh chan *Request,
 
 		if rp.hasBody(r.Method) {
 			if err = sendBody(c.buf.Writer, srvReader, rp.Chunking, rp.ContLen); err != nil {
-				errl.Printf("readResponse sendBody %v\n", err)
+				errl.Println("readResponse sendBody:", err)
 				break
 			}
 		}
@@ -277,7 +277,7 @@ func (c *clientConn) createDirectHandler(r *Request) (Handler, error) {
 		errl.Printf("Connecting to: %s %v\n", r.URL.Host, err)
 		return nil, err
 	}
-	debug.Printf("Connected to %s\n", r.URL.Host)
+	debug.Println("Connected to", r.URL.Host)
 	if r.isConnect {
 		// Don't put connection for CONNECT method for reuse
 		return &directHandler{Conn: srvconn}, err
@@ -294,7 +294,7 @@ func (c *clientConn) createDirectHandler(r *Request) (Handler, error) {
 		// XXX It's possbile that request is being sent through the connection
 		// when we try to remove it. Is there possible error here? The sending
 		// side will discover closed connection, so not a big problem.
-		debug.Printf("Closing srv conn %v\n", srvconn.RemoteAddr())
+		debug.Println("Closing srv conn", srvconn.RemoteAddr())
 		c.removeHandler(r.URL.Host)
 		c.handlerGrp.Done()
 	}()
@@ -360,7 +360,7 @@ func (srvconn directHandler) doRequest(r *Request, c *clientConn) (err error) {
 	if _, err = srvconn.Write(r.raw.Bytes()); err != nil {
 		// The srv connection maybe already closed.
 		// Need to delete the connection and reconnect in that case.
-		errl.Printf("writing to connection error: %v\n", err)
+		errl.Println("writing to connection error:", err)
 		if err == syscall.EPIPE {
 			return errPIPE
 		} else {
@@ -371,7 +371,7 @@ func (srvconn directHandler) doRequest(r *Request, c *clientConn) (err error) {
 	// Send request body
 	if r.Method == "POST" {
 		if err = sendBody(bufio.NewWriter(srvconn), c.buf.Reader, r.Chunking, r.ContLen); err != nil {
-			errl.Printf("Sending request body: %v\n", err)
+			errl.Println("Sending request body:", err)
 			return err
 		}
 	}
@@ -386,7 +386,7 @@ func (srvconn directHandler) doRequest(r *Request, c *clientConn) (err error) {
 
 // Send response body if header specifies content length
 func sendBodyWithContLen(w *bufio.Writer, r *bufio.Reader, contLen int64) (err error) {
-	// debug.Printf("Sending body with content length %d\n", contLen)
+	// debug.Println("Sending body with content length", contLen)
 	if contLen == 0 {
 		return
 	}
@@ -394,7 +394,7 @@ func sendBodyWithContLen(w *bufio.Writer, r *bufio.Reader, contLen int64) (err e
 	// the connection is closed, return will propagate till serv function and
 	// close client connection.
 	if _, err = io.CopyN(w, r, contLen); err != nil {
-		errl.Printf("Sending response body to client %v\n", err)
+		errl.Println("Sending response body to client", err)
 		return err
 	}
 	return
@@ -402,21 +402,21 @@ func sendBodyWithContLen(w *bufio.Writer, r *bufio.Reader, contLen int64) (err e
 
 // Send response body if header specifies chunked encoding
 func sendBodyChunked(w *bufio.Writer, r *bufio.Reader) (err error) {
-	// debug.Printf("Sending chunked body\n")
+	// debug.Println("Sending chunked body")
 
 	done := false
 	for !done {
 		var s string
 		// Read chunk size line, ignore chunk extension if any
 		if s, err = ReadLine(r); err != nil {
-			errl.Printf("Reading chunk size: %v\n", err)
+			errl.Println("Reading chunk size:", err)
 			return err
 		}
-		// debug.Printf("Chunk size line %s", s)
+		// debug.Println("Chunk size line", s)
 		f := strings.SplitN(s, ";", 2)
 		var size int64
 		if size, err = strconv.ParseInt(f[0], 16, 64); err != nil {
-			errl.Printf("Chunk size not valid: %v\n", err)
+			errl.Println("Chunk size not valid:", err)
 			return err
 		}
 		w.WriteString(s)
@@ -427,7 +427,7 @@ func sendBodyChunked(w *bufio.Writer, r *bufio.Reader) (err error) {
 		} else {
 			// Read chunk data and send to client
 			if _, err = io.CopyN(w, r, size); err != nil {
-				errl.Printf("Reading chunked data from server: %v\n", err)
+				errl.Println("Reading chunked data from server:", err)
 				return err
 			}
 		}
@@ -437,7 +437,7 @@ func sendBodyChunked(w *bufio.Writer, r *bufio.Reader) (err error) {
 		// server, the only way to avoid blocked reading is to set read time
 		// out on server connection. Would that be easier?
 		if err = readCheckCRLF(r); err != nil {
-			errl.Printf("Reading chunked data CRLF: %v\n", err)
+			errl.Println("Reading chunked data CRLF:", err)
 			return err
 		}
 		w.WriteString("\r\n")
@@ -464,7 +464,7 @@ func sendBody(w *bufio.Writer, r *bufio.Reader, chunk bool, contLen int64) (err 
 	}
 
 	if err = w.Flush(); err != nil {
-		errl.Printf("Flushing body to client %v\n", err)
+		errl.Println("Flushing body to client:", err)
 		return err
 	}
 	return

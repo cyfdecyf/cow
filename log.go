@@ -10,18 +10,41 @@ import (
 	"os"
 )
 
-const info infoLogging = true
-const debug debugLogging = true
-const errl errorLogging = true
-
-const dbgRq requestLogging = true
-const dbgRep responseLogging = true
-
 // Currently only controls whether request/response should be all printed
-const verbose = false
+const (
+	verbose  = false
+	colorize = true
+)
 
-// info logging
 type infoLogging bool
+type debugLogging bool
+type errorLogging bool
+type requestLogging bool
+type responseLogging bool
+
+const (
+	info   infoLogging     = true
+	debug  debugLogging    = true
+	errl   errorLogging    = true
+	dbgRq  requestLogging  = true
+	dbgRep responseLogging = true
+)
+
+var (
+	errorLog    = log.New(os.Stderr, "\033[31m[Error ]\033[0m ", log.LstdFlags)
+	debugLog    = log.New(os.Stderr, "\033[34m[Debug ]\033[0m ", log.LstdFlags)
+	requestLog  = log.New(os.Stderr, "\033[32m[Rqst  ]\033[0m ", log.LstdFlags)
+	responseLog = log.New(os.Stderr, "\033[33m[Rpns  ]\033[0m ", log.LstdFlags)
+)
+
+func init() {
+	if !colorize {
+		errorLog = log.New(os.Stderr, "[ERROR ] ", log.LstdFlags)
+		debugLog = log.New(os.Stderr, "[DEBUG ] ", log.LstdFlags)
+		requestLog = log.New(os.Stderr, "[Rqst  ] ", log.LstdFlags)
+		responseLog = log.New(os.Stderr, "[Rpns  ] ", log.LstdFlags)
+	}
+}
 
 func (d infoLogging) Printf(format string, args ...interface{}) {
 	if d {
@@ -35,46 +58,38 @@ func (d infoLogging) Println(args ...interface{}) {
 	}
 }
 
-// debug logging
-type debugLogging bool
-
-var debugLog = log.New(os.Stderr, "\033[34m[DEBUG   ", log.LstdFlags)
-
 func (d debugLogging) Printf(format string, args ...interface{}) {
 	if d {
-		debugLog.Printf("]\033[0m "+format, args...)
+		debugLog.Printf(format, args...)
 	}
 }
 
-// error logging
-type errorLogging bool
-
-var errorLog = log.New(os.Stderr, "\033[31m[ERROR ", log.LstdFlags)
+func (d debugLogging) Println(args ...interface{}) {
+	if d {
+		debugLog.Println(args...)
+	}
+}
 
 func (d errorLogging) Printf(format string, args ...interface{}) {
 	if d {
-		errorLog.Printf("]\033[0m "+format, args...)
+		errorLog.Printf(format, args...)
 	}
 }
 
-// request logging
-type requestLogging bool
-
-var requestLog = log.New(os.Stderr, "\033[32m[Request ", log.LstdFlags)
+func (d errorLogging) Println(args ...interface{}) {
+	if d {
+		errorLog.Println(args...)
+	}
+}
 
 func (d requestLogging) Printf(format string, args ...interface{}) {
 	if d {
-		requestLog.Printf("]\033[0m "+format, args...)
+		requestLog.Printf(format, args...)
 	}
 }
 
-// response logging
-type responseLogging bool
-
-var responseLog = log.New(os.Stderr, "\033[33m[Reponse ", log.LstdFlags)
-
 func (d responseLogging) Printf(format string, args ...interface{}) {
 	if d {
-		responseLog.Printf("]\033[0m "+format, args...)
+		responseLog.Printf(format, args...)
 	}
 }
