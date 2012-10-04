@@ -170,9 +170,15 @@ func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, addHeader 
 			return
 		}
 		if s == "" {
+			// Connection close, no content length specification
+			// Add content-length 0 to indicate end of response
+			if !h.KeepAlive && !h.Chunking && h.ContLen == -1 {
+				raw.WriteString("Content-Length: 0\r\n")
+			}
+
 			raw.WriteString(addHeader)
 			raw.WriteString("\r\n")
-			break
+			return
 		}
 		if name, val, err = splitHeader(s); err != nil {
 			return

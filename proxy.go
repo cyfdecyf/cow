@@ -204,8 +204,7 @@ func hasMessage(c chan bool) bool {
 	return false
 }
 
-func (c *clientConn) readResponse(srvReader *bufio.Reader, rCh chan *Request,
-	stop chan bool) (err error) {
+func (c *clientConn) readResponse(srvReader *bufio.Reader, rCh chan *Request, stop chan bool) (err error) {
 	var rp *Response
 	var r *Request
 	for {
