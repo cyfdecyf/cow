@@ -30,7 +30,7 @@ type Request struct {
 func (r *Request) String() (s string) {
 	s = fmt.Sprintf("%s %s%s", r.Method,
 		r.URL.Host, r.URL.Path)
-	if false {
+	if verbose {
 		s += fmt.Sprintf("\n%v", r.raw.String())
 	}
 	return
@@ -47,7 +47,7 @@ type Response struct {
 
 func (rp *Response) String() string {
 	var r string
-	if false {
+	if verbose {
 		r = rp.raw.String()
 	} else {
 		r = fmt.Sprintf("%s %s", rp.Status, rp.Reason)

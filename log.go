@@ -14,6 +14,13 @@ const info infoLogging = true
 const debug debugLogging = true
 const errl errorLogging = true
 
+const dbgRq requestLogging = true
+const dbgRep responseLogging = true
+
+// Currently only controls whether request/response should be all printed
+const verbose = false
+
+// info logging
 type infoLogging bool
 
 func (d infoLogging) Printf(format string, args ...interface{}) {
@@ -31,7 +38,7 @@ func (d infoLogging) Println(args ...interface{}) {
 // debug logging
 type debugLogging bool
 
-var debugLog = log.New(os.Stderr, "\033[34m[DEBUG ", log.LstdFlags)
+var debugLog = log.New(os.Stderr, "\033[34m[DEBUG   ", log.LstdFlags)
 
 func (d debugLogging) Printf(format string, args ...interface{}) {
 	if d {
@@ -39,6 +46,7 @@ func (d debugLogging) Printf(format string, args ...interface{}) {
 	}
 }
 
+// error logging
 type errorLogging bool
 
 var errorLog = log.New(os.Stderr, "\033[31m[ERROR ", log.LstdFlags)
@@ -46,5 +54,27 @@ var errorLog = log.New(os.Stderr, "\033[31m[ERROR ", log.LstdFlags)
 func (d errorLogging) Printf(format string, args ...interface{}) {
 	if d {
 		errorLog.Printf("]\033[0m "+format, args...)
+	}
+}
+
+// request logging
+type requestLogging bool
+
+var requestLog = log.New(os.Stderr, "\033[32m[Request ", log.LstdFlags)
+
+func (d requestLogging) Printf(format string, args ...interface{}) {
+	if d {
+		requestLog.Printf("]\033[0m "+format, args...)
+	}
+}
+
+// response logging
+type responseLogging bool
+
+var responseLog = log.New(os.Stderr, "\033[33m[Reponse ", log.LstdFlags)
+
+func (d responseLogging) Printf(format string, args ...interface{}) {
+	if d {
+		responseLog.Printf("]\033[0m "+format, args...)
 	}
 }

@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"io"
-	"log"
 	"net"
 	"os"
 	"runtime"
@@ -58,7 +57,7 @@ func NewProxy(addr string) *Proxy {
 func (py *Proxy) Serve() {
 	ln, err := net.Listen("tcp", py.addr)
 	if err != nil {
-		log.Println("Server creation failed:", err)
+		info.Println("Server creation failed:", err)
 		os.Exit(1)
 	}
 	info.Println("COW proxy listening", py.addr)
@@ -66,11 +65,10 @@ func (py *Proxy) Serve() {
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
-			log.Println("Client connection:", err)
+			info.Println("Client connection:", err)
 			continue
 		}
-		info.Println("New Client:", conn.RemoteAddr())
-
+		debug.Printf("New Client: %v\n", conn.RemoteAddr())
 		c := newClientConn(conn)
 		go c.serve()
 	}
@@ -122,8 +120,8 @@ func (c *clientConn) serve() {
 			}
 			return
 		}
-		if debug {
-			debug.Printf("[Request] %v %v\n", c.conn.RemoteAddr(), r)
+		if dbgRq {
+			dbgRq.Printf("%v %v\n", c.conn.RemoteAddr(), r)
 		}
 
 	RETRY:
@@ -220,6 +218,7 @@ func (c *clientConn) readResponse(srvReader *bufio.Reader, rCh chan *Request,
 			if err != io.EOF {
 				errl.Printf("%v parseResponse for %v return %v\n", c.conn.RemoteAddr(), r, err)
 			}
+			// [GFW] may get connection reset here
 			break
 		}
 
@@ -233,8 +232,8 @@ func (c *clientConn) readResponse(srvReader *bufio.Reader, rCh chan *Request,
 
 		r = <-rCh // Must come after parseResponse, so 
 		// Wrap inside if to avoid function argument evaluation.
-		if debug {
-			debug.Printf("[Response] %v %s %v %v", c.conn.RemoteAddr(), r.Method, r.URL, rp)
+		if dbgRep {
+			dbgRep.Printf("%v %s %v %v", c.conn.RemoteAddr(), r.Method, r.URL, rp)
 		}
 
 		if rp.hasBody(r.Method) {
@@ -243,9 +242,11 @@ func (c *clientConn) readResponse(srvReader *bufio.Reader, rCh chan *Request,
 				break
 			}
 		}
-		if debug {
-			debug.Printf("[Finished] %v request %s %s\n", c.conn.RemoteAddr(), r.Method, r.URL)
-		}
+		/*
+			if debug {
+				debug.Printf("[Finished] %v request %s %s\n", c.conn.RemoteAddr(), r.Method, r.URL)
+			}
+		*/
 
 		if !rp.KeepAlive {
 			return
@@ -401,7 +402,7 @@ func sendBodyWithContLen(w *bufio.Writer, r *bufio.Reader, contLen int64) (err e
 
 // Send response body if header specifies chunked encoding
 func sendBodyChunked(w *bufio.Writer, r *bufio.Reader) (err error) {
-	debug.Printf("Sending chunked body\n")
+	// debug.Printf("Sending chunked body\n")
 
 	done := false
 	for !done {
