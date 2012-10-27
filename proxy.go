@@ -257,34 +257,40 @@ func (c *clientConn) readResponse(srvReader *bufio.Reader, rCh chan *Request, st
 func (c *clientConn) getHandler(r *Request) (handler Handler, err error) {
 	handler, ok := c.handler[r.URL.Host]
 	// create different handler based on whether the request is blocked by [GFW] 
+	/*
+		if !ok {
+			return c.createDirectHandler(r.URL.Host, r.isConnect)
+		}
+	*/
 	if !ok {
-		return c.createDirectHandler(r)
+		return c.createSocksHandler(r.URL.Host, r.isConnect)
 	}
 	return
 }
 
-func (c *clientConn) createDirectHandler(r *Request) (Handler, error) {
+func (c *clientConn) createDirectHandler(host string, isConnect bool) (Handler, error) {
 	var err error
-	host := r.URL.Host
-	if !hostHasPort(r.URL.Host) {
-		host += ":80"
-	}
 	var srvconn net.Conn
-	if srvconn, err = net.Dial("tcp", host); err != nil {
+	if hostHasPort(host) {
+		srvconn, err = net.Dial("tcp", host)
+	} else {
+		srvconn, err = net.Dial("tcp", host+":80")
+	}
+	if err != nil {
 		// TODO Find a way report no host error to client. Send back web page?
 		// Time out is very likely to be caused by [GFW]
-		errl.Printf("Connecting to: %s %v\n", r.URL.Host, err)
+		errl.Printf("Connecting to: %s %v\n", host, err)
 		return nil, err
 	}
-	debug.Println("Connected to", r.URL.Host)
-	if r.isConnect {
+	debug.Println("Connected to", host)
+	if isConnect {
 		// Don't put connection for CONNECT method for reuse
 		return &directHandler{Conn: srvconn}, err
 	}
 
 	handler := &directHandler{Conn: srvconn,
 		stop: make(chan bool), request: make(chan *Request, requestNum)}
-	c.handler[r.URL.Host] = handler
+	c.handler[host] = handler
 
 	// start goroutine to send response to client
 	c.handlerGrp.Add(1)
@@ -294,7 +300,7 @@ func (c *clientConn) createDirectHandler(r *Request) (Handler, error) {
 		// when we try to remove it. Is there possible error here? The sending
 		// side will discover closed connection, so not a big problem.
 		debug.Println("Closing srv conn", srvconn.RemoteAddr())
-		c.removeHandler(r.URL.Host)
+		c.removeHandler(host)
 		c.handlerGrp.Done()
 	}()
 
