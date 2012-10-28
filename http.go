@@ -56,7 +56,7 @@ func (rp *Response) String() string {
 }
 
 type URL struct {
-	Host string
+	Host string // must contain port
 	Path string
 }
 
@@ -76,22 +76,32 @@ const (
 	headerProxyConnection  = "proxy-connection"
 )
 
-func hostHasPort(s string) bool {
+// For port, return empty string if no port specified.
+func splitHostPort(s string) (host, port string) {
 	// Common case should has no port, check the last char first
 	if !IsDigit(s[len(s)-1]) {
-		return false
+		return s, ""
 	}
 	// Scan back, make sure we find ':'
 	for i := len(s) - 2; i > 0; i-- {
 		c := s[i]
 		switch {
 		case c == ':':
-			return true
+			return s[:i], s[i+1:]
 		case !IsDigit(c):
-			return false
+			return s, ""
 		}
 	}
-	return false
+	return s, ""
+}
+
+func hasPort(s string) bool {
+	// Common case should has no port, check the last char first
+	if !IsDigit(s[len(s)-1]) {
+		return false
+	}
+	_, port := splitHostPort(s)
+	return port != ""
 }
 
 // net.ParseRequestURI will unescape encoded path, but the proxy don't need
@@ -122,6 +132,9 @@ func ParseRequestURI(rawurl string) (*URL, error) {
 		path = "/"
 	} else {
 		path = "/" + f[1]
+	}
+	if !hasPort(host) {
+		host += ":80"
 	}
 
 	return &URL{Host: host, Path: path}, nil

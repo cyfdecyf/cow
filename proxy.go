@@ -18,26 +18,26 @@ type Proxy struct {
 	addr string // listen address
 }
 
-type Handler interface {
-	ServeRequest(*Request, *clientConn) error
-	Close() error
-	NotifyStop()
-}
-
 // Number of the simultaneous requests in the pipeline
 const requestNum = 5
 
-type directHandler struct {
+const (
+	directConn = iota
+	socksConn
+)
+
+type Handler struct {
 	net.Conn
-	stop    chan bool     // Used to notify the handler to stop execution
-	request chan *Request // Pass HTTP method from request reader to response reader
+	connType int
+	stop     chan bool     // Used to notify the handler to stop execution
+	request  chan *Request // Pass HTTP method from request reader to response reader
 }
 
 type clientConn struct {
 	buf        *bufio.ReadWriter
-	conn       net.Conn           // connection to the proxy client
-	handler    map[string]Handler // request handler, host:port as key
-	handlerGrp sync.WaitGroup     // Wait all handler to finish before close
+	conn       net.Conn            // connection to the proxy client
+	handler    map[string]*Handler // request handler, host:port as key
+	handlerGrp sync.WaitGroup      // Wait all handler to finish before close
 }
 
 type proxyError string
@@ -79,7 +79,7 @@ func (py *Proxy) Serve() {
 const bufSize = 4096
 
 func newClientConn(rwc net.Conn) (c *clientConn) {
-	c = &clientConn{conn: rwc, handler: map[string]Handler{}}
+	c = &clientConn{conn: rwc, handler: map[string]*Handler{}}
 	// http pkg uses io.LimitReader with no limit to create a reader, why?
 	br := bufio.NewReaderSize(rwc, bufSize)
 	bw := bufio.NewWriter(rwc)
@@ -108,7 +108,7 @@ func (c *clientConn) serve() {
 	defer c.close()
 	var r *Request
 	var err error
-	var handler Handler
+	var handler *Handler
 
 	// Refer to implementation.md for the design choices on parsing the request
 	// and response.
@@ -254,37 +254,49 @@ func (c *clientConn) readResponse(srvReader *bufio.Reader, rCh chan *Request, st
 	return
 }
 
-func (c *clientConn) getHandler(r *Request) (handler Handler, err error) {
+func (c *clientConn) getHandler(r *Request) (handler *Handler, err error) {
 	handler, ok := c.handler[r.URL.Host]
-	// create different handler based on whether the request is blocked by [GFW] 
+
 	if !ok {
-		return c.createDirectHandler(r)
+		handler, err = c.createHandler(r.URL.Host, r.isConnect)
 	}
 	return
 }
 
-func (c *clientConn) createDirectHandler(r *Request) (Handler, error) {
-	var err error
-	host := r.URL.Host
-	if !hostHasPort(r.URL.Host) {
-		host += ":80"
-	}
-	var srvconn net.Conn
-	if srvconn, err = net.Dial("tcp", host); err != nil {
+func createDirectConnection(host string) (c net.Conn, err error) {
+	c, err = net.Dial("tcp", host)
+	if err != nil {
 		// TODO Find a way report no host error to client. Send back web page?
 		// Time out is very likely to be caused by [GFW]
-		errl.Printf("Connecting to: %s %v\n", r.URL.Host, err)
+		errl.Printf("Connecting to: %s %v\n", host, err)
 		return nil, err
 	}
-	debug.Println("Connected to", r.URL.Host)
-	if r.isConnect {
+	debug.Println("Connected to", host)
+	return c, nil
+}
+
+func (c *clientConn) createHandler(host string, isConnect bool) (*Handler, error) {
+	var err error
+	var srvconn net.Conn
+	var connType int
+
+	/*
+		if srvconn, err = createDirectConnection(host); err != nil {
+			return nil, err
+		}
+	*/
+	if srvconn, err = createSocksConnection(host); err != nil {
+		return nil, err
+	}
+	connType = socksConn
+	if isConnect {
 		// Don't put connection for CONNECT method for reuse
-		return &directHandler{Conn: srvconn}, err
+		return &Handler{Conn: srvconn, connType: connType}, err
 	}
 
-	handler := &directHandler{Conn: srvconn,
+	handler := &Handler{Conn: srvconn, connType: connType,
 		stop: make(chan bool), request: make(chan *Request, requestNum)}
-	c.handler[r.URL.Host] = handler
+	c.handler[host] = handler
 
 	// start goroutine to send response to client
 	c.handlerGrp.Add(1)
@@ -294,14 +306,14 @@ func (c *clientConn) createDirectHandler(r *Request) (Handler, error) {
 		// when we try to remove it. Is there possible error here? The sending
 		// side will discover closed connection, so not a big problem.
 		debug.Println("Closing srv conn", srvconn.RemoteAddr())
-		c.removeHandler(r.URL.Host)
+		c.removeHandler(host)
 		c.handlerGrp.Done()
 	}()
 
 	return handler, err
 }
 
-func (h *directHandler) NotifyStop() {
+func (h *Handler) NotifyStop() {
 	h.stop <- true
 }
 
@@ -315,7 +327,7 @@ func (c *clientConn) removeHandler(host string) (err error) {
 }
 
 // Serve client request directly (without using any parent proxy)
-func (srvconn *directHandler) ServeRequest(r *Request, c *clientConn) (err error) {
+func (srvconn *Handler) ServeRequest(r *Request, c *clientConn) (err error) {
 	if r.isConnect {
 		return srvconn.doConnect(r, c)
 	}
@@ -324,7 +336,7 @@ func (srvconn *directHandler) ServeRequest(r *Request, c *clientConn) (err error
 
 var connEstablished = []byte("HTTP/1.0 200 Connection established\r\nProxy-agent: cow-proxy/0.1\r\n\r\n")
 
-func (srvconn *directHandler) doConnect(r *Request, c *clientConn) (err error) {
+func (srvconn *Handler) doConnect(r *Request, c *clientConn) (err error) {
 	defer srvconn.Close()
 	if debug {
 		debug.Printf("%v 200 Connection established to %s\n", c.conn.RemoteAddr(), r.URL.Host)
@@ -354,7 +366,7 @@ func (srvconn *directHandler) doConnect(r *Request, c *clientConn) (err error) {
 	return
 }
 
-func (srvconn directHandler) doRequest(r *Request, c *clientConn) (err error) {
+func (srvconn *Handler) doRequest(r *Request, c *clientConn) (err error) {
 	// Send request to the server
 	if _, err = srvconn.Write(r.raw.Bytes()); err != nil {
 		// The srv connection maybe already closed.
