@@ -95,15 +95,6 @@ func splitHostPort(s string) (host, port string) {
 	return s, ""
 }
 
-func hasPort(s string) bool {
-	// Common case should has no port, check the last char first
-	if !IsDigit(s[len(s)-1]) {
-		return false
-	}
-	_, port := splitHostPort(s)
-	return port != ""
-}
-
 // net.ParseRequestURI will unescape encoded path, but the proxy don't need
 // Assumes the input rawurl valid. Even if rawurl is not valid, net.Dial
 // will check the correctness of the host.
@@ -133,7 +124,8 @@ func ParseRequestURI(rawurl string) (*URL, error) {
 	} else {
 		path = "/" + f[1]
 	}
-	if !hasPort(host) {
+	_, port := splitHostPort(host)
+	if port == "" {
 		host += ":80"
 	}
 

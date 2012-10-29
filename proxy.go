@@ -258,7 +258,7 @@ func (c *clientConn) getHandler(r *Request) (handler *Handler, err error) {
 	handler, ok := c.handler[r.URL.Host]
 
 	if !ok {
-		handler, err = c.createHandler(r.URL.Host, r.isConnect)
+		handler, err = c.createHandler(r)
 	}
 	return
 }
@@ -275,28 +275,30 @@ func createDirectConnection(host string) (c net.Conn, err error) {
 	return c, nil
 }
 
-func (c *clientConn) createHandler(host string, isConnect bool) (*Handler, error) {
+func (c *clientConn) createHandler(r *Request) (*Handler, error) {
 	var err error
 	var srvconn net.Conn
 	var connType int
 
-	/*
-		if srvconn, err = createDirectConnection(host); err != nil {
+	blocked := isRequestBlocked(r)
+	if blocked {
+		// In case of connection error to socks server, fallback to direct connection
+		srvconn, err = createSocksConnection(r.URL.Host)
+		connType = socksConn
+	}
+	if !blocked || err != nil {
+		if srvconn, err = createDirectConnection(r.URL.Host); err != nil {
 			return nil, err
 		}
-	*/
-	if srvconn, err = createSocksConnection(host); err != nil {
-		return nil, err
 	}
-	connType = socksConn
-	if isConnect {
+	if r.isConnect {
 		// Don't put connection for CONNECT method for reuse
 		return &Handler{Conn: srvconn, connType: connType}, err
 	}
 
 	handler := &Handler{Conn: srvconn, connType: connType,
 		stop: make(chan bool), request: make(chan *Request, requestNum)}
-	c.handler[host] = handler
+	c.handler[r.URL.Host] = handler
 
 	// start goroutine to send response to client
 	c.handlerGrp.Add(1)
@@ -306,7 +308,7 @@ func (c *clientConn) createHandler(host string, isConnect bool) (*Handler, error
 		// when we try to remove it. Is there possible error here? The sending
 		// side will discover closed connection, so not a big problem.
 		debug.Println("Closing srv conn", srvconn.RemoteAddr())
-		c.removeHandler(host)
+		c.removeHandler(r.URL.Host)
 		c.handlerGrp.Done()
 	}()
 

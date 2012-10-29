@@ -4,19 +4,21 @@ import (
 	"testing"
 )
 
-func TestHostHasPort(t *testing.T) {
+func TestSplitHostPort(t *testing.T) {
 	var testData = []struct {
-		host    string
-		hasPort bool
+		host       string
+		hostNoPort string
+		port       string
 	}{
-		{"google.com", false},
-		{"google.com:80", true},
-		{"google.com80", false},
+		{"google.com", "google.com", ""},
+		{"google.com:80", "google.com", "80"},
+		{"google.com80", "google.com80", ""},
 	}
 
 	for _, td := range testData {
-		if hostHasPort(td.host) != td.hasPort {
-			t.Errorf("%s should return %v", td.host, td.hasPort)
+		h, p := splitHostPort(td.host)
+		if h != td.hostNoPort || p != td.port {
+			t.Errorf("%s returns %v %v", td.host, td.hostNoPort, td.port)
 		}
 	}
 }
@@ -26,17 +28,17 @@ func TestParseRequestURI(t *testing.T) {
 		rawurl string
 		url    *URL
 	}{
-		{"http://google.com", &URL{"google.com", "/"}},
-		{"http://google.com/", &URL{"google.com", "/"}},
+		{"http://google.com", &URL{"google.com:80", "/"}},
+		{"http://google.com/", &URL{"google.com:80", "/"}},
 		{"https://google.com:80", &URL{"google.com:80", "/"}},
 		{"http://google.com:80/", &URL{"google.com:80", "/"}},
 		{"http://google.com:80/ncr", &URL{"google.com:80", "/ncr"}},
-		{"https://google.com/ncr/tree", &URL{"google.com", "/ncr/tree"}},
+		{"https://google.com/ncr/tree", &URL{"google.com:80", "/ncr/tree"}},
 		{"google.com:80/", &URL{"google.com:80", "/"}},
 		{"google.com:80", &URL{"google.com:80", "/"}},
-		{"google.com", &URL{"google.com", "/"}},
+		{"google.com", &URL{"google.com:80", "/"}},
 		{"google.com:80/ncr", &URL{"google.com:80", "/ncr"}},
-		{"google.com/ncr/tree", &URL{"google.com", "/ncr/tree"}},
+		{"google.com/ncr/tree", &URL{"google.com:80", "/ncr/tree"}},
 		{"/ncr/tree", nil},
 	}
 	for _, td := range testData {

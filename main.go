@@ -32,6 +32,7 @@ func main() {
 	}
 
 	runtime.GOMAXPROCS(2)
+	loadConfig()
 
 	py := NewProxy("localhost:9000")
 	py.Serve()
