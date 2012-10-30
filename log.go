@@ -27,14 +27,14 @@ const (
 	debug  debugLogging    = true
 	errl   errorLogging    = true
 	dbgRq  requestLogging  = true
-	dbgRep responseLogging = true
+	dbgRep responseLogging = false
 )
 
 var (
-	errorLog    = log.New(os.Stderr, "\033[31m[Error ]\033[0m ", log.LstdFlags)
-	debugLog    = log.New(os.Stderr, "\033[34m[Debug ]\033[0m ", log.LstdFlags)
-	requestLog  = log.New(os.Stderr, "\033[32m[Rqst  ]\033[0m ", log.LstdFlags)
-	responseLog = log.New(os.Stderr, "\033[33m[Rpns  ]\033[0m ", log.LstdFlags)
+	errorLog    = log.New(os.Stderr, "\033[31m[Error]\033[0m ", log.LstdFlags)
+	debugLog    = log.New(os.Stderr, "\033[34m[Debug]\033[0m ", log.LstdFlags)
+	requestLog  = log.New(os.Stderr, "\033[32m[>>>>>]\033[0m ", log.LstdFlags)
+	responseLog = log.New(os.Stderr, "\033[33m[<<<<<]\033[0m ", log.LstdFlags)
 )
 
 func init() {

@@ -30,7 +30,7 @@ var socksMsgVerMethodSelection = []byte{
 }
 
 func createSocksConnection(hostFull string) (c net.Conn, err error) {
-	if c, err = net.Dial("tcp", "127.0.0.1:1087"); err != nil {
+	if c, err = net.Dial("tcp", config.socksAddr); err != nil {
 		errl.Printf("Can't connect to socks server %v\n", err)
 		return nil, err
 	}

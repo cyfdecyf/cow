@@ -216,20 +216,27 @@ func (c *clientConn) readResponse(srvReader *bufio.Reader, rCh chan *Request, st
 		if err != nil {
 			if err != io.EOF {
 				errl.Printf("%v parseResponse for %v return %v\n", c.conn.RemoteAddr(), r, err)
+				// debug.Println("Type of error", reflect.TypeOf(err))
+				ne, ok := err.(*net.OpError)
+				if ok && ne.Err == syscall.ECONNRESET {
+					// [GFW] may connection reset here
+					// TODO report connection reset to the browser
+					addBlockedRequest(<-rCh)
+				}
 			}
-			// [GFW] may get connection reset here
 			break
 		}
 
 		c.buf.WriteString(rp.raw.String())
-		// Flush response header to the client ASAP, so closed server
-		// connection can be detected ASAP
+		// Flush response header to the client ASAP
 		if err = c.buf.Flush(); err != nil {
 			errl.Println("Flushing response header to client:", err)
 			break
 		}
 
-		r = <-rCh // Must come after parseResponse, so 
+		// Must come after parseResponse, so closed server
+		// connection can be detected ASAP
+		r = <-rCh
 		// Wrap inside if to avoid function argument evaluation.
 		if dbgRep {
 			dbgRep.Printf("%v %s %v %v", c.conn.RemoteAddr(), r.Method, r.URL, rp)
