@@ -34,7 +34,7 @@ func createSocksConnection(hostFull string) (c net.Conn, err error) {
 		errl.Printf("Can't connect to socks server %v\n", err)
 		return nil, err
 	}
-	debug.Println("Connected to socks server")
+	// debug.Println("Connected to socks server")
 
 	var n int
 	if n, err = c.Write(socksMsgVerMethodSelection); n != 3 || err != nil {
@@ -57,7 +57,7 @@ func createSocksConnection(hostFull string) (c net.Conn, err error) {
 		c.Close()
 		return nil, socksProtocolErr
 	}
-	debug.Println("Socks version selection done")
+	// debug.Println("Socks version selection done")
 
 	// send connect request
 	host, portStr := splitHostPort(hostFull)
@@ -79,9 +79,11 @@ func createSocksConnection(hostFull string) (c net.Conn, err error) {
 	reqBuf[5+hostLen] = byte(port >> 8 & 0xFF)
 	reqBuf[5+hostLen+1] = byte(port) & 0xFF
 
-	if debug {
-		debug.Println("Send socks connect request", (host + ":" + portStr))
-	}
+	/*
+		if debug {
+			debug.Println("Send socks connect request", (host + ":" + portStr))
+		}
+	*/
 
 	if n, err = c.Write(reqBuf); err != nil || n != bufLen {
 		errl.Printf("Send socks request err %v n %d\n", err, n)

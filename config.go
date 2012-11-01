@@ -17,6 +17,9 @@ const (
 )
 
 var config struct {
+	listenAddr string // server listen address
+	numProc    int // max number of cores to use
+
 	dir         string // directory containing config file and blocked site list
 	socksAddr   string
 	blockedFile string
@@ -29,6 +32,9 @@ func init() {
 		os.Exit(1)
 	}
 	homeDir = u.HomeDir
+
+	config.listenAddr = "127.0.0.1:8087"
+	config.numProc = 2
 
 	config.socksAddr = "127.0.0.1:1080"
 	config.dir = path.Join(homeDir, dotDir)

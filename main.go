@@ -31,9 +31,9 @@ func main() {
 		}()
 	}
 
-	runtime.GOMAXPROCS(2)
+	runtime.GOMAXPROCS(config.numProc)
 	loadConfig()
 
-	py := NewProxy("localhost:9000")
+	py := NewProxy(config.listenAddr)
 	py.Serve()
 }
