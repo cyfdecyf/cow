@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"reflect"
 	"runtime"
 	"strconv"
 	"strings"
@@ -215,13 +216,19 @@ func (c *clientConn) readResponse(srvReader *bufio.Reader, rCh chan *Request, st
 		rp, err = parseResponse(srvReader)
 		if err != nil {
 			if err != io.EOF {
+				r = <-rCh
 				errl.Printf("%v parseResponse for %v return %v\n", c.conn.RemoteAddr(), r, err)
-				// debug.Println("Type of error", reflect.TypeOf(err))
+				debug.Println("Type of error", reflect.TypeOf(err))
 				ne, ok := err.(*net.OpError)
-				if ok && ne.Err == syscall.ECONNRESET {
-					// [GFW] may connection reset here
-					// TODO report connection reset to the browser
-					addBlockedRequest(<-rCh)
+				if !ok {
+					return err
+				}
+				if ne.Err == syscall.ECONNRESET || ne.Err == syscall.ETIMEDOUT {
+					// GFW may connection reset here, may also make it time
+					// out Is it normal for connection to a site timeout? If
+					// so, it's better not add it to blocked site TODO report
+					// connection reset to the browser
+					addBlockedRequest(r)
 				}
 			}
 			break
@@ -255,7 +262,7 @@ func (c *clientConn) readResponse(srvReader *bufio.Reader, rCh chan *Request, st
 		*/
 
 		if !rp.KeepAlive {
-			return
+			break
 		}
 	}
 	return
@@ -289,13 +296,29 @@ func (c *clientConn) createHandler(r *Request) (*Handler, error) {
 
 	blocked := isRequestBlocked(r)
 	if blocked {
-		// In case of connection error to socks server, fallback to direct connection
-		srvconn, err = createSocksConnection(r.URL.Host)
 		connType = socksConn
-	}
-	if !blocked || err != nil {
+		// In case of connection error to socks server, fallback to direct connection
+		if srvconn, err = createSocksConnection(r.URL.Host); err != nil {
+			if srvconn, err = createDirectConnection(r.URL.Host); err != nil {
+				return nil, err
+			}
+			// TODO remove domain from blocked list?
+		}
+	} else {
+		// In case of error on direction connection, try socks server
 		if srvconn, err = createDirectConnection(r.URL.Host); err != nil {
-			return nil, err
+			// debug.Printf("type of err %v\n", reflect.TypeOf(err))
+			// GFW may cause dns lookup fail
+			_, ok := err.(*net.DNSError)
+			if ok {
+				// Try to create socks connection
+				if srvconn, err = createSocksConnection(r.URL.Host); err != nil {
+					return nil, err
+				}
+				addBlockedRequest(r)
+			} else {
+				return nil, err
+			}
 		}
 	}
 	if r.isConnect {

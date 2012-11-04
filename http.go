@@ -230,7 +230,7 @@ func parseRequest(reader *bufio.Reader) (r *Request, err error) {
 
 	var f []string
 	if f = strings.SplitN(s, " ", 3); len(f) < 3 {
-		return nil, errors.New("malformed HTTP request")
+		return nil, errors.New(fmt.Sprintf("malformed HTTP request: %s", s))
 	}
 	var requestURI string
 	r.Method, requestURI, r.Proto = f[0], f[1], f[2]
