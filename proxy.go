@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 )
 
 // Lots of the code here are learnt from the http package
@@ -277,8 +278,10 @@ func (c *clientConn) getHandler(r *Request) (handler *Handler, err error) {
 	return
 }
 
+var dialTimeout = time.Duration(5) * time.Second
+
 func createDirectConnection(host string) (c net.Conn, err error) {
-	c, err = net.Dial("tcp", host)
+	c, err = net.DialTimeout("tcp", host, dialTimeout)
 	if err != nil {
 		// TODO Find a way report no host error to client. Send back web page?
 		// Time out is very likely to be caused by [GFW]
@@ -294,9 +297,8 @@ func (c *clientConn) createHandler(r *Request) (*Handler, error) {
 	var srvconn net.Conn
 	var connType int
 
-	blocked := isRequestBlocked(r)
-	if blocked {
-		connType = socksConn
+	if isRequestBlocked(r) {
+		connType = socksConn // TODO is this necessary?
 		// In case of connection error to socks server, fallback to direct connection
 		if srvconn, err = createSocksConnection(r.URL.Host); err != nil {
 			if srvconn, err = createDirectConnection(r.URL.Host); err != nil {
@@ -307,16 +309,17 @@ func (c *clientConn) createHandler(r *Request) (*Handler, error) {
 	} else {
 		// In case of error on direction connection, try socks server
 		if srvconn, err = createDirectConnection(r.URL.Host); err != nil {
-			// debug.Printf("type of err %v\n", reflect.TypeOf(err))
-			// GFW may cause dns lookup fail
-			_, ok := err.(*net.DNSError)
-			if ok {
-				// Try to create socks connection
-				if srvconn, err = createSocksConnection(r.URL.Host); err != nil {
-					return nil, err
-				}
+			debug.Printf("type of err %v\n", reflect.TypeOf(err))
+			// GFW may cause dns lookup fail, may also cause connection time out
+			if _, ok := err.(*net.DNSError); ok {
+				addBlockedRequest(r)
+			} else if ne, ok := err.(*net.OpError); ok && ne.Timeout() {
 				addBlockedRequest(r)
 			} else {
+				return nil, err
+			}
+			// Try to create socks connection
+			if srvconn, err = createSocksConnection(r.URL.Host); err != nil {
 				return nil, err
 			}
 		}
