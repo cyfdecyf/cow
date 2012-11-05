@@ -1,0 +1,8 @@
+# proxy listen address
+listen = 127.0.0.1:7777
+
+# Nubmer of cores to use
+core = 2
+
+# parent socks proxy address
+socks = 127.0.0.1:1080
