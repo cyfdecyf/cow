@@ -81,7 +81,7 @@ func loadBlocked(fpath string) (err error) {
 func parseConfig() {
 	f, err := os.Open(config.rcFile)
 	if err != nil {
-		if err == os.ErrNotExist {
+		if os.IsNotExist(err) {
 			return
 		}
 		errl.Println("Opening config file:", err)
