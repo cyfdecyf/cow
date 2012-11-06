@@ -100,7 +100,9 @@ func splitHostPort(s string) (host, port string) {
 // will check the correctness of the host.
 func ParseRequestURI(rawurl string) (*URL, error) {
 	if rawurl[0] == '/' {
-		return nil, errors.New("Invalid proxy request URI: " + rawurl)
+		// OS X seems to send only path to the server if the url is 127.0.0.1
+		return &URL{Host: "", Path: rawurl}, nil
+		// return nil, errors.New("Invalid proxy request URI: " + rawurl)
 	}
 
 	var f []string
