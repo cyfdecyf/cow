@@ -33,6 +33,7 @@ func main() {
 
 	runtime.GOMAXPROCS(config.numProc)
 	loadConfig()
+	go runSSH()
 
 	py := NewProxy(config.listenAddr)
 	py.Serve()

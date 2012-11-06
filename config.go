@@ -28,7 +28,8 @@ const (
 var config struct {
 	listenAddr string // server listen address
 	socksAddr  string
-	numProc    int // max number of cores to use
+	numProc    int    // max number of cores to use
+	sshServer  string // ssh to the given server to start socks proxy
 
 	dir         string // directory containing config file and blocked site list
 	blockedFile string // contains blocked domains
@@ -142,9 +143,16 @@ func parseConfig() {
 				os.Exit(1)
 			}
 		case key == "socks":
+			_, port := splitHostPort(val)
+			if port == "" {
+				fmt.Println("socks server must have port specified")
+				os.Exit(1)
+			}
 			config.socksAddr = val
 		case key == "blocked":
 			config.blockedFile = val
+		case key == "ssh_server":
+			config.sshServer = val
 		default:
 			fmt.Println("Config error: no such option", key)
 			os.Exit(1)

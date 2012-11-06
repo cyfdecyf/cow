@@ -6,3 +6,6 @@ core = 2
 
 # parent socks proxy address
 socks = 127.0.0.1:1080
+
+# ssh to the given server to start socks proxy
+ssh_server = gfw
