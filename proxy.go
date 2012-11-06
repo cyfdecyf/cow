@@ -107,6 +107,10 @@ func (c *clientConn) close() {
 	runtime.GC()
 }
 
+func isSelfURL(h string) bool {
+	return h == "" || h == selfURL127 || h == selfURLLH
+}
+
 func (c *clientConn) serve() {
 	defer c.close()
 	var r *Request
@@ -125,6 +129,11 @@ func (c *clientConn) serve() {
 		}
 		if dbgRq {
 			dbgRq.Printf("%v %v\n", c.conn.RemoteAddr(), r)
+		}
+		if isSelfURL(r.URL.Host) {
+			// Send PAC file if requesting self
+			sendPAC(c.buf.Writer)
+			return
 		}
 
 	RETRY:

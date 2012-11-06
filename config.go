@@ -12,11 +12,16 @@ import (
 	"strings"
 )
 
-var homeDir string
+var (
+	homeDir    string
+	selfURL127 string // 127.0.0.1:listenAddr
+	selfURLLH  string // localhost:listenAddr
+)
 
 const (
 	dotDir       = ".cow-proxy"
 	blockedFname = "blocked"
+	directFname  = "direct"
 	rcFname      = "rc"
 )
 
@@ -26,7 +31,8 @@ var config struct {
 	numProc    int // max number of cores to use
 
 	dir         string // directory containing config file and blocked site list
-	blockedFile string
+	blockedFile string // contains blocked domains
+	directFile  string // contains sites that can be directly accessed
 	rcFile      string
 }
 
@@ -44,48 +50,56 @@ func init() {
 
 	config.dir = path.Join(homeDir, dotDir)
 	config.blockedFile = path.Join(config.dir, blockedFname)
+	config.directFile = path.Join(config.dir, directFname)
 	config.rcFile = path.Join(config.dir, rcFname)
 }
 
-func loadBlocked(fpath string) (err error) {
-	f, err := os.Open(fpath)
-	if err != nil {
-		// No blocked domain file has no problem, report other error though
+// Tries to open a file, if file not exist, return both nil for os.File and
+// err
+func openFile(path string) (f *os.File, err error) {
+	if f, err = os.Open(path); err != nil {
 		if os.IsNotExist(err) {
-			return nil
-		} else {
-			errl.Println("Opening blocked file:", err)
-			return
+			return nil, nil
 		}
+		errl.Println("Error opening file:", path, err)
+		return nil, err
+	}
+	return
+}
+
+func loadDomainList(fpath string) (lst []string, err error) {
+	f, err := openFile(fpath)
+	if f == nil || err != nil {
+		return
 	}
 	defer f.Close()
-	fr := bufio.NewReader(f)
 
+	fr := bufio.NewReader(f)
+	lst = make([]string, 0)
+	var domain string
 	for {
-		domain, err := ReadLine(fr)
+		domain, err = ReadLine(fr)
 		if err == io.EOF {
-			return nil
+			return lst, nil
 		} else if err != nil {
-			errl.Println("Error reading blocked domains:", err)
-			return err
+			errl.Println("Error reading domain list from:", fpath, err)
+			return
 		}
 		if domain == "" {
 			continue
 		}
-		blocked[strings.TrimSpace(domain)] = true
-		// debug.Println(domain)
+		lst = append(lst, strings.TrimSpace(domain))
 	}
-	return nil
+	return
 }
 
 func parseConfig() {
-	f, err := os.Open(config.rcFile)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return
-		}
-		errl.Println("Opening config file:", err)
+	f, err := openFile(config.rcFile)
+	if f == nil || err != nil {
+		return
 	}
+	defer f.Close()
+
 	fr := bufio.NewReader(f)
 
 	var line string
@@ -140,8 +154,10 @@ func parseConfig() {
 
 func loadConfig() {
 	parseConfig()
+	loadBlocked()
+	genPAC()
 
-	if err := loadBlocked(config.blockedFile); err != nil {
-		os.Exit(1)
-	}
+	_, port := splitHostPort(config.listenAddr)
+	selfURL127 = "127.0.0.1:" + port
+	selfURLLH = "localhost:" + port
 }

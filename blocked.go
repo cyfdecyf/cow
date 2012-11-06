@@ -1,9 +1,9 @@
 package main
 
-var blocked = map[string]bool{}
+var blockedDomain = map[string]bool{}
 
 func isDomainBlocked(domain string) bool {
-	_, ok := blocked[domain]
+	_, ok := blockedDomain[domain]
 	return ok
 }
 
@@ -22,7 +22,19 @@ func addBlockedRequestHandler() {
 		r := <-blockedReqChan
 		d := host2Domain(r.URL.Host)
 		debug.Printf("%v added to blocked list\n", d)
-		blocked[d] = true
+		blockedDomain[d] = true
+	}
+}
+
+func loadBlocked() {
+	lst, err := loadDomainList(config.blockedFile)
+	if err != nil {
+		return
+	}
+
+	for _, v := range lst {
+		// debug.Println("blocked domain:", v)
+		blockedDomain[v] = true
 	}
 }
 
