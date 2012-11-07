@@ -37,13 +37,13 @@ var (
 
 func init() {
 	flag.BoolVar((*bool)(&info), "info", true, "info log")
-	flag.BoolVar((*bool)(&debug), "debug", true, "debug log")
+	flag.BoolVar((*bool)(&debug), "debug", false, "debug log")
 	flag.BoolVar((*bool)(&errl), "err", true, "error log")
-	flag.BoolVar((*bool)(&dbgRq), "reqest", true, "request log")
-	flag.BoolVar((*bool)(&dbgRep), "reply", true, "reply log")
+	flag.BoolVar((*bool)(&dbgRq), "reqest", false, "request log")
+	flag.BoolVar((*bool)(&dbgRep), "reply", false, "reply log")
 
 	flag.BoolVar(&verbose, "v", false, "More info in request/response logging")
-	flag.BoolVar(&colorize, "c", true, "Colorize log output")
+	flag.BoolVar(&colorize, "c", false, "Colorize log output")
 }
 
 func initLog() {

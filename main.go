@@ -2,26 +2,32 @@ package main
 
 import (
 	"flag"
-	"log"
 	"os"
-	"os/signal"
+	// "os/signal"
 	"runtime"
-	"runtime/pprof"
+	// "runtime/pprof"
 )
 
-var c = make(chan os.Signal, 1)
+// var c = make(chan os.Signal, 1)
 
-var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
+// var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
 
 func main() {
 	// Parse flags after load config to allow override options in config
 	loadConfig()
 	flag.Parse()
 
+	if printVer {
+		printVersion()
+		os.Exit(0)
+	}
+
+	/*
 	if *cpuprofile != "" {
 		f, err := os.Create(*cpuprofile)
 		if err != nil {
-			log.Fatal(err)
+			info.Println(err)
+			os.Exit(1)
 		}
 		pprof.StartCPUProfile(f)
 		signal.Notify(c, os.Interrupt)
@@ -33,6 +39,7 @@ func main() {
 			}
 		}()
 	}
+	*/
 
 	runtime.GOMAXPROCS(config.numProc)
 	go runSSH()
