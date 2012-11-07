@@ -18,6 +18,11 @@ func main() {
 	loadConfig()
 	flag.Parse()
 
+	if printVer {
+		printVersion()
+		os.Exit(0)
+	}
+
 	if *cpuprofile != "" {
 		f, err := os.Create(*cpuprofile)
 		if err != nil {

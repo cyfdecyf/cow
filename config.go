@@ -17,6 +17,8 @@ var (
 	homeDir    string
 	selfURL127 string // 127.0.0.1:listenAddr
 	selfURLLH  string // localhost:listenAddr
+
+	printVer bool
 )
 
 const (
@@ -24,6 +26,8 @@ const (
 	blockedFname = "blocked"
 	directFname  = "direct"
 	rcFname      = "rc"
+
+	version = "0.1"
 )
 
 var config struct {
@@ -38,6 +42,10 @@ var config struct {
 	rcFile      string
 }
 
+func printVersion() {
+	fmt.Println("cow-proxy version", version)
+}
+
 func init() {
 	u, err := user.Current()
 	if err != nil {
@@ -45,6 +53,8 @@ func init() {
 		os.Exit(1)
 	}
 	homeDir = u.HomeDir
+
+	flag.BoolVar(&printVer, "version", false, "print version")
 
 	flag.StringVar(&config.listenAddr, "listen", "127.0.0.1:7777", "proxy server listen address")
 	flag.StringVar(&config.socksAddr, "socks", "127.0.0.1:1080", "socks server address")
