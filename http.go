@@ -178,9 +178,9 @@ func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, addHeader 
 		}
 		if s == "" {
 			// Connection close, no content length specification
-			// Add content-length 0 to indicate end of response
+			// Use chunked encoding to pass content back to client
 			if !h.KeepAlive && !h.Chunking && h.ContLen == -1 {
-				raw.WriteString("Content-Length: 0\r\n")
+				raw.WriteString("Transfer-Encoding: chunked\r\n")
 			}
 
 			raw.WriteString(addHeader)

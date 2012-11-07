@@ -267,7 +267,9 @@ func (c *clientConn) readResponse(srvReader *bufio.Reader, rCh chan *Request, st
 
 		if rp.hasBody(r.Method) {
 			if err = sendBody(c.buf.Writer, srvReader, rp.Chunking, rp.ContLen); err != nil {
-				errl.Println("readResponse sendBody:", err)
+				if err != io.EOF {
+					errl.Println("readResponse sendBody:", err)
+				}
 				break
 			}
 		}
@@ -518,6 +520,26 @@ func sendBodyChunked(w *bufio.Writer, r *bufio.Reader) (err error) {
 	return
 }
 
+func sendBodySplitIntoChunk(w *bufio.Writer, r *bufio.Reader) (err error) {
+	buf := make([]byte, bufSize)
+	var n int
+	for {
+		n, err = r.Read(buf)
+		// debug.Println("split into chunk n =", n, "err =", err)
+		if err != nil {
+			// err maybe EOF which is expected here as the server is closing connection
+			// For other errors, report the error it in readResponse
+			w.WriteString("0\r\n\r\n")
+			break
+		}
+
+		w.WriteString(fmt.Sprintf("%x\r\n", n))
+		w.Write(buf[:n])
+	}
+	w.Flush()
+	return
+}
+
 // Send message body
 func sendBody(w *bufio.Writer, r *bufio.Reader, chunk bool, contLen int64) (err error) {
 	if chunk {
@@ -525,11 +547,8 @@ func sendBody(w *bufio.Writer, r *bufio.Reader, chunk bool, contLen int64) (err 
 	} else if contLen >= 0 {
 		err = sendBodyWithContLen(w, r, contLen)
 	} else {
-		// Maybe because this is an HTTP/1.0 server. Just read and wait connection close
-		info.Printf("Can't determine body length and not chunked encoding\n")
-		if _, err = io.Copy(w, r); err != nil {
-			return
-		}
+		// Server use close connection to indicate end of data
+		err = sendBodySplitIntoChunk(w, r)
 	}
 
 	if err != nil {
