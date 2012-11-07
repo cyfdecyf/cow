@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"io"
 	"net"
 	"os"
 	"strconv"
@@ -94,7 +95,10 @@ func createSocksConnection(hostFull string) (c net.Conn, err error) {
 	// Polipo set this to 10 and I also observed the reply is always 10.
 	replyBuf := make([]byte, 10, 10)
 	if n, err = c.Read(replyBuf); err != nil {
-		errl.Printf("Read socks reply err %v n %d\n", err, n)
+		// Seems that socks server will close connection if it can't find host
+		if err != io.EOF {
+			errl.Printf("Read socks reply err %v n %d\n", err, n)
+		}
 		return nil, err
 	}
 	// debug.Printf("Socks reply length %d\n", n)
