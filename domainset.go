@@ -1,6 +1,12 @@
 package main
 
 import (
+	"bufio"
+	"io"
+	"os"
+	"path"
+	"sort"
+	"strings"
 	"sync"
 )
 
@@ -39,51 +45,118 @@ func (ds *domainSet) del(dm string) {
 	ds.Unlock()
 }
 
-var blocked = newDomainSet()
+func (ds *domainSet) loadDomainList(fpath string) (lst []string, err error) {
+	lst, err = loadDomainList(fpath)
+	if err != nil {
+		return
+	}
+	// This executes in single goroutine, so no need to use lock
+	for _, v := range lst {
+		// debug.Println("loaded domain:", v)
+		ds.domain[v] = true
+	}
+	return
+}
+
+func (ds *domainSet) toArray() []string {
+	l := len(ds.domain)
+	lst := make([]string, l, l)
+
+	i := 0
+	for k, _ := range ds.domain {
+		lst[i] = k
+		i++
+	}
+	return lst
+}
+
+var blockedDs = newDomainSet()
+var directDs = newDomainSet()
 
 var hasNewBlockedDomain = false
+var hasNewDirectDomain = false
 
 func isDomainBlocked(dm string) bool {
-	return blocked.has(dm)
+	return blockedDs.has(dm)
 }
 
 func isRequestBlocked(r *Request) bool {
 	return isDomainBlocked(host2Domain(r.URL.Host))
 }
 
-func addBlockedRequest(r *Request) {
+func addRequestToDs(r *Request, ds *domainSet) {
 	d := host2Domain(r.URL.Host)
-	blocked.add(d)
+	ds.add(d)
+}
+
+func addBlockedRequest(r *Request) {
+	addRequestToDs(r, blockedDs)
 	hasNewBlockedDomain = true
-	debug.Printf("%v added to blocked list\n", d)
+	debug.Printf("%v added to blocked list\n", r.URL.Host)
 }
 
-func loadBlocked() {
-	lst, err := loadDomainList(config.blockedFile)
-	if err != nil {
-		return
-	}
-
-	// This executes in single goroutine, so no need to use lock
-	for _, v := range lst {
-		// debug.Println("blocked domain:", v)
-		blocked.domain[v] = true
-	}
+func addDirectRequest(r *Request) {
+	addRequestToDs(r, directDs)
+	hasNewDirectDomain = true
+	debug.Printf("%v added to direct list\n", r.URL.Host)
 }
 
-func writeBlocked() {
+func writeBlockedDs() {
 	if !hasNewBlockedDomain {
 		return
 	}
+	writeDomainList(config.blockedFile, blockedDs.toArray())
+}
 
-	l := len(blocked.domain)
-	lst := make([]string, l, l)
+func writeDirectDs() {
+	if !hasNewDirectDomain {
+		return
+	}
+	writeDomainList(config.directFile, directDs.toArray())
+}
 
-	i := 0
-	for k, _ := range blocked.domain {
-		lst[i] = k
-		i++
+func loadDomainList(fpath string) (lst []string, err error) {
+	f, err := openFile(fpath)
+	if f == nil || err != nil {
+		return
+	}
+	defer f.Close()
+
+	fr := bufio.NewReader(f)
+	lst = make([]string, 0)
+	var domain string
+	for {
+		domain, err = ReadLine(fr)
+		if err == io.EOF {
+			return lst, nil
+		} else if err != nil {
+			errl.Println("Error reading domain list from:", fpath, err)
+			return
+		}
+		if domain == "" {
+			continue
+		}
+		lst = append(lst, strings.TrimSpace(domain))
+	}
+	return
+}
+
+func writeDomainList(fpath string, lst []string) (err error) {
+	tmpPath := path.Join(config.dir, "tmp-domain")
+	f, err := os.Create(tmpPath)
+	if err != nil {
+		errl.Println("Error creating tmp domain list file:", err)
+		return
 	}
 
-	writeDomainList(config.blockedFile, lst)
+	sort.Sort(sort.StringSlice(lst))
+
+	all := strings.Join(lst, "\n")
+	f.WriteString(all)
+	f.Close()
+
+	if err = os.Rename(tmpPath, fpath); err != nil {
+		errl.Printf("Error moving tmp domain list file to %s: %v\n", fpath, err)
+	}
+	return
 }

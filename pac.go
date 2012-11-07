@@ -40,11 +40,6 @@ function FindProxyForURL(url, host) {
 var pacCont string
 
 func genPAC() {
-	lst, err := loadDomainList(config.directFile)
-	if err != nil {
-		return
-	}
-
 	pacTmpl, err := template.New("pac").Parse(pacRawTmpl)
 	if err != nil {
 		fmt.Println("Internal error on generating pac file template")
@@ -56,7 +51,7 @@ func genPAC() {
 		DirectDomains string
 	}{
 		config.listenAddr,
-		strings.Join(lst, "\",\n\""), // domains in PAC file needs double quote
+		strings.Join(directDs.toArray(), "\",\n\""), // domains in PAC file needs double quote
 	}
 
 	// debug.Println("direct:", data.DirectDomains)

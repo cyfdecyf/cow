@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/user"
 	"path"
-	"sort"
 	// "reflect"
 	"strconv"
 	"strings"
@@ -81,52 +80,6 @@ func openFile(path string) (f *os.File, err error) {
 	return
 }
 
-func loadDomainList(fpath string) (lst []string, err error) {
-	f, err := openFile(fpath)
-	if f == nil || err != nil {
-		return
-	}
-	defer f.Close()
-
-	fr := bufio.NewReader(f)
-	lst = make([]string, 0)
-	var domain string
-	for {
-		domain, err = ReadLine(fr)
-		if err == io.EOF {
-			return lst, nil
-		} else if err != nil {
-			errl.Println("Error reading domain list from:", fpath, err)
-			return
-		}
-		if domain == "" {
-			continue
-		}
-		lst = append(lst, strings.TrimSpace(domain))
-	}
-	return
-}
-
-func writeDomainList(fpath string, lst []string) (err error) {
-	tmpPath := path.Join(config.dir, "tmp-domain")
-	f, err := os.Create(tmpPath)
-	if err != nil {
-		errl.Println("Error creating tmp domain list file:", err)
-		return
-	}
-
-	sort.Sort(sort.StringSlice(lst))
-
-	all := strings.Join(lst, "\n")
-	f.WriteString(all)
-	f.Close()
-
-	if err = os.Rename(tmpPath, fpath); err != nil {
-		errl.Printf("Error moving tmp domain list file to %s: %v\n", fpath, err)
-	}
-	return
-}
-
 func parseConfig() {
 	f, err := openFile(config.rcFile)
 	if f == nil || err != nil {
@@ -195,7 +148,9 @@ func parseConfig() {
 
 func loadConfig() {
 	parseConfig()
-	loadBlocked()
+
+	blockedDs.loadDomainList(config.blockedFile)
+	directDs.loadDomainList(config.directFile)	
 	genPAC()
 
 	_, port := splitHostPort(config.listenAddr)
