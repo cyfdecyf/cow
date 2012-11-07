@@ -14,7 +14,10 @@ var c = make(chan os.Signal, 1)
 var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
 
 func main() {
+	// Parse flags after load config to allow override options in config
+	loadConfig()
 	flag.Parse()
+
 	if *cpuprofile != "" {
 		f, err := os.Create(*cpuprofile)
 		if err != nil {
@@ -32,7 +35,6 @@ func main() {
 	}
 
 	runtime.GOMAXPROCS(config.numProc)
-	loadConfig()
 	go runSSH()
 
 	py := NewProxy(config.listenAddr)

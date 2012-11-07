@@ -100,7 +100,7 @@ func (c *clientConn) close() {
 		c.buf = nil
 	}
 	if c.conn != nil {
-		info.Printf("Client %v connection closed\n", c.conn.RemoteAddr())
+		debug.Printf("Client %v connection closed\n", c.conn.RemoteAddr())
 		c.conn.Close()
 		c.conn = nil
 	}

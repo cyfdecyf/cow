@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -45,9 +46,10 @@ func init() {
 	}
 	homeDir = u.HomeDir
 
-	config.listenAddr = "127.0.0.1:7777"
-	config.numProc = 2
-	config.socksAddr = "127.0.0.1:1080"
+	flag.StringVar(&config.listenAddr, "listen", "127.0.0.1:7777", "proxy server listen address")
+	flag.StringVar(&config.socksAddr, "socks", "127.0.0.1:1080", "socks server address")
+	flag.IntVar(&config.numProc, "core", 2, "number of cores to use")
+	flag.StringVar(&config.sshServer, "ssh_server", "", "remote server which will ssh to and provide sock server")
 
 	config.dir = path.Join(homeDir, dotDir)
 	config.blockedFile = path.Join(config.dir, blockedFname)

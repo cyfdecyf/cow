@@ -6,14 +6,9 @@ package main
 // For error message, use log pkg directly
 
 import (
+	"flag"
 	"log"
 	"os"
-)
-
-// Currently only controls whether request/response should be all printed
-const (
-	verbose  = false
-	colorize = true
 )
 
 type infoLogging bool
@@ -22,12 +17,15 @@ type errorLogging bool
 type requestLogging bool
 type responseLogging bool
 
-const (
-	info   infoLogging     = true
-	debug  debugLogging    = true
-	errl   errorLogging    = true
-	dbgRq  requestLogging  = true
-	dbgRep responseLogging = false
+var (
+	info   infoLogging
+	debug  debugLogging
+	errl   errorLogging
+	dbgRq  requestLogging
+	dbgRep responseLogging
+
+	verbose  bool
+	colorize bool
 )
 
 var (
@@ -38,6 +36,17 @@ var (
 )
 
 func init() {
+	flag.BoolVar((*bool)(&info), "info", true, "info log")
+	flag.BoolVar((*bool)(&debug), "debug", true, "debug log")
+	flag.BoolVar((*bool)(&errl), "err", true, "error log")
+	flag.BoolVar((*bool)(&dbgRq), "reqest", true, "request log")
+	flag.BoolVar((*bool)(&dbgRep), "reply", true, "reply log")
+
+	flag.BoolVar(&verbose, "v", false, "More info in request/response logging")
+	flag.BoolVar(&colorize, "c", true, "Colorize log output")
+}
+
+func initLog() {
 	if !colorize {
 		errorLog = log.New(os.Stderr, "[ERROR ] ", log.LstdFlags)
 		debugLog = log.New(os.Stderr, "[DEBUG ] ", log.LstdFlags)
