@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/user"
 	"path"
+	"sort"
 	// "reflect"
 	"strconv"
 	"strings"
@@ -102,6 +103,26 @@ func loadDomainList(fpath string) (lst []string, err error) {
 			continue
 		}
 		lst = append(lst, strings.TrimSpace(domain))
+	}
+	return
+}
+
+func writeDomainList(fpath string, lst []string) (err error) {
+	tmpPath := path.Join(config.dir, "tmp-domain")
+	f, err := os.Create(tmpPath)
+	if err != nil {
+		errl.Println("Error creating tmp domain list file:", err)
+		return
+	}
+
+	sort.Sort(sort.StringSlice(lst))
+
+	all := strings.Join(lst, "\n")
+	f.WriteString(all)
+	f.Close()
+
+	if err = os.Rename(tmpPath, fpath); err != nil {
+		errl.Printf("Error moving tmp domain list file to %s: %v\n", fpath, err)
 	}
 	return
 }

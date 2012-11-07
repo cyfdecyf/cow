@@ -1,6 +1,7 @@
 package main
 
 var blockedDomain = map[string]bool{}
+var hasNewBlockedDomain = false
 
 func isDomainBlocked(domain string) bool {
 	_, ok := blockedDomain[domain]
@@ -23,6 +24,7 @@ func addBlockedRequestHandler() {
 		d := host2Domain(r.URL.Host)
 		debug.Printf("%v added to blocked list\n", d)
 		blockedDomain[d] = true
+		hasNewBlockedDomain = true
 	}
 }
 
@@ -36,6 +38,23 @@ func loadBlocked() {
 		// debug.Println("blocked domain:", v)
 		blockedDomain[v] = true
 	}
+}
+
+func writeBlocked() {
+	if !hasNewBlockedDomain {
+		return
+	}
+
+	l := len(blockedDomain)
+	lst := make([]string, l, l)
+
+	i := 0
+	for k, _ := range blockedDomain {
+		lst[i] = k
+		i++
+	}
+
+	writeDomainList(config.blockedFile, lst)
 }
 
 func init() {
