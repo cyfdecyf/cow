@@ -15,7 +15,8 @@ var sigChan = make(chan os.Signal, 1)
 // var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
 
 func doExit() {
-	writeBlocked()
+	writeBlockedDs()
+	writeDirectDs()
 }
 
 func sigHandler() {
