@@ -1,47 +1,49 @@
 package main
 
 import (
-	"fmt"
-	"io"
-	"net/http"
+	"flag"
+	"os"
+	// "os/signal"
+	"runtime"
+	// "runtime/pprof"
 )
 
-var client = &http.Client{}
+// var c = make(chan os.Signal, 1)
 
-func handleProxyReq(w http.ResponseWriter, r *http.Request) {
-	info.Println("RequestURI:", r.RequestURI)
-	debug.Printf("Request: %v\n", r)
-
-	// TODO how to handle request header and cookie?
-	req, err := http.NewRequest(r.Method, r.RequestURI, r.Body)
-	if err != nil {
-		info.Println(err)
-		fmt.Fprintln(w, err)
-		return
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		info.Println(err)
-		fmt.Fprintln(w, err)
-		return
-	}
-
-	// TODO How to pass response header back to client?
-	debug.Printf("Response: %v\n", resp)
-	ct := resp.Header["Content-Type"]
-	if ct != nil {
-		w.Header().Set("Content-Type", ct[0])
-	}
-
-	_, err = io.Copy(w, resp.Body)
-	if err != nil {
-		info.Println(err)
-	}
-	resp.Body.Close()
-}
+// var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
 
 func main() {
-	http.HandleFunc("/", handleProxyReq)
-	http.ListenAndServe(":9000", nil)
+	// Parse flags after load config to allow override options in config
+	loadConfig()
+	flag.Parse()
+
+	if printVer {
+		printVersion()
+		os.Exit(0)
+	}
+
+	/*
+	if *cpuprofile != "" {
+		f, err := os.Create(*cpuprofile)
+		if err != nil {
+			info.Println(err)
+			os.Exit(1)
+		}
+		pprof.StartCPUProfile(f)
+		signal.Notify(c, os.Interrupt)
+		go func() {
+			for sig := range c {
+				info.Printf("captured %v, stopping profiler and exiting..", sig)
+				pprof.StopCPUProfile()
+				os.Exit(0)
+			}
+		}()
+	}
+	*/
+
+	runtime.GOMAXPROCS(config.numProc)
+	go runSSH()
+
+	py := NewProxy(config.listenAddr)
+	py.Serve()
 }
