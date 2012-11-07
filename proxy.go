@@ -268,7 +268,7 @@ func (c *clientConn) readResponse(srvReader *bufio.Reader, rCh chan *Request, st
 		if rp.hasBody(r.Method) {
 			if err = sendBody(c.buf.Writer, srvReader, rp.Chunking, rp.ContLen); err != nil {
 				if err != io.EOF {
-					errl.Println("readResponse sendBody:", err)
+					debug.Println("readResponse sendBody:", err)
 				}
 				break
 			}
