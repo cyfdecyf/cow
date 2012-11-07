@@ -73,8 +73,8 @@ func (ds *domainSet) toArray() []string {
 var blockedDs = newDomainSet()
 var directDs = newDomainSet()
 
-var hasNewBlockedDomain = false
-var hasNewDirectDomain = false
+var blockedDomainChanged = false
+var directDomainChanged = false
 
 func isDomainBlocked(dm string) bool {
 	return blockedDs.has(dm)
@@ -84,32 +84,49 @@ func isRequestBlocked(r *Request) bool {
 	return isDomainBlocked(host2Domain(r.URL.Host))
 }
 
-func addRequestToDs(r *Request, ds *domainSet) {
-	d := host2Domain(r.URL.Host)
-	ds.add(d)
+func addBlockedRequest(r *Request) {
+	dm := host2Domain(r.URL.Host)
+	blockedDs.add(dm)
+	blockedDomainChanged = true
+
+	// Delete this request from direct domain set
+	delDirectRequest(r)
+
+	debug.Printf("%v added to blocked list\n", dm)
 }
 
-func addBlockedRequest(r *Request) {
-	addRequestToDs(r, blockedDs)
-	hasNewBlockedDomain = true
-	debug.Printf("%v added to blocked list\n", r.URL.Host)
+func delBlockedRequest(r *Request) {
+	dm := host2Domain(r.URL.Host)
+	blockedDs.del(dm)
+	blockedDomainChanged = true
+
+	debug.Printf("%v deleted from blocked list\n", dm)
 }
 
 func addDirectRequest(r *Request) {
-	addRequestToDs(r, directDs)
-	hasNewDirectDomain = true
-	debug.Printf("%v added to direct list\n", r.URL.Host)
+	dm := host2Domain(r.URL.Host)
+	directDs.add(dm)
+	directDomainChanged = true
+
+	// Delete this request from blocked domain set
+	delBlockedRequest(r)
+}
+
+func delDirectRequest(r *Request) {
+	dm := host2Domain(r.URL.Host)
+	directDs.del(dm)
+	directDomainChanged = true
 }
 
 func writeBlockedDs() {
-	if !hasNewBlockedDomain {
+	if !blockedDomainChanged {
 		return
 	}
 	writeDomainList(config.blockedFile, blockedDs.toArray())
 }
 
 func writeDirectDs() {
-	if !hasNewDirectDomain {
+	if !directDomainChanged {
 		return
 	}
 	writeDomainList(config.directFile, directDs.toArray())

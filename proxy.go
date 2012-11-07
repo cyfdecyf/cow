@@ -323,7 +323,7 @@ func (c *clientConn) createHandler(r *Request) (*Handler, error) {
 				connFailed = true
 				goto connDone
 			}
-			// TODO remove domain from blocked list?
+			addDirectRequest(r)
 		}
 	} else {
 		// In case of error on direction connection, try socks server
@@ -344,6 +344,7 @@ func (c *clientConn) createHandler(r *Request) (*Handler, error) {
 			}
 			addBlockedRequest(r)
 		}
+		addDirectRequest(r)
 	}
 
 connDone:
