@@ -22,7 +22,7 @@ var (
 )
 
 const (
-	dotDir       = ".cow-proxy"
+	dotDir       = ".cow"
 	blockedFname = "blocked"
 	directFname  = "direct"
 	rcFname      = "rc"
