@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"io"
+	"net"
 	"os"
 	"path"
 	"sort"
@@ -77,11 +78,16 @@ var blockedDomainChanged = false
 var directDomainChanged = false
 
 func isRequestBlocked(r *Request) bool {
-	return blockedDs.has(host2Domain(r.URL.Host))
+	host, _ := splitHostPort(r.URL.Host)
+	return blockedDs.has(host2Domain(host))
 }
 
 func addBlockedRequest(r *Request) {
-	dm := host2Domain(r.URL.Host)
+	host, _ := splitHostPort(r.URL.Host)
+	if hostIsIP(host) {
+		return
+	}
+	dm := host2Domain(host)
 	if !blockedDs.has(dm) {
 		blockedDs.add(dm)
 		blockedDomainChanged = true
@@ -92,7 +98,8 @@ func addBlockedRequest(r *Request) {
 }
 
 func delBlockedRequest(r *Request) {
-	dm := host2Domain(r.URL.Host)
+	host, _ := splitHostPort(r.URL.Host)
+	dm := host2Domain(host)
 	if blockedDs.has(dm) {
 		blockedDs.del(dm)
 		blockedDomainChanged = true
@@ -101,7 +108,11 @@ func delBlockedRequest(r *Request) {
 }
 
 func addDirectRequest(r *Request) {
-	dm := host2Domain(r.URL.Host)
+	host, _ := splitHostPort(r.URL.Host)
+	if hostIsIP(host) {
+		return
+	}
+	dm := host2Domain(host)
 	if !directDs.has(dm) {
 		directDs.add(dm)
 		directDomainChanged = true
@@ -111,7 +122,8 @@ func addDirectRequest(r *Request) {
 }
 
 func delDirectRequest(r *Request) {
-	dm := host2Domain(r.URL.Host)
+	host, _ := splitHostPort(r.URL.Host)
+	dm := host2Domain(host)
 	if directDs.has(dm) {
 		directDs.del(dm)
 		directDomainChanged = true
@@ -176,4 +188,21 @@ func writeDomainList(fpath string, lst []string) (err error) {
 		errl.Printf("Error moving tmp domain list file to %s: %v\n", fpath, err)
 	}
 	return
+}
+
+func hostIsIP(host string) bool {
+	return net.ParseIP(host) != nil
+}
+
+func host2Domain(host string) (domain string) {
+	dotPos := strings.LastIndex(host, ".")
+	if dotPos == -1 {
+		return host // simple host name
+	}
+	// Find the 2nd last dot
+	dotPos = strings.LastIndex(host[:dotPos], ".")
+	if dotPos == -1 {
+		return host
+	}
+	return host[dotPos+1:]
 }
