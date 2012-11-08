@@ -85,10 +85,10 @@ func addBlockedRequest(r *Request) {
 	if !blockedDs.has(dm) {
 		blockedDs.add(dm)
 		blockedDomainChanged = true
+		debug.Printf("%v added to blocked list\n", dm)
 	}
 	// Delete this request from direct domain set
 	delDirectRequest(r)
-	debug.Printf("%v added to blocked list\n", dm)
 }
 
 func delBlockedRequest(r *Request) {
@@ -96,8 +96,8 @@ func delBlockedRequest(r *Request) {
 	if blockedDs.has(dm) {
 		blockedDs.del(dm)
 		blockedDomainChanged = true
+		debug.Printf("%v deleted from blocked list\n", dm)
 	}
-	debug.Printf("%v deleted from blocked list\n", dm)
 }
 
 func addDirectRequest(r *Request) {

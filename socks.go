@@ -30,10 +30,11 @@ var socksMsgVerMethodSelection = []byte{
 	0,   // no authorization required
 }
 
-func createSocksConnection(hostFull string) (c net.Conn, err error) {
+func createSocksConnection(hostFull string) (c net.Conn, ct connectionType, err error) {
+	ct = nilConn	
 	if c, err = net.Dial("tcp", config.socksAddr); err != nil {
 		errl.Printf("Can't connect to socks server %v\n", err)
-		return nil, err
+		return
 	}
 	// debug.Println("Connected to socks server")
 
@@ -41,7 +42,7 @@ func createSocksConnection(hostFull string) (c net.Conn, err error) {
 	if n, err = c.Write(socksMsgVerMethodSelection); n != 3 || err != nil {
 		errl.Printf("sending ver/method selection msg %v n = %v\n", err, n)
 		c.Close()
-		return nil, err
+		return
 	}
 
 	// version/method selection
@@ -50,13 +51,13 @@ func createSocksConnection(hostFull string) (c net.Conn, err error) {
 	if err != nil {
 		errl.Printf("read ver/method selection error %v\n", err)
 		c.Close()
-		return nil, err
+		return
 	}
 	if repBuf[0] != 5 || repBuf[1] != 0 {
 		errl.Printf("socks ver/method selection reply error ver %d method %d",
 			repBuf[0], repBuf[1])
 		c.Close()
-		return nil, socksProtocolErr
+		return
 	}
 	// debug.Println("Socks version selection done")
 
@@ -88,7 +89,7 @@ func createSocksConnection(hostFull string) (c net.Conn, err error) {
 
 	if n, err = c.Write(reqBuf); err != nil || n != bufLen {
 		errl.Printf("Send socks request err %v n %d\n", err, n)
-		return nil, err
+		return
 	}
 
 	// I'm not clear why the buffer is fixed at 10. The rfc document does not say this.
@@ -99,24 +100,24 @@ func createSocksConnection(hostFull string) (c net.Conn, err error) {
 		if err != io.EOF {
 			errl.Printf("Read socks reply err %v n %d\n", err, n)
 		}
-		return nil, err
+		return
 	}
 	// debug.Printf("Socks reply length %d\n", n)
 
 	if replyBuf[0] != 5 {
 		errl.Printf("Socks reply connect %s VER %d not supported\n", hostFull, replyBuf[0])
-		return nil, socksProtocolErr
+		return nil, ct, socksProtocolErr
 	}
 	if replyBuf[1] != 0 {
 		errl.Printf("Socks reply connect %s error %d\n", hostFull, socksError[replyBuf[1]])
-		return nil, socksProtocolErr
+		return nil, ct, socksProtocolErr
 	}
 	if replyBuf[3] != 1 {
 		errl.Printf("Socks reply connect %s ATYP %d\n", hostFull, replyBuf[3])
-		return nil, socksProtocolErr
+		return nil, ct, socksProtocolErr
 	}
 
 	// Now the socket can be used to pass data.
-
+	ct = socksConn
 	return
 }

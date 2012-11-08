@@ -291,6 +291,8 @@ func (rp *Response) hasBody(method string) bool {
 		strings.HasPrefix(rp.Status, "1"))
 }
 
+var malformedHTTPResponseErr = errors.New("malformed HTTP response")
+
 // Parse response status and headers.
 func parseResponse(reader *bufio.Reader) (rp *Response, err error) {
 	rp = new(Response)
@@ -306,7 +308,8 @@ START:
 	}
 	var f []string
 	if f = strings.SplitN(s, " ", 3); len(f) < 3 {
-		return nil, errors.New(fmt.Sprintf("malformed HTTP response status line: %s\n", s))
+		errl.Println("malformed HTTP response status line:", s)
+		return nil, malformedHTTPResponseErr
 	}
 	// Handle 1xx response
 	if f[1] == "100" {
@@ -323,6 +326,7 @@ START:
 	rp.raw.WriteString("\r\n")
 
 	if err = rp.parseHeader(reader, &rp.raw, "Connection: Keep-Alive\r\n"); err != nil {
+		errl.Println("Reading response header:", err)
 		return nil, err
 	}
 

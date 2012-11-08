@@ -24,16 +24,24 @@ type Proxy struct {
 // Number of the simultaneous requests in the pipeline
 const requestNum = 5
 
+type connectionType int
+
 const (
-	directConn = iota
+	directConn connectionType = iota
 	socksConn
+	nilConn // Error creating connection
 )
 
 type Handler struct {
 	net.Conn
-	connType int
+	connType connectionType
 	stop     chan bool     // Used to notify the handler to stop execution
 	request  chan *Request // Pass HTTP method from request reader to response reader
+
+	// GFW may return wrong DNS record, which we can connect to but block
+	// forever on read. (e.g. twitter.com) If we have never received any
+	// response yet, then we should set a timeout for read/write.
+	hasReceivedResponse bool
 }
 
 type clientConn struct {
@@ -216,23 +224,30 @@ func hasMessage(c chan bool) bool {
 	return false
 }
 
-func (c *clientConn) readResponse(srvReader *bufio.Reader, rCh chan *Request, stop chan bool) (err error) {
+// What value is appropriate?
+var rwDeadline = time.Duration(10) * time.Second
+
+func (c *clientConn) readResponse(srvReader *bufio.Reader, handler *Handler) (err error) {
 	var rp *Response
 	var r *Request
 	for {
-		if hasMessage(stop) {
+		if hasMessage(handler.stop) {
 			debug.Println("readResponse stop requested")
 			break
+		}
+		if !handler.hasReceivedResponse && handler.connType == directConn {
+			// Note we will only receive response after request has sent.
+			// So the time out here should take request sending time into account.
+			handler.Conn.SetDeadline(time.Now().Add(rwDeadline))
 		}
 		rp, err = parseResponse(srvReader)
 		if err != nil {
 			if err != io.EOF {
-				r = <-rCh
-				errl.Printf("%v parseResponse for %v return %v\n", c.conn.RemoteAddr(), r, err)
+				r = <-handler.request
 				// debug.Println("Type of error", reflect.TypeOf(err))
 				ne, ok := err.(*net.OpError)
 				if !ok {
-					return err
+					return
 				}
 				// GFW may connection reset here, may also make it time out Is
 				// it normal for connection to a site timeout? If so, it's
@@ -241,25 +256,32 @@ func (c *clientConn) readResponse(srvReader *bufio.Reader, rCh chan *Request, st
 					addBlockedRequest(r)
 					sendErrorPage(c.buf.Writer, "503", "Connection reset",
 						ne.Error(), r.String())
-				} else if ne.Err == syscall.ETIMEDOUT {
+				} else if ne.Timeout() {
 					addBlockedRequest(r)
 					sendErrorPage(c.buf.Writer, "504", "Time out reading response",
 						ne.Error(), r.String())
 				}
 			}
-			break
+			return
+		}
+		if !handler.hasReceivedResponse && handler.connType == directConn {
+			// After have received the first reponses from the server, we
+			// consider ther server as real instead of fake one caused by
+			// wrong DNS reply. So don't time out later.
+			handler.Conn.SetReadDeadline(time.Time{})
+			handler.hasReceivedResponse = false
 		}
 
 		c.buf.WriteString(rp.raw.String())
 		// Flush response header to the client ASAP
 		if err = c.buf.Flush(); err != nil {
 			errl.Println("Flushing response header to client:", err)
-			break
+			return
 		}
 
 		// Must come after parseResponse, so closed server
 		// connection can be detected ASAP
-		r = <-rCh
+		r = <-handler.request
 		// Wrap inside if to avoid function argument evaluation.
 		if dbgRep {
 			dbgRep.Printf("%v %s %v %v", c.conn.RemoteAddr(), r.Method, r.URL, rp)
@@ -270,7 +292,7 @@ func (c *clientConn) readResponse(srvReader *bufio.Reader, rCh chan *Request, st
 				if err != io.EOF {
 					debug.Println("readResponse sendBody:", err)
 				}
-				break
+				return
 			}
 		}
 		/*
@@ -280,7 +302,7 @@ func (c *clientConn) readResponse(srvReader *bufio.Reader, rCh chan *Request, st
 		*/
 
 		if !rp.KeepAlive {
-			break
+			return
 		}
 	}
 	return
@@ -297,29 +319,28 @@ func (c *clientConn) getHandler(r *Request) (handler *Handler, err error) {
 
 var dialTimeout = time.Duration(5) * time.Second
 
-func createDirectConnection(host string) (c net.Conn, err error) {
-	c, err = net.DialTimeout("tcp", host, dialTimeout)
+func createDirectConnection(host string) (net.Conn, connectionType, error) {
+	c, err := net.DialTimeout("tcp", host, dialTimeout)
 	if err != nil {
 		// TODO Find a way report no host error to client. Send back web page?
 		// Time out is very likely to be caused by [GFW]
 		errl.Printf("Connecting to: %s %v\n", host, err)
-		return nil, err
+		return nil, nilConn, err
 	}
 	debug.Println("Connected to", host)
-	return c, nil
+	return c, directConn, nil
 }
 
 func (c *clientConn) createHandler(r *Request) (*Handler, error) {
 	var err error
 	var srvconn net.Conn
-	var connType int
+	var ct connectionType
 	connFailed := false
 
 	if isRequestBlocked(r) {
-		connType = socksConn // TODO is this necessary?
 		// In case of connection error to socks server, fallback to direct connection
-		if srvconn, err = createSocksConnection(r.URL.Host); err != nil {
-			if srvconn, err = createDirectConnection(r.URL.Host); err != nil {
+		if srvconn, ct, err = createSocksConnection(r.URL.Host); err != nil {
+			if srvconn, ct, err = createDirectConnection(r.URL.Host); err != nil {
 				connFailed = true
 				goto connDone
 			}
@@ -327,7 +348,7 @@ func (c *clientConn) createHandler(r *Request) (*Handler, error) {
 		}
 	} else {
 		// In case of error on direction connection, try socks server
-		if srvconn, err = createDirectConnection(r.URL.Host); err != nil {
+		if srvconn, ct, err = createDirectConnection(r.URL.Host); err != nil {
 			// debug.Printf("type of err %v\n", reflect.TypeOf(err))
 			// GFW may cause dns lookup fail, may also cause connection time out
 			if _, ok := err.(*net.DNSError); ok {
@@ -338,13 +359,14 @@ func (c *clientConn) createHandler(r *Request) (*Handler, error) {
 			}
 
 			// Try to create socks connection
-			if srvconn, err = createSocksConnection(r.URL.Host); err != nil {
+			if srvconn, ct, err = createSocksConnection(r.URL.Host); err != nil {
 				connFailed = true
 				goto connDone
 			}
 			addBlockedRequest(r)
+		} else {
+			addDirectRequest(r)
 		}
-		addDirectRequest(r)
 	}
 
 connDone:
@@ -356,17 +378,17 @@ connDone:
 
 	if r.isConnect {
 		// Don't put connection for CONNECT method for reuse
-		return &Handler{Conn: srvconn, connType: connType}, err
+		return &Handler{Conn: srvconn, connType: ct}, err
 	}
 
-	handler := &Handler{Conn: srvconn, connType: connType,
+	handler := &Handler{Conn: srvconn, connType: ct,
 		stop: make(chan bool), request: make(chan *Request, requestNum)}
 	c.handler[r.URL.Host] = handler
 
 	// start goroutine to send response to client
 	c.handlerGrp.Add(1)
 	go func() {
-		c.readResponse(bufio.NewReader(srvconn), handler.request, handler.stop)
+		c.readResponse(bufio.NewReader(srvconn), handler)
 		// XXX It's possbile that request is being sent through the connection
 		// when we try to remove it. Is there possible error here? The sending
 		// side will discover closed connection, so not a big problem.
