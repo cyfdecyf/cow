@@ -413,16 +413,17 @@ func (c *clientConn) removeHandler(host string) (err error) {
 	return
 }
 
-// Serve client request directly (without using any parent proxy)
-func (srvconn *Handler) ServeRequest(r *Request, c *clientConn) (err error) {
+// Serve client request through network connection
+func (h *Handler) ServeRequest(r *Request, c *clientConn) (err error) {
 	if r.isConnect {
-		return srvconn.doConnect(r, c)
+		return h.doConnect(r, c)
 	}
-	return srvconn.doRequest(r, c)
+	return h.doRequest(r, c)
 }
 
 var connEstablished = []byte("HTTP/1.0 200 Connection established\r\nProxy-agent: cow-proxy/0.1\r\n\r\n")
 
+// Do HTTP CONNECT
 func (srvconn *Handler) doConnect(r *Request, c *clientConn) (err error) {
 	defer srvconn.Close()
 	if debug {
@@ -453,6 +454,7 @@ func (srvconn *Handler) doConnect(r *Request, c *clientConn) (err error) {
 	return
 }
 
+// Do HTTP request other that CONNECT
 func (srvconn *Handler) doRequest(r *Request, c *clientConn) (err error) {
 	// Send request to the server
 	if _, err = srvconn.Write(r.raw.Bytes()); err != nil {
