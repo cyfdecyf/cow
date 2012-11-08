@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"io"
-	"net"
 	"os"
 	"path"
 	"sort"
@@ -188,10 +187,6 @@ func writeDomainList(fpath string, lst []string) (err error) {
 		errl.Printf("Error moving tmp domain list file to %s: %v\n", fpath, err)
 	}
 	return
-}
-
-func hostIsIP(host string) bool {
-	return net.ParseIP(host) != nil
 }
 
 func host2Domain(host string) (domain string) {

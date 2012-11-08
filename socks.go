@@ -100,7 +100,7 @@ func createSocksConnection(hostFull string) (c net.Conn, ct connectionType, err 
 		if err != io.EOF {
 			errl.Printf("Read socks reply err %v n %d\n", err, n)
 		}
-		return
+		return nil, ct, errors.New("Connection failed (by socks server). No such host?")
 	}
 	// debug.Printf("Socks reply length %d\n", n)
 

@@ -252,14 +252,20 @@ func (c *clientConn) readResponse(srvReader *bufio.Reader, handler *Handler) (er
 				// GFW may connection reset here, may also make it time out Is
 				// it normal for connection to a site timeout? If so, it's
 				// better not add it to blocked site
+				host, _ := splitHostPort(r.URL.Host)
+				detailMsg := fmt.Sprintf("<p>HTTP Request <strong>%v</strong></p>", r)
+				if !hostIsIP(host) {
+					detailMsg += fmt.Sprintf(
+						"<p>Domain <strong>%s</strong> added to blocked list. Try to refresh.</p>", host)
+				}
 				if ne.Err == syscall.ECONNRESET {
 					addBlockedRequest(r)
 					sendErrorPage(c.buf.Writer, "503", "Connection reset",
-						ne.Error(), r.String())
+						ne.Error(), detailMsg)
 				} else if ne.Timeout() {
 					addBlockedRequest(r)
 					sendErrorPage(c.buf.Writer, "504", "Time out reading response",
-						ne.Error(), r.String())
+						ne.Error(), detailMsg)
 				}
 			}
 			return
@@ -372,7 +378,7 @@ func (c *clientConn) createHandler(r *Request) (*Handler, error) {
 connDone:
 	if connFailed {
 		sendErrorPage(c.buf.Writer, "504", "Connection failed", err.Error(),
-			fmt.Sprintf("Failed connect to %s for request: %v", r.URL.Host, r))
+			fmt.Sprintf("<p>HTTP Request <strong>%v</strong></p>", r))
 		return nil, err
 	}
 
@@ -585,4 +591,8 @@ func sendBody(w *bufio.Writer, r *bufio.Reader, chunk bool, contLen int64) (err 
 		return err
 	}
 	return
+}
+
+func hostIsIP(host string) bool {
+	return net.ParseIP(host) != nil
 }
