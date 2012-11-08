@@ -254,16 +254,21 @@ func (c *clientConn) readResponse(srvReader *bufio.Reader, handler *Handler) (er
 				// better not add it to blocked site
 				host, _ := splitHostPort(r.URL.Host)
 				detailMsg := fmt.Sprintf("<p>HTTP Request <strong>%v</strong></p>", r)
-				if !hostIsIP(host) {
+				if !hostIsIP(host) && handler.connType == directConn {
 					detailMsg += fmt.Sprintf(
-						"<p>Domain <strong>%s</strong> added to blocked list. Try to refresh.</p>", host)
+						"<p>Domain <strong>%s</strong> added to blocked list. <strong>Try to refresh.</strong></p>",
+						host)
 				}
 				if ne.Err == syscall.ECONNRESET {
-					addBlockedRequest(r)
+					if handler.connType == directConn {
+						addBlockedRequest(r)
+					}
 					sendErrorPage(c.buf.Writer, "503", "Connection reset",
 						ne.Error(), detailMsg)
 				} else if ne.Timeout() {
-					addBlockedRequest(r)
+					if handler.connType == directConn {
+						addBlockedRequest(r)
+					}
 					sendErrorPage(c.buf.Writer, "504", "Time out reading response",
 						ne.Error(), detailMsg)
 				}
