@@ -39,7 +39,6 @@ func TestParseRequestURI(t *testing.T) {
 		{"google.com", &URL{"google.com:80", "/"}},
 		{"google.com:80/ncr", &URL{"google.com:80", "/ncr"}},
 		{"google.com/ncr/tree", &URL{"google.com:80", "/ncr/tree"}},
-		{"/ncr/tree", nil},
 	}
 	for _, td := range testData {
 		url, err := ParseRequestURI(td.rawurl)
@@ -55,15 +54,11 @@ func TestParseRequestURI(t *testing.T) {
 		if err != nil {
 			t.Error(td.rawurl, "non nil URL should not report error")
 		}
-		if td.url == nil {
-			t.Error(td.rawurl, "should report error")
-		} else {
-			if url.Host != td.url.Host {
-				t.Error(td.rawurl, "parsed host wrong:", td.url.Host, "got", url.Host)
-			}
-			if url.Path != td.url.Path {
-				t.Error(td.rawurl, "parsed path wrong:", td.url.Path, "got", url.Path)
-			}
+		if url.Host != td.url.Host {
+			t.Error(td.rawurl, "parsed host wrong:", td.url.Host, "got", url.Host)
+		}
+		if url.Path != td.url.Path {
+			t.Error(td.rawurl, "parsed path wrong:", td.url.Path, "got", url.Path)
 		}
 	}
 }

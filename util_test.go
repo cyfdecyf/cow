@@ -18,22 +18,3 @@ func TestIsDigit(t *testing.T) {
 		}
 	}
 }
-
-func TestHost2Domain(t *testing.T) {
-	var testData = []struct {
-		host   string
-		domain string
-	}{
-		{"google.com", "google.com"},
-		{"asdf.www.google.com", "google.com"},
-		{"asdf.www.google.com", "google.com"},
-		{"google.com:80", "google.com"},
-		{"account.google.com:443", "google.com"},
-	}
-
-	for _, td := range testData {
-		if host2Domain(td.host) != td.domain {
-			t.Errorf("%s should return %v", td.host, td.domain)
-		}
-	}
-}

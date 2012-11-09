@@ -202,15 +202,38 @@ func writeDomainList(fpath string, lst []string) (err error) {
 	return
 }
 
+var topLevelDomain = map[string]bool{
+	"co":  true,
+	"org": true,
+	"com": true,
+	"net": true,
+	"edu": true,
+}
+
 func host2Domain(host string) (domain string) {
-	dotPos := strings.LastIndex(host, ".")
-	if dotPos == -1 {
-		return host // simple host name
+	lastDot := strings.LastIndex(host, ".")
+	if lastDot == -1 {
+		return host // simple host name, we should not hanlde this
 	}
 	// Find the 2nd last dot
-	dotPos = strings.LastIndex(host[:dotPos], ".")
-	if dotPos == -1 {
+	dot2ndLast := strings.LastIndex(host[:lastDot], ".")
+	if dot2ndLast == -1 {
 		return host
 	}
-	return host[dotPos+1:]
+
+	part := host[dot2ndLast+1 : lastDot]
+	// If the 2nd last part of a domain name equals to a top level
+	// domain, search for the 3rd part in the host name.
+	// So domains like bbc.co.uk will not be recorded as co.uk
+	if topLevelDomain[part] {
+		dot3rdLast := strings.LastIndex(host[:dot2ndLast], ".")
+		if dot3rdLast == -1 {
+			return host
+		} else {
+			return host[dot3rdLast+1:]
+		}
+	} else {
+		return host[dot2ndLast+1:]
+	}
+	return
 }
