@@ -221,6 +221,10 @@ func hasMessage(c chan bool) bool {
 	return false
 }
 
+func genErrMsg(r *Request) string {
+	return fmt.Sprintf("<p>HTTP Request <strong>%v</strong></p>", r)
+}
+
 // What value is appropriate?
 var rwDeadline = time.Duration(10) * time.Second
 
@@ -241,16 +245,17 @@ func (c *clientConn) readResponse(srvReader *bufio.Reader, handler *Handler) (er
 		if err != nil {
 			if err != io.EOF {
 				r = <-handler.request
+				detailMsg := genErrMsg(r)
 				// debug.Println("Type of error", reflect.TypeOf(err))
 				ne, ok := err.(*net.OpError)
 				if !ok {
+					sendErrorPage(c.buf.Writer, "502", "read error", err.Error(), detailMsg)
 					return
 				}
 				// GFW may connection reset here, may also make it time out Is
 				// it normal for connection to a site timeout? If so, it's
 				// better not add it to blocked site
 				host, _ := splitHostPort(r.URL.Host)
-				detailMsg := fmt.Sprintf("<p>HTTP Request <strong>%v</strong></p>", r)
 				if !hostIsIP(host) && handler.connType == directConn {
 					detailMsg += fmt.Sprintf(
 						"<p>Domain <strong>%s</strong> added to blocked list. <strong>Try to refresh.</strong></p>",
@@ -379,8 +384,7 @@ func (c *clientConn) createHandler(r *Request) (*Handler, error) {
 
 connDone:
 	if connFailed {
-		sendErrorPage(c.buf.Writer, "504", "Connection failed", err.Error(),
-			fmt.Sprintf("<p>HTTP Request <strong>%v</strong></p>", r))
+		sendErrorPage(c.buf.Writer, "504", "Connection failed", err.Error(), genErrMsg(r))
 		return nil, err
 	}
 

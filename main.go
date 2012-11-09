@@ -14,15 +14,10 @@ var sigChan = make(chan os.Signal, 1)
 
 // var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
 
-func doExit() {
-	writeBlockedDs()
-	writeDirectDs()
-}
-
 func sigHandler() {
 	for sig := range sigChan {
 		info.Printf("%v caught, exit\n", sig)
-		doExit()
+		writeDomainSet()
 		break
 	}
 	os.Exit(0)

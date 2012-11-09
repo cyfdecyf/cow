@@ -39,6 +39,7 @@ var config struct {
 	dir         string // directory containing config file and blocked site list
 	blockedFile string // contains blocked domains
 	directFile  string // contains sites that can be directly accessed
+	chouFile    string // chou feng, sites which will be temporary blocked
 	rcFile      string
 }
 
@@ -150,7 +151,7 @@ func loadConfig() {
 	parseConfig()
 
 	blockedDs.loadDomainList(config.blockedFile)
-	directDs.loadDomainList(config.directFile)	
+	directDs.loadDomainList(config.directFile)
 	genPAC()
 
 	_, port := splitHostPort(config.listenAddr)
