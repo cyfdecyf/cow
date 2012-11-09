@@ -308,7 +308,7 @@ START:
 		return nil, err
 	}
 	var f []string
-	if f = strings.SplitN(s, " ", 3); len(f) < 3 {
+	if f = strings.SplitN(s, " ", 3); len(f) < 2 {
 		errl.Println("malformed HTTP response status line:", s)
 		return nil, malformedHTTPResponseErr
 	}
@@ -321,7 +321,9 @@ START:
 		goto START
 	}
 	rp.Status = f[1]
-	rp.Reason = f[2]
+	if len(f) == 3 {
+		rp.Reason = f[2]
+	}
 
 	rp.raw.WriteString(s)
 	rp.raw.WriteString("\r\n")

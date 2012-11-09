@@ -27,7 +27,7 @@ const (
 	directFname  = "direct"
 	rcFname      = "rc"
 
-	version = "0.2"
+	version = "0.2.1"
 )
 
 var config struct {

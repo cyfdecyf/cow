@@ -259,7 +259,7 @@ func (c *clientConn) readResponse(srvReader *bufio.Reader, handler *Handler) (er
 				if !hostIsIP(host) && handler.connType == directConn {
 					detailMsg += fmt.Sprintf(
 						"<p>Domain <strong>%s</strong> added to blocked list. <strong>Try to refresh.</strong></p>",
-						host)
+						host2Domain(host))
 				}
 				if ne.Err == syscall.ECONNRESET {
 					if handler.connType == directConn {
