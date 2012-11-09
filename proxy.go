@@ -47,7 +47,7 @@ type Handler struct {
 
 type clientConn struct {
 	buf        *bufio.ReadWriter
-	conn       net.Conn            // connection to the proxy client
+	net.Conn                       // connection to the proxy client
 	handler    map[string]*Handler // request handler, host:port as key
 	handlerGrp sync.WaitGroup      // Wait all handler to finish before close
 }
@@ -85,7 +85,7 @@ func (py *Proxy) Serve() {
 const bufSize = 4096
 
 func newClientConn(rwc net.Conn) (c *clientConn) {
-	c = &clientConn{conn: rwc, handler: map[string]*Handler{}}
+	c = &clientConn{Conn: rwc, handler: map[string]*Handler{}}
 	// http pkg uses io.LimitReader with no limit to create a reader, why?
 	br := bufio.NewReaderSize(rwc, bufSize)
 	bw := bufio.NewWriter(rwc)
@@ -102,10 +102,10 @@ func (c *clientConn) close() {
 		c.buf.Flush()
 		c.buf = nil
 	}
-	if c.conn != nil {
-		debug.Printf("Client %v connection closed\n", c.conn.RemoteAddr())
-		c.conn.Close()
-		c.conn = nil
+	if c != nil {
+		debug.Printf("Client %v connection closed\n", c.RemoteAddr())
+		c.Close()
+		c = nil
 	}
 	runtime.GC()
 }
@@ -131,7 +131,7 @@ func (c *clientConn) serve() {
 			return
 		}
 		if dbgRq {
-			dbgRq.Printf("%v %v\n", c.conn.RemoteAddr(), r)
+			dbgRq.Printf("%v %v\n", c.RemoteAddr(), r)
 		}
 		if isSelfURL(r.URL.Host) {
 			// Send PAC file if requesting self
@@ -290,7 +290,7 @@ func (c *clientConn) readResponse(srvReader *bufio.Reader, handler *Handler) (er
 		r = <-handler.request
 		// Wrap inside if to avoid function argument evaluation.
 		if dbgRep {
-			dbgRep.Printf("%v %s %v %v", c.conn.RemoteAddr(), r.Method, r.URL, rp)
+			dbgRep.Printf("%v %s %v %v", c.RemoteAddr(), r.Method, r.URL, rp)
 		}
 
 		if rp.hasBody(r.Method) {
@@ -303,7 +303,7 @@ func (c *clientConn) readResponse(srvReader *bufio.Reader, handler *Handler) (er
 		}
 		/*
 			if debug {
-				debug.Printf("[Finished] %v request %s %s\n", c.conn.RemoteAddr(), r.Method, r.URL)
+				debug.Printf("[Finished] %v request %s %s\n", c.RemoteAddr(), r.Method, r.URL)
 			}
 		*/
 
@@ -433,11 +433,11 @@ var connEstablished = []byte("HTTP/1.0 200 Connection established\r\nProxy-agent
 func (srvconn *Handler) doConnect(r *Request, c *clientConn) (err error) {
 	defer srvconn.Close()
 	if debug {
-		debug.Printf("%v 200 Connection established to %s\n", c.conn.RemoteAddr(), r.URL.Host)
+		debug.Printf("%v 200 Connection established to %s\n", c.RemoteAddr(), r.URL.Host)
 	}
-	_, err = c.conn.Write(connEstablished)
+	_, err = c.Write(connEstablished)
 	if err != nil {
-		errl.Printf("%v Error sending 200 Connecion established\n", c.conn.RemoteAddr())
+		errl.Printf("%v Error sending 200 Connecion established\n", c.RemoteAddr())
 		return err
 	}
 
@@ -446,7 +446,7 @@ func (srvconn *Handler) doConnect(r *Request, c *clientConn) (err error) {
 	// Otherwise, the server/client may have been closed and thus cause nil
 	// pointer deference
 	go func() {
-		err := copyData(c.conn, bufio.NewReaderSize(srvconn, bufSize), "doConnect server->client")
+		err := copyData(c, bufio.NewReaderSize(srvconn, bufSize), "doConnect server->client")
 		errchan <- err
 	}()
 
