@@ -17,7 +17,6 @@ COW is a proxy that tries to **automatically identify blocked web sites and use 
 - No caching, cow just passes traffic between the browser and web servers
   - Browsers have cache
 - Alpha quality now
-  - I've been using it on a daily basis now and not seen any problems for the sites that I visit
 
 # Installation #
 
