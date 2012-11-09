@@ -8,4 +8,4 @@ core = 2
 socks = 127.0.0.1:1080
 
 # ssh to the given server to start socks proxy
-ssh_server = gfw
+#ssh_server = gfw

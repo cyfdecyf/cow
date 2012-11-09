@@ -13,9 +13,9 @@ func runSSH() {
 	_, port := splitHostPort(config.socksAddr)
 	// -n redirects stdin from /dev/null
 	// -N do not execute remote command
-	cmd := exec.Command("ssh", "-n", "-N", "-D", port, config.sshServer)
 
 	for {
+		cmd := exec.Command("ssh", "-n", "-N", "-D", port, config.sshServer)
 		if err := cmd.Run(); err != nil {
 			errl.Println("ssh:", err)
 		}

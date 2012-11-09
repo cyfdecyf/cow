@@ -62,3 +62,13 @@ The goal is **make it easy to find the exact error location**.
 
 - Error should be printed as early as possible
 - If an error happens in a function which will be invoked at multiple places, print the error at the call site
+
+# About supporting auto refresh #
+
+When blocked sites are detected because of error like connection resets and read time out, we can choose to redo the HTTP request by using parent proxy or just return error page and let the browser refresh.
+
+I tried to support auto refresh. But as I want support HTTP pipelining, the client request and server response read are in separate goroutine. The response reading goroutine need to send redo request to the client request goroutine and maintain a correct request handling order. The resulting code is very complex and difficult to maintain. Besides, the extra code to support auto refresh may incur performance overhead.
+
+As blocked sites will be recorded, the refresh is only needed for the first access to a blocked site. Auto refresh is just a minor case optimization.
+
+So I choose not to support auto refresh as the benefit is small.

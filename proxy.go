@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -24,33 +25,35 @@ type Proxy struct {
 // Number of the simultaneous requests in the pipeline
 const requestNum = 5
 
+type connectionType int
+
 const (
-	directConn = iota
+	directConn connectionType = iota
 	socksConn
+	nilConn // Error creating connection
 )
 
 type Handler struct {
 	net.Conn
-	connType int
+	connType connectionType
 	stop     chan bool     // Used to notify the handler to stop execution
 	request  chan *Request // Pass HTTP method from request reader to response reader
+
+	// GFW may return wrong DNS record, which we can connect to but block
+	// forever on read. (e.g. twitter.com) If we have never received any
+	// response yet, then we should set a timeout for read/write.
+	hasReceivedResponse bool
 }
 
 type clientConn struct {
 	buf        *bufio.ReadWriter
-	conn       net.Conn            // connection to the proxy client
+	net.Conn                       // connection to the proxy client
 	handler    map[string]*Handler // request handler, host:port as key
 	handlerGrp sync.WaitGroup      // Wait all handler to finish before close
 }
 
-type proxyError string
-
-func (e proxyError) Error() string {
-	return string(e)
-}
-
 var (
-	errPIPE = proxyError("Error: broken pipe")
+	errPIPE = errors.New("Error: broken pipe")
 )
 
 func NewProxy(addr string) *Proxy {
@@ -82,7 +85,7 @@ func (py *Proxy) Serve() {
 const bufSize = 4096
 
 func newClientConn(rwc net.Conn) (c *clientConn) {
-	c = &clientConn{conn: rwc, handler: map[string]*Handler{}}
+	c = &clientConn{Conn: rwc, handler: map[string]*Handler{}}
 	// http pkg uses io.LimitReader with no limit to create a reader, why?
 	br := bufio.NewReaderSize(rwc, bufSize)
 	bw := bufio.NewWriter(rwc)
@@ -99,10 +102,10 @@ func (c *clientConn) close() {
 		c.buf.Flush()
 		c.buf = nil
 	}
-	if c.conn != nil {
-		debug.Printf("Client %v connection closed\n", c.conn.RemoteAddr())
-		c.conn.Close()
-		c.conn = nil
+	if c != nil {
+		debug.Printf("Client %v connection closed\n", c.RemoteAddr())
+		c.Close()
+		c = nil
 	}
 	runtime.GC()
 }
@@ -128,7 +131,7 @@ func (c *clientConn) serve() {
 			return
 		}
 		if dbgRq {
-			dbgRq.Printf("%v %v\n", c.conn.RemoteAddr(), r)
+			dbgRq.Printf("%v %v\n", c.RemoteAddr(), r)
 		}
 		if isSelfURL(r.URL.Host) {
 			// Send PAC file if requesting self
@@ -183,12 +186,14 @@ func copyData(dst net.Conn, src *bufio.Reader, dbgmsg string) (err error) {
 			if err == io.EOF {
 				return
 			}
-			if ne, ok := err.(*net.OpError); ok {
-				if ne.Err == syscall.ECONNRESET {
-					return
+			/*
+				if ne, ok := err.(*net.OpError); ok {
+					if ne.Err == syscall.ECONNRESET {
+						return
+					}
 				}
-			}
-			errl.Printf("%s read data: %v\n", dbgmsg, err)
+			*/
+			debug.Printf("%s read data: %v\n", dbgmsg, err)
 			return
 		}
 
@@ -216,71 +221,101 @@ func hasMessage(c chan bool) bool {
 	return false
 }
 
-func (c *clientConn) readResponse(srvReader *bufio.Reader, rCh chan *Request, stop chan bool) (err error) {
+func genErrMsg(r *Request) string {
+	return fmt.Sprintf("<p>HTTP Request <strong>%v</strong></p>", r)
+}
+
+// What value is appropriate?
+var rwDeadline = time.Duration(10) * time.Second
+
+func (c *clientConn) readResponse(srvReader *bufio.Reader, handler *Handler) (err error) {
 	var rp *Response
 	var r *Request
 	for {
-		if hasMessage(stop) {
+		if hasMessage(handler.stop) {
 			debug.Println("readResponse stop requested")
 			break
+		}
+		if !handler.hasReceivedResponse && handler.connType == directConn {
+			// Note we will only receive response after request has sent.
+			// So the time out here should take request sending time into account.
+			handler.Conn.SetDeadline(time.Now().Add(rwDeadline))
 		}
 		rp, err = parseResponse(srvReader)
 		if err != nil {
 			if err != io.EOF {
-				r = <-rCh
-				errl.Printf("%v parseResponse for %v return %v\n", c.conn.RemoteAddr(), r, err)
+				r = <-handler.request
+				detailMsg := genErrMsg(r)
 				// debug.Println("Type of error", reflect.TypeOf(err))
 				ne, ok := err.(*net.OpError)
 				if !ok {
-					return err
+					sendErrorPage(c.buf.Writer, "502", "read error", err.Error(), detailMsg)
+					return
 				}
 				// GFW may connection reset here, may also make it time out Is
 				// it normal for connection to a site timeout? If so, it's
 				// better not add it to blocked site
+				host, _ := splitHostPort(r.URL.Host)
+				if !hostIsIP(host) && handler.connType == directConn {
+					detailMsg += fmt.Sprintf(
+						"<p>Domain <strong>%s</strong> added to blocked list. <strong>Try to refresh.</strong></p>",
+						host)
+				}
 				if ne.Err == syscall.ECONNRESET {
-					addBlockedRequest(r)
+					if handler.connType == directConn {
+						addBlockedRequest(r)
+					}
 					sendErrorPage(c.buf.Writer, "503", "Connection reset",
-						ne.Error(), r.String())
-				} else if ne.Err == syscall.ETIMEDOUT {
-					addBlockedRequest(r)
+						ne.Error(), detailMsg)
+				} else if ne.Timeout() {
+					if handler.connType == directConn {
+						addBlockedRequest(r)
+					}
 					sendErrorPage(c.buf.Writer, "504", "Time out reading response",
-						ne.Error(), r.String())
+						ne.Error(), detailMsg)
 				}
 			}
-			break
+			return
+		}
+		if !handler.hasReceivedResponse && handler.connType == directConn {
+			// After have received the first reponses from the server, we
+			// consider ther server as real instead of fake one caused by
+			// wrong DNS reply. So don't time out later.
+			handler.Conn.SetReadDeadline(time.Time{})
+			handler.hasReceivedResponse = false
 		}
 
 		c.buf.WriteString(rp.raw.String())
 		// Flush response header to the client ASAP
 		if err = c.buf.Flush(); err != nil {
 			errl.Println("Flushing response header to client:", err)
-			break
+			return
 		}
 
 		// Must come after parseResponse, so closed server
 		// connection can be detected ASAP
-		r = <-rCh
+		r = <-handler.request
 		// Wrap inside if to avoid function argument evaluation.
 		if dbgRep {
-			dbgRep.Printf("%v %s %v %v", c.conn.RemoteAddr(), r.Method, r.URL, rp)
+			dbgRep.Printf("%v %s %v %v", c.RemoteAddr(), r.Method, r.URL, rp)
 		}
 
 		if rp.hasBody(r.Method) {
 			if err = sendBody(c.buf.Writer, srvReader, rp.Chunking, rp.ContLen); err != nil {
 				if err != io.EOF {
-					errl.Println("readResponse sendBody:", err)
+					debug.Println("readResponse sendBody:", err)
 				}
-				break
+				return
 			}
 		}
 		/*
 			if debug {
-				debug.Printf("[Finished] %v request %s %s\n", c.conn.RemoteAddr(), r.Method, r.URL)
+				debug.Printf("[Finished] %v request %s %s\n", c.RemoteAddr(), r.Method, r.URL)
 			}
 		*/
 
 		if !rp.KeepAlive {
-			break
+			return
 		}
 	}
 	return
@@ -297,37 +332,36 @@ func (c *clientConn) getHandler(r *Request) (handler *Handler, err error) {
 
 var dialTimeout = time.Duration(5) * time.Second
 
-func createDirectConnection(host string) (c net.Conn, err error) {
-	c, err = net.DialTimeout("tcp", host, dialTimeout)
+func createDirectConnection(host string) (net.Conn, connectionType, error) {
+	c, err := net.DialTimeout("tcp", host, dialTimeout)
 	if err != nil {
 		// TODO Find a way report no host error to client. Send back web page?
 		// Time out is very likely to be caused by [GFW]
 		errl.Printf("Connecting to: %s %v\n", host, err)
-		return nil, err
+		return nil, nilConn, err
 	}
 	debug.Println("Connected to", host)
-	return c, nil
+	return c, directConn, nil
 }
 
 func (c *clientConn) createHandler(r *Request) (*Handler, error) {
 	var err error
 	var srvconn net.Conn
-	var connType int
+	var ct connectionType
 	connFailed := false
 
 	if isRequestBlocked(r) {
-		connType = socksConn // TODO is this necessary?
 		// In case of connection error to socks server, fallback to direct connection
-		if srvconn, err = createSocksConnection(r.URL.Host); err != nil {
-			if srvconn, err = createDirectConnection(r.URL.Host); err != nil {
+		if srvconn, ct, err = createSocksConnection(r.URL.Host); err != nil {
+			if srvconn, ct, err = createDirectConnection(r.URL.Host); err != nil {
 				connFailed = true
 				goto connDone
 			}
-			// TODO remove domain from blocked list?
+			addDirectRequest(r)
 		}
 	} else {
 		// In case of error on direction connection, try socks server
-		if srvconn, err = createDirectConnection(r.URL.Host); err != nil {
+		if srvconn, ct, err = createDirectConnection(r.URL.Host); err != nil {
 			// debug.Printf("type of err %v\n", reflect.TypeOf(err))
 			// GFW may cause dns lookup fail, may also cause connection time out
 			if _, ok := err.(*net.DNSError); ok {
@@ -338,34 +372,35 @@ func (c *clientConn) createHandler(r *Request) (*Handler, error) {
 			}
 
 			// Try to create socks connection
-			if srvconn, err = createSocksConnection(r.URL.Host); err != nil {
+			if srvconn, ct, err = createSocksConnection(r.URL.Host); err != nil {
 				connFailed = true
 				goto connDone
 			}
 			addBlockedRequest(r)
+		} else {
+			addDirectRequest(r)
 		}
 	}
 
 connDone:
 	if connFailed {
-		sendErrorPage(c.buf.Writer, "504", "Connection failed", err.Error(),
-			fmt.Sprintf("Failed connect to %s for request: %v", r.URL.Host, r))
+		sendErrorPage(c.buf.Writer, "504", "Connection failed", err.Error(), genErrMsg(r))
 		return nil, err
 	}
 
 	if r.isConnect {
 		// Don't put connection for CONNECT method for reuse
-		return &Handler{Conn: srvconn, connType: connType}, err
+		return &Handler{Conn: srvconn, connType: ct}, err
 	}
 
-	handler := &Handler{Conn: srvconn, connType: connType,
+	handler := &Handler{Conn: srvconn, connType: ct,
 		stop: make(chan bool), request: make(chan *Request, requestNum)}
 	c.handler[r.URL.Host] = handler
 
 	// start goroutine to send response to client
 	c.handlerGrp.Add(1)
 	go func() {
-		c.readResponse(bufio.NewReader(srvconn), handler.request, handler.stop)
+		c.readResponse(bufio.NewReader(srvconn), handler)
 		// XXX It's possbile that request is being sent through the connection
 		// when we try to remove it. Is there possible error here? The sending
 		// side will discover closed connection, so not a big problem.
@@ -390,24 +425,25 @@ func (c *clientConn) removeHandler(host string) (err error) {
 	return
 }
 
-// Serve client request directly (without using any parent proxy)
-func (srvconn *Handler) ServeRequest(r *Request, c *clientConn) (err error) {
+// Serve client request through network connection
+func (h *Handler) ServeRequest(r *Request, c *clientConn) (err error) {
 	if r.isConnect {
-		return srvconn.doConnect(r, c)
+		return h.doConnect(r, c)
 	}
-	return srvconn.doRequest(r, c)
+	return h.doRequest(r, c)
 }
 
 var connEstablished = []byte("HTTP/1.0 200 Connection established\r\nProxy-agent: cow-proxy/0.1\r\n\r\n")
 
+// Do HTTP CONNECT
 func (srvconn *Handler) doConnect(r *Request, c *clientConn) (err error) {
 	defer srvconn.Close()
 	if debug {
-		debug.Printf("%v 200 Connection established to %s\n", c.conn.RemoteAddr(), r.URL.Host)
+		debug.Printf("%v 200 Connection established to %s\n", c.RemoteAddr(), r.URL.Host)
 	}
-	_, err = c.conn.Write(connEstablished)
+	_, err = c.Write(connEstablished)
 	if err != nil {
-		errl.Printf("%v Error sending 200 Connecion established\n", c.conn.RemoteAddr())
+		errl.Printf("%v Error sending 200 Connecion established\n", c.RemoteAddr())
 		return err
 	}
 
@@ -416,7 +452,7 @@ func (srvconn *Handler) doConnect(r *Request, c *clientConn) (err error) {
 	// Otherwise, the server/client may have been closed and thus cause nil
 	// pointer deference
 	go func() {
-		err := copyData(c.conn, bufio.NewReaderSize(srvconn, bufSize), "doConnect server->client")
+		err := copyData(c, bufio.NewReaderSize(srvconn, bufSize), "doConnect server->client")
 		errchan <- err
 	}()
 
@@ -430,6 +466,7 @@ func (srvconn *Handler) doConnect(r *Request, c *clientConn) (err error) {
 	return
 }
 
+// Do HTTP request other that CONNECT
 func (srvconn *Handler) doRequest(r *Request, c *clientConn) (err error) {
 	// Send request to the server
 	if _, err = srvconn.Write(r.raw.Bytes()); err != nil {
@@ -560,4 +597,8 @@ func sendBody(w *bufio.Writer, r *bufio.Reader, chunk bool, contLen int64) (err 
 		return err
 	}
 	return
+}
+
+func hostIsIP(host string) bool {
+	return net.ParseIP(host) != nil
 }

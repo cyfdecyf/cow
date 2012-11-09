@@ -22,12 +22,12 @@ var (
 )
 
 const (
-	dotDir       = ".cow-proxy"
+	dotDir       = ".cow"
 	blockedFname = "blocked"
 	directFname  = "direct"
 	rcFname      = "rc"
 
-	version = "0.1"
+	version = "0.2"
 )
 
 var config struct {
@@ -39,6 +39,7 @@ var config struct {
 	dir         string // directory containing config file and blocked site list
 	blockedFile string // contains blocked domains
 	directFile  string // contains sites that can be directly accessed
+	chouFile    string // chou feng, sites which will be temporary blocked
 	rcFile      string
 }
 
@@ -76,32 +77,6 @@ func openFile(path string) (f *os.File, err error) {
 		}
 		errl.Println("Error opening file:", path, err)
 		return nil, err
-	}
-	return
-}
-
-func loadDomainList(fpath string) (lst []string, err error) {
-	f, err := openFile(fpath)
-	if f == nil || err != nil {
-		return
-	}
-	defer f.Close()
-
-	fr := bufio.NewReader(f)
-	lst = make([]string, 0)
-	var domain string
-	for {
-		domain, err = ReadLine(fr)
-		if err == io.EOF {
-			return lst, nil
-		} else if err != nil {
-			errl.Println("Error reading domain list from:", fpath, err)
-			return
-		}
-		if domain == "" {
-			continue
-		}
-		lst = append(lst, strings.TrimSpace(domain))
 	}
 	return
 }
@@ -174,8 +149,9 @@ func parseConfig() {
 
 func loadConfig() {
 	parseConfig()
-	loadBlocked()
-	genPAC()
+
+	blockedDs.loadDomainList(config.blockedFile)
+	directDs.loadDomainList(config.directFile)
 
 	_, port := splitHostPort(config.listenAddr)
 	selfURL127 = "127.0.0.1:" + port
