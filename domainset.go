@@ -143,6 +143,19 @@ func writeDirectDs() {
 	writeDomainList(config.directFile, directDs.toArray())
 }
 
+func writeDomainSet() {
+	lst, err := loadDomainList(config.chouFile)
+	if err != nil {
+		return
+	}
+	for _, v := range lst {
+		delete(blockedDs.domain, v)
+		delete(directDs.domain, v)
+	}
+	writeBlockedDs()
+	writeDirectDs()
+}
+
 func loadDomainList(fpath string) (lst []string, err error) {
 	f, err := openFile(fpath)
 	if f == nil || err != nil {
