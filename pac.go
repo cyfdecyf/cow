@@ -37,15 +37,18 @@ function FindProxyForURL(url, host) {
 };
 `
 
-var pacCont string
+var pacTmpl *template.Template
 
-func genPAC() {
-	pacTmpl, err := template.New("pac").Parse(pacRawTmpl)
+func init() {
+	var err error
+	pacTmpl, err = template.New("pac").Parse(pacRawTmpl)
 	if err != nil {
 		fmt.Println("Internal error on generating pac file template")
 		os.Exit(1)
 	}
+}
 
+func genPAC() string {
 	data := struct {
 		ProxyAddr     string
 		DirectDomains string
@@ -59,15 +62,16 @@ func genPAC() {
 	buf := new(bytes.Buffer)
 	if err := pacTmpl.Execute(buf, data); err != nil {
 		errl.Println("Error generating pac file:", err)
-		return
+		os.Exit(1)
 	}
-	pacCont = buf.String()
+	pac := buf.String()
 	pacHeader := "HTTP/1.1 200 Okay\r\nServer: cow-proxy\r\nContent-Type: text/html\r\nConnection: close\r\n" +
-		fmt.Sprintf("Content-Length: %d\r\n\r\n", len(pacCont))
-	pacCont = pacHeader + pacCont
+		fmt.Sprintf("Content-Length: %d\r\n\r\n", len(pac))
+	pac = pacHeader + pac
+	return pac
 }
 
 func sendPAC(w *bufio.Writer) {
-	w.WriteString(pacCont)
+	w.WriteString(genPAC())
 	w.Flush()
 }

@@ -152,7 +152,6 @@ func loadConfig() {
 
 	blockedDs.loadDomainList(config.blockedFile)
 	directDs.loadDomainList(config.directFile)
-	genPAC()
 
 	_, port := splitHostPort(config.listenAddr)
 	selfURL127 = "127.0.0.1:" + port
