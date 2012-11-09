@@ -186,12 +186,14 @@ func copyData(dst net.Conn, src *bufio.Reader, dbgmsg string) (err error) {
 			if err == io.EOF {
 				return
 			}
-			if ne, ok := err.(*net.OpError); ok {
-				if ne.Err == syscall.ECONNRESET {
-					return
+			/*
+				if ne, ok := err.(*net.OpError); ok {
+					if ne.Err == syscall.ECONNRESET {
+						return
+					}
 				}
-			}
-			errl.Printf("%s read data: %v\n", dbgmsg, err)
+			*/
+			debug.Printf("%s read data: %v\n", dbgmsg, err)
 			return
 		}
 
