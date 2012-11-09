@@ -302,7 +302,8 @@ func parseResponse(reader *bufio.Reader) (rp *Response, err error) {
 START:
 	if s, err = ReadLine(reader); err != nil {
 		if err != io.EOF {
-			errl.Printf("Reading Response status line: %v\n", err)
+			// err maybe timeout caused by explicity setting deadline
+			debug.Printf("Reading Response status line: %v\n", err)
 		}
 		return nil, err
 	}
