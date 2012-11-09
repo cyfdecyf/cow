@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -51,14 +52,8 @@ type clientConn struct {
 	handlerGrp sync.WaitGroup      // Wait all handler to finish before close
 }
 
-type proxyError string
-
-func (e proxyError) Error() string {
-	return string(e)
-}
-
 var (
-	errPIPE = proxyError("Error: broken pipe")
+	errPIPE = errors.New("Error: broken pipe")
 )
 
 func NewProxy(addr string) *Proxy {
