@@ -222,9 +222,10 @@ func genErrMsg(r *Request) string {
 // What value is appropriate?
 var rwDeadline = time.Duration(10) * time.Second
 
-func (c *clientConn) readResponse(srvReader *bufio.Reader, handler *Handler) (err error) {
+func (c *clientConn) readResponse(handler *Handler) (err error) {
 	var rp *Response
 	var r *Request
+	var srvReader *bufio.Reader = bufio.NewReader(handler)
 	for {
 		if handler.stop.hasNotified() {
 			debug.Println("readResponse stop requested")
@@ -394,7 +395,7 @@ connDone:
 	// start goroutine to send response to client
 	c.handlerGrp.Add(1)
 	go func() {
-		c.readResponse(bufio.NewReader(srvconn), handler)
+		c.readResponse(handler)
 		// XXX It's possbile that request is being sent through the connection
 		// when we try to remove it. Is there possible error here? The sending
 		// side will discover closed connection, so not a big problem.
