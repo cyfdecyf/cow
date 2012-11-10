@@ -1,5 +1,43 @@
 # Design #
 
+## Requst and response handling ##
+
+The final design is evolved from different previous implementations. The other subsections following this one describe how its evolved.
+
+COW uses separate goroutines to read client requests and server responses.
+
+- For each client, COW will create one *request goroutine* to
+  - accept client request (read from client connection)
+  - create connection if no one not exist
+  - send request to the server (write to server connection)
+- For each server connection, there will be an associated *response goroutine*
+  - reading response from the web server (read from server connection)
+  - send response back to the client (write to client connection)
+
+One client must have one request goroutine, and may have multiple response goroutine. Response goroutine is created when the server connection is created.
+
+This makes it possible for COW to support HTTP pipeline. (Not very sure about this.) COW does not pack multiple requests and send in batch, but it can send request before previous request response is received. If the client (browser) and the web server supports HTTP pipeline, then COW will not in effect make them go back to wating response for each request.
+
+But this design does make COW more complicated. I must be careful to avoid concurrency problems between the request and response goroutine.
+
+Here's things that worth noting:
+
+- The web server connection for each host is stored in a map
+  - The request goroutine creates the connection and put it into this map
+  - When serving requests, this map will be be used to find already created server connections
+  - We should avoid writing the map in the response goroutine. So when response goroutine finishes, it should just mark the corresonding connection as closed instead of directly removing it from the map
+
+- Request and response goroutine may need to notify each other to stop
+  - When client connection is closed, all response goroutine should stop
+  - Client connection close can be detected in both request and response goroutine (as both will try to either read or write the connection), to make things simple, I just do notification in the request goroutine
+
+## Notification between goroutines
+
+- Notification sender should not block
+  - I use a size 1 channel for this as the notification will be sent only once
+- Receiver use polling to handle notification
+  - For blocked calls, should set time out to actively poll notification
+
 ## Why parse client http request ##
 
 Of course we need to parse http request to know the address of the web server.
@@ -56,13 +94,6 @@ To add this kind of response editing capability for my proxy, I have to parse HT
 
 So the current solution is to parse the response in the a separate goroutine, which doesn't require lots of code change against the not parsing approach.
 
-# Error printing policy #
-
-The goal is **make it easy to find the exact error location**.
-
-- Error should be printed as early as possible
-- If an error happens in a function which will be invoked at multiple places, print the error at the call site
-
 # About supporting auto refresh #
 
 When blocked sites are detected because of error like connection resets and read time out, we can choose to redo the HTTP request by using parent proxy or just return error page and let the browser refresh.
@@ -72,3 +103,10 @@ I tried to support auto refresh. But as I want support HTTP pipelining, the clie
 As blocked sites will be recorded, the refresh is only needed for the first access to a blocked site. Auto refresh is just a minor case optimization.
 
 So I choose not to support auto refresh as the benefit is small.
+
+# Error printing policy #
+
+The goal is **make it easy to find the exact error location**.
+
+- Error should be printed as early as possible
+- If an error happens in a function which will be invoked at multiple places, print the error at the call site
