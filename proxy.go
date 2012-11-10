@@ -25,21 +25,25 @@ type Proxy struct {
 // Number of the simultaneous requests in the pipeline
 const requestNum = 5
 
-type connectionType int
+type connType int
 
 const (
-	directConn connectionType = iota
+	nilConn connType = iota
+	directConn
 	socksConn
-	nilConn // Error creating connection
 )
 
 type notification chan byte
 
-type Handler struct {
+type conn struct {
 	net.Conn
-	connType connectionType
-	stop     notification  // Used to notify the handler to stop execution
-	request  chan *Request // Pass HTTP method from request reader to response reader
+	connType
+}
+
+type Handler struct {
+	conn
+	stop    notification  // Used to notify the handler to stop execution
+	request chan *Request // Pass HTTP method from request reader to response reader
 
 	// GFW may return wrong DNS record, which we can connect to but block
 	// forever on read. (e.g. twitter.com) If we have never received any
@@ -343,28 +347,27 @@ func (c *clientConn) getHandler(r *Request) (handler *Handler, err error) {
 
 var dialTimeout = time.Duration(5) * time.Second
 
-func createDirectConnection(host string) (net.Conn, connectionType, error) {
+func createDirectConnection(host string) (conn, error) {
 	c, err := net.DialTimeout("tcp", host, dialTimeout)
 	if err != nil {
 		// TODO Find a way report no host error to client. Send back web page?
 		// Time out is very likely to be caused by [GFW]
 		errl.Printf("Connecting to: %s %v\n", host, err)
-		return nil, nilConn, err
+		return conn{nil, nilConn}, err
 	}
 	debug.Println("Connected to", host)
-	return c, directConn, nil
+	return conn{c, directConn}, nil
 }
 
 func (c *clientConn) createHandler(r *Request) (*Handler, error) {
 	var err error
-	var srvconn net.Conn
-	var ct connectionType
+	var srvconn conn
 	connFailed := false
 
 	if isRequestBlocked(r) {
 		// In case of connection error to socks server, fallback to direct connection
-		if srvconn, ct, err = createSocksConnection(r.URL.Host); err != nil {
-			if srvconn, ct, err = createDirectConnection(r.URL.Host); err != nil {
+		if srvconn, err = createSocksConnection(r.URL.Host); err != nil {
+			if srvconn, err = createDirectConnection(r.URL.Host); err != nil {
 				connFailed = true
 				goto connDone
 			}
@@ -372,7 +375,7 @@ func (c *clientConn) createHandler(r *Request) (*Handler, error) {
 		}
 	} else {
 		// In case of error on direction connection, try socks server
-		if srvconn, ct, err = createDirectConnection(r.URL.Host); err != nil {
+		if srvconn, err = createDirectConnection(r.URL.Host); err != nil {
 			// debug.Printf("type of err %v\n", reflect.TypeOf(err))
 			// GFW may cause dns lookup fail, may also cause connection time out
 			if _, ok := err.(*net.DNSError); ok {
@@ -383,7 +386,7 @@ func (c *clientConn) createHandler(r *Request) (*Handler, error) {
 			}
 
 			// Try to create socks connection
-			if srvconn, ct, err = createSocksConnection(r.URL.Host); err != nil {
+			if srvconn, err = createSocksConnection(r.URL.Host); err != nil {
 				connFailed = true
 				goto connDone
 			}
@@ -401,12 +404,12 @@ connDone:
 
 	if r.isConnect {
 		// Don't put connection for CONNECT method for reuse
-		return &Handler{Conn: srvconn, connType: ct}, err
+		return &Handler{conn: srvconn}, err
 	}
 
 	// The stop channel should have size 1 to avoid block when sending notification
-	handler := &Handler{Conn: srvconn, connType: ct,
-		stop: newNotification(), request: make(chan *Request, requestNum)}
+	handler := &Handler{conn: srvconn, stop: newNotification(),
+		request: make(chan *Request, requestNum)}
 	c.handler[r.URL.Host] = handler
 
 	// start goroutine to send response to client
