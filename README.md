@@ -1,6 +1,6 @@
 # COW (Climb Over the Wall) proxy  #
 
-COW is a proxy that tries to **automatically identify blocked web sites and use a parent proxy when visiting those sites**.
+COW is a HTTP proxy that tries to **automatically identify blocked web sites and use a parent proxy when visiting those sites**. For non-blocked sites, COW will use direct access. COW can also generate PAC file to tell the client use direct access for non-blocked sites.
 
 # Features #
 
