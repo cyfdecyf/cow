@@ -33,10 +33,12 @@ const (
 	nilConn // Error creating connection
 )
 
+type notification chan byte
+
 type Handler struct {
 	net.Conn
 	connType connectionType
-	stop     chan bool     // Used to notify the handler to stop execution
+	stop     notification  // Used to notify the handler to stop execution
 	request  chan *Request // Pass HTTP method from request reader to response reader
 
 	// GFW may return wrong DNS record, which we can connect to but block
@@ -55,6 +57,25 @@ type clientConn struct {
 var (
 	errPIPE = errors.New("Error: broken pipe")
 )
+
+func newNotification() notification {
+	// Notification channle has size 1, so sending a single one will not block
+	return make(chan byte, 1)
+}
+
+func (n notification) notify() {
+	n <- 1
+}
+
+func (n notification) hasNotified() bool {
+	select {
+	case <-n:
+		return true
+	default:
+		return false
+	}
+	return false
+}
 
 func NewProxy(addr string) *Proxy {
 	return &Proxy{addr: addr}
@@ -95,7 +116,7 @@ func newClientConn(rwc net.Conn) (c *clientConn) {
 
 func (c *clientConn) close() {
 	for _, h := range c.handler {
-		h.NotifyStop()
+		h.stop.notify()
 	}
 	c.handlerGrp.Wait()
 	if c.buf != nil {
@@ -211,16 +232,6 @@ func copyData(dst net.Conn, src *bufio.Reader, dbgmsg string) (err error) {
 	return
 }
 
-func hasMessage(c chan bool) bool {
-	select {
-	case <-c:
-		return true
-	default:
-		return false
-	}
-	return false
-}
-
 func genErrMsg(r *Request) string {
 	return fmt.Sprintf("<p>HTTP Request <strong>%v</strong></p>", r)
 }
@@ -232,7 +243,7 @@ func (c *clientConn) readResponse(srvReader *bufio.Reader, handler *Handler) (er
 	var rp *Response
 	var r *Request
 	for {
-		if hasMessage(handler.stop) {
+		if handler.stop.hasNotified() {
 			debug.Println("readResponse stop requested")
 			break
 		}
@@ -393,8 +404,9 @@ connDone:
 		return &Handler{Conn: srvconn, connType: ct}, err
 	}
 
+	// The stop channel should have size 1 to avoid block when sending notification
 	handler := &Handler{Conn: srvconn, connType: ct,
-		stop: make(chan bool), request: make(chan *Request, requestNum)}
+		stop: newNotification(), request: make(chan *Request, requestNum)}
 	c.handler[r.URL.Host] = handler
 
 	// start goroutine to send response to client
@@ -410,10 +422,6 @@ connDone:
 	}()
 
 	return handler, err
-}
-
-func (h *Handler) NotifyStop() {
-	h.stop <- true
 }
 
 func (c *clientConn) removeHandler(host string) (err error) {
@@ -506,7 +514,7 @@ func sendBodyWithContLen(w *bufio.Writer, r *bufio.Reader, contLen int64) (err e
 	// the connection is closed, return will propagate till serv function and
 	// close client connection.
 	if _, err = io.CopyN(w, r, contLen); err != nil {
-		errl.Println("Sending response body to client", err)
+		debug.Println("Sending response body to client", err)
 		return err
 	}
 	return
@@ -593,7 +601,8 @@ func sendBody(w *bufio.Writer, r *bufio.Reader, chunk bool, contLen int64) (err 
 	}
 
 	if err = w.Flush(); err != nil {
-		errl.Println("Flushing body to client:", err)
+		// Maybe the client has closed the connection
+		debug.Println("Flushing body to client:", err)
 		return err
 	}
 	return
