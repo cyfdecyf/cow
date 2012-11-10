@@ -229,11 +229,8 @@ func host2Domain(host string) (domain string) {
 		dot3rdLast := strings.LastIndex(host[:dot2ndLast], ".")
 		if dot3rdLast == -1 {
 			return host
-		} else {
-			return host[dot3rdLast+1:]
 		}
-	} else {
-		return host[dot2ndLast+1:]
+		return host[dot3rdLast+1:]
 	}
-	return
+	return host[dot2ndLast+1:]
 }
