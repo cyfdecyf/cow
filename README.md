@@ -40,7 +40,7 @@ Configuration file is located at `~/.cow/rc`. Here's an example:
 To start cow, just execute `cow` on the command line.
 
 - The PAC file can be access at the same address as proxy listen address
-  - For the above example, accessing `http://127.0.0.1/anypath` will get the generated PAC file
+  - For the above example, accessing `http://127.0.0.1:7777/anypath` will get the generated PAC file
 
 - Blocked and direct accessable sites list are stored in `~/.cow/blocked` and `~/.cow/direct`
   - One line for each domain
