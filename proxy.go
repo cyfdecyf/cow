@@ -33,8 +33,6 @@ const (
 	socksConn
 )
 
-type notification chan byte
-
 type conn struct {
 	net.Conn
 	connType
@@ -61,25 +59,6 @@ type clientConn struct {
 var (
 	errPIPE = errors.New("Error: broken pipe")
 )
-
-func newNotification() notification {
-	// Notification channle has size 1, so sending a single one will not block
-	return make(chan byte, 1)
-}
-
-func (n notification) notify() {
-	n <- 1
-}
-
-func (n notification) hasNotified() bool {
-	select {
-	case <-n:
-		return true
-	default:
-		return false
-	}
-	return false
-}
 
 func NewProxy(addr string) *Proxy {
 	return &Proxy{addr: addr}
