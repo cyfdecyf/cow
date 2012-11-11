@@ -183,34 +183,30 @@ func (c *clientConn) serve() {
 	}
 }
 
-func copyData(dst net.Conn, src *bufio.Reader, dbgmsg string) (err error) {
+func copyData(dst, src net.Conn, srcReader *bufio.Reader, dstStopped notification, dbgmsg string) (err error) {
 	buf := make([]byte, bufSize)
 	var n int
 	for {
-		n, err = src.Read(buf)
-		if err != nil {
-			if err == io.EOF {
-				return
+		if dstStopped.hasNotified() {
+			debug.Println(dbgmsg, "dst has stopped")
+			return
+		}
+		if err = src.SetReadDeadline(time.Now().Add(rwDeadline)); err != nil {
+			debug.Println("Set ReadDeadline in copyData:", err)
+		}
+		if n, err = srcReader.Read(buf); err != nil {
+			if ne, ok := err.(*net.OpError); ok && ne.Timeout() {
+				continue
 			}
-			/*
-				if ne, ok := err.(*net.OpError); ok {
-					if ne.Err == syscall.ECONNRESET {
-						return
-					}
-				}
-			*/
-			debug.Printf("%s read data: %v\n", dbgmsg, err)
+			if err != io.EOF {
+				debug.Printf("%s read data: %v\n", dbgmsg, err)
+			}
 			return
 		}
 
 		_, err = dst.Write(buf[0:n])
 		if err != nil {
-			if ne, ok := err.(*net.OpError); ok {
-				if ne.Err == syscall.EPIPE {
-					return
-				}
-			}
-			errl.Printf("%s write data: %v\n", dbgmsg, err)
+			debug.Printf("%s write data: %v\n", dbgmsg, err)
 			return
 		}
 	}
@@ -236,10 +232,13 @@ func (c *clientConn) readResponse(handler *Handler) (err error) {
 		if !handler.hasReceivedResponse && handler.connType == directConn {
 			// Wait for the first request to be sent
 			r = <-handler.request
-			handler.Conn.SetDeadline(time.Now().Add(rwDeadline))
+			if err = handler.Conn.SetReadDeadline(time.Now().Add(rwDeadline)); err != nil {
+				debug.Println("Setting ReadDeadline before receiving the first response")
+			}
 		}
 		rp, err = parseResponse(srvReader)
 		if err != nil {
+			// TODO check if client has closed connection
 			if err != io.EOF {
 				if handler.hasReceivedResponse || handler.connType != directConn {
 					r = <-handler.request
@@ -280,7 +279,7 @@ func (c *clientConn) readResponse(handler *Handler) (err error) {
 		c.buf.WriteString(rp.raw.String())
 		// Flush response header to the client ASAP
 		if err = c.buf.Flush(); err != nil {
-			errl.Println("Flushing response header to client:", err)
+			debug.Println("Flushing response header to client:", err)
 			return
 		}
 
@@ -288,7 +287,9 @@ func (c *clientConn) readResponse(handler *Handler) (err error) {
 			// After have received the first reponses from the server, we
 			// consider ther server as real instead of fake one caused by
 			// wrong DNS reply. So don't time out later.
-			handler.Conn.SetReadDeadline(time.Time{})
+			if err = handler.Conn.SetReadDeadline(time.Time{}); err != nil {
+				debug.Println("Unset ReadDeadline")
+			}
 			handler.hasReceivedResponse = false
 		} else {
 			// Must come after parseResponse, so closed server
@@ -443,17 +444,26 @@ func (srvconn *Handler) doConnect(r *Request, c *clientConn) (err error) {
 
 	errchan := make(chan error)
 
-	// TODO should detect connection close and stop the other site
+	// Notify the destination has stopped in copyData is important. If the
+	// client has stopped connection, while the server->client is blocked
+	// reading data from the server, the server connection will not get chance
+	// to stop (unless there's timeout in read). This may result too many open
+	// connection error from the socks server.
+	srvStopped := newNotification()
+	clientStopped := newNotification()
 
 	// Must wait this goroutine finish before returning from this function.
 	// Otherwise, the server/client may have been closed and thus cause nil
 	// pointer deference
 	go func() {
-		err := copyData(c, bufio.NewReaderSize(srvconn, bufSize), "doConnect server->client")
+		err := copyData(c, srvconn, bufio.NewReaderSize(srvconn, bufSize),
+			clientStopped, "doConnect server->client")
+		srvStopped.notify()
 		errchan <- err
 	}()
 
-	err = copyData(srvconn, c.buf.Reader, "doConnect client->server")
+	err = copyData(srvconn, c, c.buf.Reader, srvStopped, "doConnect client->server")
+	clientStopped.notify()
 
 	// wait goroutine finish
 	err2 := <-errchan
