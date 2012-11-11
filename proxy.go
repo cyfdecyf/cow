@@ -144,7 +144,17 @@ func (c *clientConn) serve() {
 
 	RETRY:
 		if handler, err = c.getHandler(r); err == nil {
-			err = handler.ServeRequest(r, c)
+			if r.isConnect {
+				// Why return after doConnect:
+				// 1. proxy can only know the request is finished when either
+				// the server or the client closed connection
+				// 2. if the web server closes connection, the only way to
+				// tell the client this is to close client connection (proxy
+				// don't know the protocol between the client and server)
+				h.doConnect(r, c)
+				return
+			}
+			err = h.doRequest(r, c)
 		}
 
 		if err != nil {
@@ -388,14 +398,6 @@ connDone:
 	}()
 
 	return handler, err
-}
-
-// Serve client request through network connection
-func (h *Handler) ServeRequest(r *Request, c *clientConn) (err error) {
-	if r.isConnect {
-		return h.doConnect(r, c)
-	}
-	return h.doRequest(r, c)
 }
 
 func copyData(dst, src net.Conn, srcReader *bufio.Reader, dstStopped notification, dbgmsg string) (err error) {
