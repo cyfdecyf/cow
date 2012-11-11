@@ -161,29 +161,11 @@ func (c *clientConn) serve() {
 
 		if err = h.doRequest(r, c); err != nil {
 			delete(c.handler, h.host)
-			debug.Println("Retrying request:", r)
 			if err == errRetry {
+				debug.Println("Retrying request:", r)
 				goto RETRY
 			}
 			return
-		}
-
-		// How to detect closed client connection?
-		// Reading client connection will encounter EOF and detect that the
-		// connection has been closed.
-
-		// Firefox will create 6 persistent connections to the proxy server.
-		// If opening many connections is not a problem, then nothing need
-		// to be done.
-		// Otherwise, set a read time out and close connection upon timeout.
-		// This should not cause problem as
-		// 1. I didn't see any independent message sent by firefox in order to
-		//    close a persistent connection
-		// 2. Sending Connection: Keep-Alive but actually closing the
-		//    connection cause no problem for firefox. (The client should be
-		//    able to detect closed connection and open a new one.)
-		if !r.KeepAlive {
-			break
 		}
 	}
 }
@@ -386,7 +368,7 @@ connDone:
 		// Not removing the handler from client's handler map will stop the
 		// handler from being recycled. But as client connection will close at
 		// some point, it's not likely to have memory leak.
-		debug.Println("Closing srv conn", srvconn.RemoteAddr())
+		debug.Printf("Closing srv conn to %s for client %s\n", r.URL.Host, c.RemoteAddr())
 		handler.Close()
 		handler.stopped = true
 	}()
