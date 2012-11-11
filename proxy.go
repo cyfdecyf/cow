@@ -11,7 +11,6 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 )
@@ -56,10 +55,9 @@ func newHandler(c conn, host string) *Handler {
 }
 
 type clientConn struct {
-	buf        *bufio.ReadWriter
-	net.Conn                       // connection to the proxy client
-	handler    map[string]*Handler // request handler, host:port as key
-	handlerGrp sync.WaitGroup      // Wait all handler to finish before close
+	buf      *bufio.ReadWriter
+	net.Conn                     // connection to the proxy client
+	handler  map[string]*Handler // request handler, host:port as key
 }
 
 var (
@@ -104,19 +102,14 @@ func newClientConn(rwc net.Conn) (c *clientConn) {
 }
 
 func (c *clientConn) close() {
+	// There's no need to wait response goroutine finish. They will finish
+	// When see the stop notification or detects client connection error.
 	for _, h := range c.handler {
 		h.stop.notify()
 	}
-	c.handlerGrp.Wait()
-	if c.buf != nil {
-		c.buf.Flush()
-		c.buf = nil
-	}
-	if c != nil {
-		debug.Printf("Client %v connection closed\n", c.RemoteAddr())
-		c.Close()
-		c = nil
-	}
+	// Can't set c.buf to nil because maybe used in response goroutine
+	c.Close()
+	debug.Printf("Client %v connection closed\n", c.RemoteAddr())
 	runtime.GC()
 }
 
@@ -402,8 +395,6 @@ connDone:
 	handler.request = make(chan *Request, requestNum)
 
 	c.handler[r.URL.Host] = handler
-	// start goroutine to send response to client
-	c.handlerGrp.Add(1)
 	go func() {
 		c.readResponse(handler)
 		// It's possbile that request is being sent through the server
@@ -417,7 +408,6 @@ connDone:
 		debug.Println("Closing srv conn", srvconn.RemoteAddr())
 		handler.Close()
 		handler.stopped = true
-		c.handlerGrp.Done()
 	}()
 
 	return handler, err
