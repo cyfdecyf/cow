@@ -183,36 +183,6 @@ func (c *clientConn) serve() {
 	}
 }
 
-func copyData(dst, src net.Conn, srcReader *bufio.Reader, dstStopped notification, dbgmsg string) (err error) {
-	buf := make([]byte, bufSize)
-	var n int
-	for {
-		if dstStopped.hasNotified() {
-			debug.Println(dbgmsg, "dst has stopped")
-			return
-		}
-		if err = src.SetReadDeadline(time.Now().Add(rwDeadline)); err != nil {
-			debug.Println("Set ReadDeadline in copyData:", err)
-		}
-		if n, err = srcReader.Read(buf); err != nil {
-			if ne, ok := err.(*net.OpError); ok && ne.Timeout() {
-				continue
-			}
-			if err != io.EOF {
-				debug.Printf("%s read data: %v\n", dbgmsg, err)
-			}
-			return
-		}
-
-		_, err = dst.Write(buf[0:n])
-		if err != nil {
-			debug.Printf("%s write data: %v\n", dbgmsg, err)
-			return
-		}
-	}
-	return
-}
-
 func genErrMsg(r *Request) string {
 	return fmt.Sprintf("<p>HTTP Request <strong>%v</strong></p>", r)
 }
@@ -426,6 +396,36 @@ func (h *Handler) ServeRequest(r *Request, c *clientConn) (err error) {
 		return h.doConnect(r, c)
 	}
 	return h.doRequest(r, c)
+}
+
+func copyData(dst, src net.Conn, srcReader *bufio.Reader, dstStopped notification, dbgmsg string) (err error) {
+	buf := make([]byte, bufSize)
+	var n int
+	for {
+		if dstStopped.hasNotified() {
+			debug.Println(dbgmsg, "dst has stopped")
+			return
+		}
+		if err = src.SetReadDeadline(time.Now().Add(rwDeadline)); err != nil {
+			debug.Println("Set ReadDeadline in copyData:", err)
+		}
+		if n, err = srcReader.Read(buf); err != nil {
+			if ne, ok := err.(*net.OpError); ok && ne.Timeout() {
+				continue
+			}
+			if err != io.EOF {
+				debug.Printf("%s read data: %v\n", dbgmsg, err)
+			}
+			return
+		}
+
+		_, err = dst.Write(buf[0:n])
+		if err != nil {
+			debug.Printf("%s write data: %v\n", dbgmsg, err)
+			return
+		}
+	}
+	return
 }
 
 var connEstablished = []byte("HTTP/1.0 200 Connection established\r\nProxy-agent: cow-proxy/0.1\r\n\r\n")
