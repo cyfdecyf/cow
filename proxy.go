@@ -40,13 +40,19 @@ type conn struct {
 
 type Handler struct {
 	conn
-	stop    notification  // Used to notify the handler to stop execution
-	request chan *Request // Pass HTTP method from request reader to response reader
+	host    string
+	stop    notification // Used to notify the handler to stop execution
+	stopped bool
+	request chan *Request // Receive HTTP request from request goroutine
 
 	// GFW may return wrong DNS record, which we can connect to but block
 	// forever on read. (e.g. twitter.com) If we have never received any
 	// response yet, then we should set a timeout for read/write.
 	hasReceivedResponse bool
+}
+
+func newHandler(c conn, host string) *Handler {
+	return &Handler{conn: c, host: host}
 }
 
 type clientConn struct {
@@ -75,7 +81,7 @@ func (py *Proxy) Serve() {
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
-			info.Println("Client connection:", err)
+			debug.Println("Client connection:", err)
 			continue
 		}
 		debug.Println("New Client:", conn.RemoteAddr())
@@ -150,7 +156,7 @@ func (c *clientConn) serve() {
 
 		if err != nil {
 			if err == errPIPE {
-				c.removeHandler(r.URL.Host)
+				delete(c.handler, handler.host)
 				debug.Println("Retrying request:", r)
 				goto RETRY
 			}
@@ -318,6 +324,10 @@ func (c *clientConn) readResponse(handler *Handler) (err error) {
 
 func (c *clientConn) getHandler(r *Request) (handler *Handler, err error) {
 	handler, ok := c.handler[r.URL.Host]
+	if ok && handler.stopped {
+		delete(c.handler, handler.host)
+		ok = false
+	}
 
 	if !ok {
 		handler, err = c.createHandler(r)
@@ -382,38 +392,35 @@ connDone:
 		return nil, err
 	}
 
+	handler := newHandler(srvconn, r.URL.Host)
 	if r.isConnect {
 		// Don't put connection for CONNECT method for reuse
-		return &Handler{conn: srvconn}, err
+		return handler, err
 	}
 
-	// The stop channel should have size 1 to avoid block when sending notification
-	handler := &Handler{conn: srvconn, stop: newNotification(),
-		request: make(chan *Request, requestNum)}
-	c.handler[r.URL.Host] = handler
+	handler.stop = newNotification()
+	handler.request = make(chan *Request, requestNum)
 
+	c.handler[r.URL.Host] = handler
 	// start goroutine to send response to client
 	c.handlerGrp.Add(1)
 	go func() {
 		c.readResponse(handler)
-		// XXX It's possbile that request is being sent through the connection
-		// when we try to remove it. Is there possible error here? The sending
-		// side will discover closed connection, so not a big problem.
+		// It's possbile that request is being sent through the server
+		// connection. The sending side will discover closed server connection
+		// and try to redo the request.
+
+		// TODO find a way to delete stopped handler in the request goroutine
+		// Not removing the handler from client's handler map will stop the
+		// handler from being recycled. But as client connection will close at
+		// some point, it's not likely to have memory leak.
 		debug.Println("Closing srv conn", srvconn.RemoteAddr())
-		c.removeHandler(r.URL.Host)
+		handler.Close()
+		handler.stopped = true
 		c.handlerGrp.Done()
 	}()
 
 	return handler, err
-}
-
-func (c *clientConn) removeHandler(host string) (err error) {
-	handler, ok := c.handler[host]
-	if ok {
-		delete(c.handler, host)
-		handler.Close()
-	}
-	return
 }
 
 // Serve client request through network connection
@@ -439,6 +446,9 @@ func (srvconn *Handler) doConnect(r *Request, c *clientConn) (err error) {
 	}
 
 	errchan := make(chan error)
+
+	// TODO should detect connection close and stop the other site
+
 	// Must wait this goroutine finish before returning from this function.
 	// Otherwise, the server/client may have been closed and thus cause nil
 	// pointer deference
@@ -460,10 +470,13 @@ func (srvconn *Handler) doConnect(r *Request, c *clientConn) (err error) {
 // Do HTTP request other that CONNECT
 func (srvconn *Handler) doRequest(r *Request, c *clientConn) (err error) {
 	// Send request to the server
+
+	// TODO all possible error that caused by closed server connection should
+	// redo request
 	if _, err = srvconn.Write(r.raw.Bytes()); err != nil {
 		// The srv connection maybe already closed.
 		// Need to delete the connection and reconnect in that case.
-		errl.Println("writing to connection error:", err)
+		errl.Println("Sending request header:", err)
 		if err == syscall.EPIPE {
 			return errPIPE
 		} else {
