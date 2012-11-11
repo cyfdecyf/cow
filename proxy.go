@@ -153,6 +153,9 @@ func (c *clientConn) serve() {
 				debug.Println("Retrying request:", r)
 				goto RETRY
 			}
+			if err != io.EOF {
+				debug.Println("Serve request return error:", err)
+			}
 			// TODO not all error should end the client connection
 			// Possible error here:
 			// 1. the proxy can't find the host
@@ -231,14 +234,16 @@ func (c *clientConn) readResponse(handler *Handler) (err error) {
 			break
 		}
 		if !handler.hasReceivedResponse && handler.connType == directConn {
-			// Note we will only receive response after request has sent.
-			// So the time out here should take request sending time into account.
+			// Wait for the first request to be sent
+			r = <-handler.request
 			handler.Conn.SetDeadline(time.Now().Add(rwDeadline))
 		}
 		rp, err = parseResponse(srvReader)
 		if err != nil {
 			if err != io.EOF {
-				r = <-handler.request
+				if handler.hasReceivedResponse || handler.connType != directConn {
+					r = <-handler.request
+				}
 				detailMsg := genErrMsg(r)
 				// debug.Println("Type of error", reflect.TypeOf(err))
 				ne, ok := err.(*net.OpError)
@@ -271,13 +276,6 @@ func (c *clientConn) readResponse(handler *Handler) (err error) {
 			}
 			return
 		}
-		if !handler.hasReceivedResponse && handler.connType == directConn {
-			// After have received the first reponses from the server, we
-			// consider ther server as real instead of fake one caused by
-			// wrong DNS reply. So don't time out later.
-			handler.Conn.SetReadDeadline(time.Time{})
-			handler.hasReceivedResponse = false
-		}
 
 		c.buf.WriteString(rp.raw.String())
 		// Flush response header to the client ASAP
@@ -286,9 +284,18 @@ func (c *clientConn) readResponse(handler *Handler) (err error) {
 			return
 		}
 
-		// Must come after parseResponse, so closed server
-		// connection can be detected ASAP
-		r = <-handler.request
+		if !handler.hasReceivedResponse && handler.connType == directConn {
+			// After have received the first reponses from the server, we
+			// consider ther server as real instead of fake one caused by
+			// wrong DNS reply. So don't time out later.
+			handler.Conn.SetReadDeadline(time.Time{})
+			handler.hasReceivedResponse = false
+		} else {
+			// Must come after parseResponse, so closed server
+			// connection can be detected ASAP
+			r = <-handler.request
+		}
+
 		// Wrap inside if to avoid function argument evaluation.
 		if dbgRep {
 			dbgRep.Printf("%v %s %v %v", c.RemoteAddr(), r.Method, r.URL, rp)
@@ -333,9 +340,8 @@ var dialTimeout = time.Duration(5) * time.Second
 func createDirectConnection(host string) (conn, error) {
 	c, err := net.DialTimeout("tcp", host, dialTimeout)
 	if err != nil {
-		// TODO Find a way report no host error to client. Send back web page?
 		// Time out is very likely to be caused by [GFW]
-		errl.Printf("Connecting to: %s %v\n", host, err)
+		debug.Printf("Connecting to: %s %v\n", host, err)
 		return conn{nil, nilConn}, err
 	}
 	debug.Println("Connected to", host)
