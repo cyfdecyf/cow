@@ -61,7 +61,7 @@ type clientConn struct {
 }
 
 var (
-	errPIPE = errors.New("Error: broken pipe")
+	errRetry = errors.New("Retry")
 )
 
 func NewProxy(addr string) *Proxy {
@@ -121,7 +121,7 @@ func (c *clientConn) serve() {
 	defer c.close()
 	var r *Request
 	var err error
-	var handler *Handler
+	var h *Handler
 
 	// Refer to implementation.md for the design choices on parsing the request
 	// and response.
@@ -143,33 +143,28 @@ func (c *clientConn) serve() {
 		}
 
 	RETRY:
-		if handler, err = c.getHandler(r); err == nil {
-			if r.isConnect {
-				// Why return after doConnect:
-				// 1. proxy can only know the request is finished when either
-				// the server or the client closed connection
-				// 2. if the web server closes connection, the only way to
-				// tell the client this is to close client connection (proxy
-				// don't know the protocol between the client and server)
-				h.doConnect(r, c)
-				return
-			}
-			err = h.doRequest(r, c)
+		if h, err = c.getHandler(r); err != nil {
+			// Failed connection will send error page back to client
+			continue
 		}
 
-		if err != nil {
-			if err == errPIPE {
-				delete(c.handler, handler.host)
-				debug.Println("Retrying request:", r)
+		if r.isConnect {
+			// Why return after doConnect:
+			// 1. proxy can only know the request is finished when either
+			// the server or the client closed connection
+			// 2. if the web server closes connection, the only way to
+			// tell the client this is to close client connection (proxy
+			// don't know the protocol between the client and server)
+			h.doConnect(r, c)
+			return
+		}
+
+		if err = h.doRequest(r, c); err != nil {
+			delete(c.handler, h.host)
+			debug.Println("Retrying request:", r)
+			if err == errRetry {
 				goto RETRY
 			}
-			if err != io.EOF {
-				debug.Println("Serve request return error:", err)
-			}
-			// TODO not all error should end the client connection
-			// Possible error here:
-			// 1. the proxy can't find the host
-			// 2. broken pipe to the client
 			return
 		}
 
@@ -375,7 +370,7 @@ connDone:
 	handler := newHandler(srvconn, r.URL.Host)
 	if r.isConnect {
 		// Don't put connection for CONNECT method for reuse
-		return handler, err
+		return handler, nil
 	}
 
 	handler.stop = newNotification()
@@ -397,7 +392,7 @@ connDone:
 		handler.stopped = true
 	}()
 
-	return handler, err
+	return handler, nil
 }
 
 func copyData(dst, src net.Conn, srcReader *bufio.Reader, dstStopped notification, dbgmsg string) (err error) {
@@ -479,18 +474,17 @@ func (srvconn *Handler) doConnect(r *Request, c *clientConn) (err error) {
 func (srvconn *Handler) doRequest(r *Request, c *clientConn) (err error) {
 	// Send request to the server
 
-	// TODO all possible error that caused by closed server connection should
-	// redo request
 	if _, err = srvconn.Write(r.raw.Bytes()); err != nil {
 		// The srv connection maybe already closed.
 		// Need to delete the connection and reconnect in that case.
 		errl.Println("Sending request header:", err)
-		if err == syscall.EPIPE {
-			return errPIPE
-		} else {
-			return err
-		}
+		return errRetry
 	}
+
+	// All possible error that caused by closed server connection should
+	// redo request. (Otherwise, client request are lost.)
+	// TODO It's possible that server connection is closed during POST, how to
+	// identify this?
 
 	// Send request body
 	if r.Method == "POST" {
