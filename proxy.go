@@ -193,31 +193,34 @@ func genErrMsg(r *Request) string {
 }
 
 // What value is appropriate?
-var rwDeadline = time.Duration(10) * time.Second
+var readTimeout = 10 * time.Second
 
 func (c *clientConn) readResponse(handler *Handler) (err error) {
 	var rp *Response
 	var r *Request
 	var srvReader *bufio.Reader = bufio.NewReader(handler)
 	for {
-		if handler.stop.hasNotified() {
-			debug.Println("readResponse stop requested")
-			break
+		select {
+		case r = <-handler.request:
+		case <-time.After(5 * time.Second):
+			if handler.stop.hasNotified() {
+				debug.Println("readResponse stop requested")
+				break
+			}
+			continue
 		}
 		if !handler.hasReceivedResponse && handler.connType == directConn {
-			// Wait for the first request to be sent
-			r = <-handler.request
-			if err = handler.Conn.SetReadDeadline(time.Now().Add(rwDeadline)); err != nil {
+			if err = handler.Conn.SetReadDeadline(time.Now().Add(readTimeout)); err != nil {
 				debug.Println("Setting ReadDeadline before receiving the first response")
 			}
 		}
 		rp, err = parseResponse(srvReader)
 		if err != nil {
-			// TODO check if client has closed connection
+			if handler.stop.hasNotified() {
+				debug.Println("readResponse stop requested after parseResponse error:", err)
+				break
+			}
 			if err != io.EOF {
-				if handler.hasReceivedResponse || handler.connType != directConn {
-					r = <-handler.request
-				}
 				detailMsg := genErrMsg(r)
 				// debug.Println("Type of error", reflect.TypeOf(err))
 				ne, ok := err.(*net.OpError)
@@ -266,10 +269,6 @@ func (c *clientConn) readResponse(handler *Handler) (err error) {
 				debug.Println("Unset ReadDeadline")
 			}
 			handler.hasReceivedResponse = false
-		} else {
-			// Must come after parseResponse, so closed server
-			// connection can be detected ASAP
-			r = <-handler.request
 		}
 
 		// Wrap inside if to avoid function argument evaluation.
@@ -311,7 +310,7 @@ func (c *clientConn) getHandler(r *Request) (handler *Handler, err error) {
 	return
 }
 
-var dialTimeout = time.Duration(5) * time.Second
+var dialTimeout = 5 * time.Second
 
 func createDirectConnection(host string) (conn, error) {
 	c, err := net.DialTimeout("tcp", host, dialTimeout)
@@ -403,7 +402,7 @@ func copyData(dst, src net.Conn, srcReader *bufio.Reader, dstStopped notificatio
 			debug.Println(dbgmsg, "dst has stopped")
 			return
 		}
-		if err = src.SetReadDeadline(time.Now().Add(rwDeadline)); err != nil {
+		if err = src.SetReadDeadline(time.Now().Add(readTimeout)); err != nil {
 			debug.Println("Set ReadDeadline in copyData:", err)
 		}
 		if n, err = srcReader.Read(buf); err != nil {
