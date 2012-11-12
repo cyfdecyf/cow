@@ -175,6 +175,38 @@ func genErrMsg(r *Request) string {
 	return fmt.Sprintf("<p>HTTP Request <strong>%v</strong></p>", r)
 }
 
+func (c *clientConn) handlerResponseError(r *Request, h *Handler, err error) {
+	detailMsg := genErrMsg(r)
+	// debug.Println("Type of error", reflect.TypeOf(err))
+	ne, ok := err.(*net.OpError)
+	if !ok {
+		sendErrorPage(c.buf.Writer, "502", "read error", err.Error(), detailMsg)
+		return
+	}
+	// GFW may connection reset here, may also make it time out Is it normal
+	// for connection to a site timeout? If so, it's better not add it to
+	// blocked site
+	host, _ := splitHostPort(r.URL.Host)
+	if !hostIsIP(host) && h.connType == directConn {
+		detailMsg += fmt.Sprintf(
+			"<p>Domain <strong>%s</strong> added to blocked list. <strong>Try to refresh.</strong></p>",
+			host2Domain(host))
+	}
+	if ne.Err == syscall.ECONNRESET {
+		if h.connType == directConn {
+			addBlockedRequest(r)
+		}
+		sendErrorPage(c.buf.Writer, "503", "Connection reset",
+			ne.Error(), detailMsg)
+	} else if ne.Timeout() {
+		if h.connType == directConn {
+			addBlockedRequest(r)
+		}
+		sendErrorPage(c.buf.Writer, "504", "Time out reading response",
+			ne.Error(), detailMsg)
+	}
+}
+
 // What value is appropriate?
 var readTimeout = 10 * time.Second
 
@@ -197,52 +229,24 @@ func (c *clientConn) readResponse(handler *Handler) (err error) {
 				debug.Println("Setting ReadDeadline before receiving the first response")
 			}
 		}
-		rp, err = parseResponse(srvReader)
-		if err != nil {
+		if rp, err = parseResponse(srvReader); err != nil {
 			if handler.stop.hasNotified() {
 				debug.Println("readResponse stop requested after parseResponse error:", err)
 				break
 			}
-			if err != io.EOF {
-				detailMsg := genErrMsg(r)
-				// debug.Println("Type of error", reflect.TypeOf(err))
-				ne, ok := err.(*net.OpError)
-				if !ok {
-					sendErrorPage(c.buf.Writer, "502", "read error", err.Error(), detailMsg)
-					return
-				}
-				// GFW may connection reset here, may also make it time out Is
-				// it normal for connection to a site timeout? If so, it's
-				// better not add it to blocked site
-				host, _ := splitHostPort(r.URL.Host)
-				if !hostIsIP(host) && handler.connType == directConn {
-					detailMsg += fmt.Sprintf(
-						"<p>Domain <strong>%s</strong> added to blocked list. <strong>Try to refresh.</strong></p>",
-						host2Domain(host))
-				}
-				if ne.Err == syscall.ECONNRESET {
-					if handler.connType == directConn {
-						addBlockedRequest(r)
-					}
-					sendErrorPage(c.buf.Writer, "503", "Connection reset",
-						ne.Error(), detailMsg)
-				} else if ne.Timeout() {
-					if handler.connType == directConn {
-						addBlockedRequest(r)
-					}
-					sendErrorPage(c.buf.Writer, "504", "Time out reading response",
-						ne.Error(), detailMsg)
-				}
+			if err == io.EOF {
+				// TODO Should redo request
 			}
+			c.handlerResponseError(r, handler, err)
 			errl.Printf("Error %v parsing response for client %s %v\n", err, c.RemoteAddr(), r)
-			return
+			break
 		}
 
 		c.buf.WriteString(rp.raw.String())
 		// Flush response header to the client ASAP
 		if err = c.buf.Flush(); err != nil {
 			errl.Printf("Flushing response header to client %s: %v\n", c.RemoteAddr(), err)
-			return
+			break
 		}
 
 		if !handler.hasReceivedResponse && handler.connType == directConn {
@@ -266,7 +270,7 @@ func (c *clientConn) readResponse(handler *Handler) (err error) {
 					errl.Println("readResponse sendBody error %v for client %s %v", err,
 						c.RemoteAddr(), r)
 				}
-				return
+				break
 			}
 		}
 		/*
@@ -276,7 +280,7 @@ func (c *clientConn) readResponse(handler *Handler) (err error) {
 		*/
 
 		if !rp.KeepAlive {
-			return
+			break
 		}
 	}
 	return
