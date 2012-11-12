@@ -128,9 +128,7 @@ func (c *clientConn) serve() {
 	for {
 		if r, err = parseRequest(c.buf.Reader); err != nil {
 			// io.EOF means the client connection is closed
-			if err != io.EOF {
-				errl.Println("Reading client request:", err)
-			}
+			errl.Printf("Reading client request %v: %v", c, err)
 			return
 		}
 		if dbgRq {
@@ -145,6 +143,7 @@ func (c *clientConn) serve() {
 	RETRY:
 		if h, err = c.getHandler(r); err != nil {
 			// Failed connection will send error page back to client
+			errl.Println("Failed to get handler for %s %v\n", c.RemoteAddr(), r)
 			continue
 		}
 
@@ -156,15 +155,17 @@ func (c *clientConn) serve() {
 			// tell the client this is to close client connection (proxy
 			// don't know the protocol between the client and server)
 			h.doConnect(r, c)
+			debug.Printf("doConnect for %s to %s done\n", c.RemoteAddr(), r.URL.Host)
 			return
 		}
 
 		if err = h.doRequest(r, c); err != nil {
-			delete(c.handler, h.host)
+			c.removeHandler(h)
 			if err == errRetry {
 				debug.Println("Retrying request:", r)
 				goto RETRY
 			}
+			errl.Printf("Error doRequest for client %s %v", c.RemoteAddr(), r)
 			return
 		}
 	}
@@ -233,13 +234,14 @@ func (c *clientConn) readResponse(handler *Handler) (err error) {
 						ne.Error(), detailMsg)
 				}
 			}
+			errl.Printf("Error %v parsing response for client %s %v\n", err, c.RemoteAddr(), r)
 			return
 		}
 
 		c.buf.WriteString(rp.raw.String())
 		// Flush response header to the client ASAP
 		if err = c.buf.Flush(); err != nil {
-			debug.Println("Flushing response header to client:", err)
+			errl.Printf("Flushing response header to client %s: %v\n", c.RemoteAddr(), err)
 			return
 		}
 
@@ -261,7 +263,8 @@ func (c *clientConn) readResponse(handler *Handler) (err error) {
 		if rp.hasBody(r.Method) {
 			if err = sendBody(c.buf.Writer, srvReader, rp.Chunking, rp.ContLen); err != nil {
 				if err != io.EOF {
-					debug.Println("readResponse sendBody:", err)
+					errl.Println("readResponse sendBody error %v for client %s %v", err,
+						c.RemoteAddr(), r)
 				}
 				return
 			}
@@ -282,7 +285,7 @@ func (c *clientConn) readResponse(handler *Handler) (err error) {
 func (c *clientConn) getHandler(r *Request) (handler *Handler, err error) {
 	handler, ok := c.handler[r.URL.Host]
 	if ok && handler.stopped {
-		delete(c.handler, handler.host)
+		c.removeHandler(handler)
 		ok = false
 	}
 
@@ -290,6 +293,10 @@ func (c *clientConn) getHandler(r *Request) (handler *Handler, err error) {
 		handler, err = c.createHandler(r)
 	}
 	return
+}
+
+func (c *clientConn) removeHandler(h *Handler) {
+	delete(c.handler, h.host)
 }
 
 var dialTimeout = 5 * time.Second
@@ -358,6 +365,8 @@ connDone:
 	handler.request = make(chan *Request, requestNum)
 
 	c.handler[r.URL.Host] = handler
+	// client will connect to differnet servers in a single proxy connection
+	// debug.Printf("handler to for client %v %v\n", c.RemoteAddr(), c.handler)
 	go func() {
 		c.readResponse(handler)
 		// It's possbile that request is being sent through the server
@@ -368,9 +377,9 @@ connDone:
 		// Not removing the handler from client's handler map will stop the
 		// handler from being recycled. But as client connection will close at
 		// some point, it's not likely to have memory leak.
-		debug.Printf("Closing srv conn to %s for client %s\n", r.URL.Host, c.RemoteAddr())
 		handler.Close()
 		handler.stopped = true
+		debug.Printf("Closed srv conn to %s for client %s\n", r.URL.Host, c.RemoteAddr())
 	}()
 
 	return handler, nil

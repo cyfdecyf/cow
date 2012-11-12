@@ -260,12 +260,8 @@ func parseRequest(reader *bufio.Reader) (r *Request, err error) {
 }
 
 func (r *Request) genRequestLine() {
-	r.raw.WriteString(r.Method)
-	r.raw.WriteString(" ")
-	r.raw.WriteString(r.URL.Path)
-	r.raw.WriteString(" ")
-	r.raw.WriteString("HTTP/1.1\r\n")
-	r.raw.WriteString("Connection: Keep-Alive\r\n")
+	r.raw.WriteString(r.Method + " " + r.URL.Path)
+	r.raw.WriteString(" HTTP/1.1\r\nConnection: Keep-Alive\r\n")
 }
 
 var crlfBuf = make([]byte, 2)
