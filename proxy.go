@@ -170,6 +170,7 @@ func (c *clientConn) getRequest() (r *Request) {
 	// servers.
 	var err error
 retry:
+	// TODO detect closed client connection and discard any pending requests
 	if r = c.getRedoRequest(); r != nil {
 		errl.Println("Redo")
 		return
@@ -216,7 +217,6 @@ func (c *clientConn) serve() {
 			return
 		}
 
-	RETRY:
 		if h, err = c.getHandler(r); err != nil {
 			// Failed connection will send error page back to client
 			errl.Println("Failed to get handler for %s %v\n", c.RemoteAddr(), r)
@@ -238,8 +238,8 @@ func (c *clientConn) serve() {
 		if err = h.doRequest(r, c); err != nil {
 			c.removeHandler(h)
 			if err == errRetry {
-				debug.Println("Retrying request:", r)
-				goto RETRY
+				heap.Push(&c.reqPQ, r)
+				continue
 			}
 			errl.Printf("Error doRequest for client %s %v", c.RemoteAddr(), r)
 			return
@@ -286,7 +286,8 @@ func (c *clientConn) handleResponseError(r *Request, h *Handler, err error) {
 // What value is appropriate?
 var readTimeout = 10 * time.Second
 
-func (c *clientConn) readResponse(h *Handler, r *Request) (err error) {
+func (c *clientConn) readResponse(h *Handler) (err error) {
+	var r *Request
 	var rp *Response
 
 	if h.mayBeFake() && h.SetReadDeadline(time.Now().Add(readTimeout)) != nil {
@@ -298,9 +299,12 @@ func (c *clientConn) readResponse(h *Handler, r *Request) (err error) {
 			return
 		}
 		if err == io.EOF {
-			debug.Println("Server closed connection, should retry:", r)
+			// Don't receive request from channel, as it should be retried
+			debug.Println("Server closed connection, should retry")
 			return errRetry
 		}
+		// Handle other types of error, which should send error page back to client
+		r = <-h.request
 		c.handleResponseError(r, h, err)
 		errl.Printf("Error %v parsing response for client %s %v\n", err, c.RemoteAddr(), r)
 		return
@@ -325,6 +329,11 @@ func (c *clientConn) readResponse(h *Handler, r *Request) (err error) {
 		return
 	}
 
+	// Read response first then receive request, so we can detect closed
+	// server connection earlier.
+	// TODO baidu image stills will encounter many closed connection even with
+	// this optimization.
+	r = <-h.request
 	// Wrap inside if to avoid function argument evaluation.
 	if dbgRep {
 		dbgRep.Printf("%v %s %v %v", c.RemoteAddr(), r.Method, r.URL, rp)
@@ -356,23 +365,8 @@ func (c *clientConn) readResponse(h *Handler, r *Request) (err error) {
 
 func (c *clientConn) responseReader(h *Handler) {
 	// debug.Printf("Started response goroutine for client %s for host %s\n", c.RemoteAddr(), h.host)
-	var r *Request
-	h.state = hsPipelining
 	for {
-		select {
-		case r = <-h.request:
-		case <-time.After(5 * time.Second):
-			if h.stop.hasNotified() {
-				debug.Println("readResponse stop requested")
-				break
-			}
-			continue
-		}
-		if err := c.readResponse(h, r); err != nil {
-			if err == errRetry {
-				errl.Println("Retry request added to handler")
-				h.request <- r
-			}
+		if c.readResponse(h) != nil {
 			break
 		}
 	}
@@ -380,10 +374,10 @@ func (c *clientConn) responseReader(h *Handler) {
 	// It's possbile that request is being sent through the server
 	// connection. The sending side will discover closed server connection
 	// and try to redo the request.
-	errl.Println("handler added to finHandler", c.RemoteAddr())
+	errl.Printf("%s handler %s added to finHandler\n", c.RemoteAddr(), h.host)
 	c.finHandler <- h
 	h.Close()
-	debug.Printf("Closed srv conn to %s for client %s\n", h.host, c.RemoteAddr())
+	debug.Printf("Closed server conn %s for client %s\n", h.host, c.RemoteAddr())
 }
 
 func (c *clientConn) getHandler(r *Request) (h *Handler, err error) {
@@ -596,20 +590,14 @@ func (h *Handler) doRequest(r *Request, c *clientConn) (err error) {
 		}
 	}
 
-	// Read server reply is handled in the goroutine started when creating the
-	// server connection
-	// Send request method to response read goroutine
+	h.request <- r
 	switch h.state {
 	case hsConnected:
 		// debug.Println("waiting response for req:", r)
-		err = c.readResponse(h, r)
+		err = c.readResponse(h)
 	case hsResponsReceived:
-		h.request <- r
 		go c.responseReader(h)
-	case hsPipelining:
-		h.request <- r
-	case hsStopped:
-		return errRetry
+		h.state = hsPipelining
 	}
 	return
 }
