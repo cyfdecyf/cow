@@ -24,12 +24,21 @@ type Proxy struct {
 // Number of the simultaneous requests in the pipeline
 const requestNum = 5
 
-type connType int
+type connType byte
 
 const (
 	nilConn connType = iota
 	directConn
 	socksConn
+)
+
+type handlerState byte
+
+const (
+	hsConnected handlerState = iota
+	hsResponsReceived
+	hsPipelining
+	hsStopped
 )
 
 type conn struct {
@@ -39,19 +48,19 @@ type conn struct {
 
 type Handler struct {
 	conn
+	buf     *bufio.ReadWriter
 	host    string
-	stop    notification // Used to notify the handler to stop execution
-	stopped bool
+	stop    notification  // Used to notify the handler to stop execution
 	request chan *Request // Receive HTTP request from request goroutine
-
-	// GFW may return wrong DNS record, which we can connect to but block
-	// forever on read. (e.g. twitter.com) If we have never received any
-	// response yet, then we should set a timeout for read/write.
-	hasReceivedResponse bool
+	state   handlerState
 }
 
 func newHandler(c conn, host string) *Handler {
-	return &Handler{conn: c, host: host}
+	h := &Handler{conn: c, host: host}
+	br := bufio.NewReaderSize(c, bufSize)
+	bw := bufio.NewWriter(c)
+	h.buf = bufio.NewReadWriter(br, bw)
+	return h
 }
 
 type clientConn struct {
@@ -128,7 +137,7 @@ func (c *clientConn) serve() {
 	for {
 		if r, err = parseRequest(c.buf.Reader); err != nil {
 			// io.EOF means the client connection is closed
-			errl.Printf("Reading client request %v: %v", c, err)
+			errl.Printf("Reading client %s request: %v", c.RemoteAddr(), err)
 			return
 		}
 		if dbgRq {
@@ -175,7 +184,7 @@ func genErrMsg(r *Request) string {
 	return fmt.Sprintf("<p>HTTP Request <strong>%v</strong></p>", r)
 }
 
-func (c *clientConn) handlerResponseError(r *Request, h *Handler, err error) {
+func (c *clientConn) handleResponseError(r *Request, h *Handler, err error) {
 	detailMsg := genErrMsg(r)
 	// debug.Println("Type of error", reflect.TypeOf(err))
 	ne, ok := err.(*net.OpError)
@@ -210,91 +219,115 @@ func (c *clientConn) handlerResponseError(r *Request, h *Handler, err error) {
 // What value is appropriate?
 var readTimeout = 10 * time.Second
 
-func (c *clientConn) readResponse(handler *Handler) (err error) {
+func (c *clientConn) readResponse(h *Handler, r *Request) (err error) {
 	var rp *Response
+
+	// GFW may return wrong DNS record, which we can connect to but block
+	// forever on read. (e.g. twitter.com) If we have never received any
+	// response yet, then we should set a timeout for read/write.
+	if h.mayBeFake() && h.Conn.SetReadDeadline(time.Now().Add(readTimeout)) != nil {
+		debug.Println("Setting ReadDeadline before receiving the first response")
+	}
+	if rp, err = parseResponse(h.buf.Reader); err != nil {
+		if h.stop.hasNotified() {
+			debug.Println("readResponse stop requested after parseResponse error:", err)
+			return
+		}
+		if err == io.EOF {
+			debug.Println("server closed connection, should retry:", r)
+			return errRetry
+		}
+		c.handleResponseError(r, h, err)
+		errl.Printf("Error %v parsing response for client %s %v\n", err, c.RemoteAddr(), r)
+		return
+	}
+	// After have received the first reponses from the server, we consider
+	// ther server as real instead of fake one caused by wrong DNS reply. So
+	// don't time out later.
+	if h.mayBeFake() && h.Conn.SetReadDeadline(time.Time{}) != nil {
+		debug.Println("Unset ReadDeadline")
+	}
+	h.state = hsResponsReceived
+
+	if _, err = c.buf.WriteString(rp.raw.String()); err != nil {
+		errl.Println("Writing response back to client %s: %v\n", c.RemoteAddr(), err)
+		return
+	}
+	// Flush response header to the client ASAP
+	if err = c.buf.Flush(); err != nil {
+		errl.Printf("Flushing response header to client %s: %v\n", c.RemoteAddr(), err)
+		return
+	}
+
+	// Wrap inside if to avoid function argument evaluation.
+	if dbgRep {
+		dbgRep.Printf("%v %s %v %v", c.RemoteAddr(), r.Method, r.URL, rp)
+	}
+
+	if rp.hasBody(r.Method) {
+		if err = sendBody(c.buf.Writer, h.buf.Reader, rp.Chunking, rp.ContLen); err != nil {
+			// TODO need to identify whether the err is caused by the server connection,
+			// in that case, need to retry request
+			if err != io.EOF {
+				errl.Println("readResponse sendBody error %v for client %s %v", err,
+					c.RemoteAddr(), r)
+			}
+			return
+		}
+	}
+	/*
+		if debug {
+			debug.Printf("[Finished] %v request %s %s\n", c.RemoteAddr(), r.Method, r.URL)
+		}
+	*/
+
+	if !rp.KeepAlive {
+		h.state = hsStopped
+		return
+	}
+	return
+}
+
+func (c *clientConn) responseReader(h *Handler) {
+	// debug.Printf("Started response goroutine for client %s for host %s\n", c.RemoteAddr(), h.host)
 	var r *Request
-	var srvReader *bufio.Reader = bufio.NewReader(handler)
+	h.state = hsPipelining
 	for {
 		select {
-		case r = <-handler.request:
+		case r = <-h.request:
 		case <-time.After(5 * time.Second):
-			if handler.stop.hasNotified() {
+			if h.stop.hasNotified() {
 				debug.Println("readResponse stop requested")
 				break
 			}
 			continue
 		}
-		if !handler.hasReceivedResponse && handler.connType == directConn {
-			if err = handler.Conn.SetReadDeadline(time.Now().Add(readTimeout)); err != nil {
-				debug.Println("Setting ReadDeadline before receiving the first response")
-			}
-		}
-		if rp, err = parseResponse(srvReader); err != nil {
-			if handler.stop.hasNotified() {
-				debug.Println("readResponse stop requested after parseResponse error:", err)
-				break
-			}
-			if err == io.EOF {
-				// TODO Should redo request
-			}
-			c.handlerResponseError(r, handler, err)
-			errl.Printf("Error %v parsing response for client %s %v\n", err, c.RemoteAddr(), r)
-			break
-		}
-
-		c.buf.WriteString(rp.raw.String())
-		// Flush response header to the client ASAP
-		if err = c.buf.Flush(); err != nil {
-			errl.Printf("Flushing response header to client %s: %v\n", c.RemoteAddr(), err)
-			break
-		}
-
-		if !handler.hasReceivedResponse && handler.connType == directConn {
-			// After have received the first reponses from the server, we
-			// consider ther server as real instead of fake one caused by
-			// wrong DNS reply. So don't time out later.
-			if err = handler.Conn.SetReadDeadline(time.Time{}); err != nil {
-				debug.Println("Unset ReadDeadline")
-			}
-			handler.hasReceivedResponse = false
-		}
-
-		// Wrap inside if to avoid function argument evaluation.
-		if dbgRep {
-			dbgRep.Printf("%v %s %v %v", c.RemoteAddr(), r.Method, r.URL, rp)
-		}
-
-		if rp.hasBody(r.Method) {
-			if err = sendBody(c.buf.Writer, srvReader, rp.Chunking, rp.ContLen); err != nil {
-				if err != io.EOF {
-					errl.Println("readResponse sendBody error %v for client %s %v", err,
-						c.RemoteAddr(), r)
-				}
-				break
-			}
-		}
-		/*
-			if debug {
-				debug.Printf("[Finished] %v request %s %s\n", c.RemoteAddr(), r.Method, r.URL)
-			}
-		*/
-
-		if !rp.KeepAlive {
+		if c.readResponse(h, r) != nil {
 			break
 		}
 	}
-	return
+	h.state = hsStopped
+	// It's possbile that request is being sent through the server
+	// connection. The sending side will discover closed server connection
+	// and try to redo the request.
+
+	// TODO find a way to delete stopped handler in the request goroutine
+	// Not removing the handler from client's handler map will stop the
+	// handler from being recycled. But as client connection will close at
+	// some point, it's not likely to have memory leak.
+	h.Close()
+	debug.Printf("Closed srv conn to %s for client %s\n", h.host, c.RemoteAddr())
 }
 
-func (c *clientConn) getHandler(r *Request) (handler *Handler, err error) {
-	handler, ok := c.handler[r.URL.Host]
-	if ok && handler.stopped {
-		c.removeHandler(handler)
+func (c *clientConn) getHandler(r *Request) (h *Handler, err error) {
+	h, ok := c.handler[r.URL.Host]
+	if ok && h.state == hsStopped {
+		c.removeHandler(h)
 		ok = false
 	}
 
 	if !ok {
-		handler, err = c.createHandler(r)
+		h, err = c.createHandler(r)
 	}
 	return
 }
@@ -359,34 +392,20 @@ connDone:
 		return nil, err
 	}
 
-	handler := newHandler(srvconn, r.URL.Host)
+	h := newHandler(srvconn, r.URL.Host)
 	if r.isConnect {
 		// Don't put connection for CONNECT method for reuse
-		return handler, nil
+		return h, nil
 	}
 
-	handler.stop = newNotification()
-	handler.request = make(chan *Request, requestNum)
+	h.stop = newNotification()
+	h.request = make(chan *Request, requestNum)
 
-	c.handler[r.URL.Host] = handler
+	c.handler[r.URL.Host] = h
 	// client will connect to differnet servers in a single proxy connection
 	// debug.Printf("handler to for client %v %v\n", c.RemoteAddr(), c.handler)
-	go func() {
-		c.readResponse(handler)
-		// It's possbile that request is being sent through the server
-		// connection. The sending side will discover closed server connection
-		// and try to redo the request.
 
-		// TODO find a way to delete stopped handler in the request goroutine
-		// Not removing the handler from client's handler map will stop the
-		// handler from being recycled. But as client connection will close at
-		// some point, it's not likely to have memory leak.
-		handler.Close()
-		handler.stopped = true
-		debug.Printf("Closed srv conn to %s for client %s\n", r.URL.Host, c.RemoteAddr())
-	}()
-
-	return handler, nil
+	return h, nil
 }
 
 func copyData(dst, src net.Conn, srcReader *bufio.Reader, dstStopped notification, dbgmsg string) (err error) {
@@ -417,6 +436,10 @@ func copyData(dst, src net.Conn, srcReader *bufio.Reader, dstStopped notificatio
 		}
 	}
 	return
+}
+
+func (h *Handler) mayBeFake() bool {
+	return h.state == hsConnected && h.connType == directConn
 }
 
 var connEstablished = []byte("HTTP/1.0 200 Connection established\r\nProxy-agent: cow-proxy/0.1\r\n\r\n")
@@ -465,13 +488,16 @@ func (srvconn *Handler) doConnect(r *Request, c *clientConn) (err error) {
 }
 
 // Do HTTP request other that CONNECT
-func (srvconn *Handler) doRequest(r *Request, c *clientConn) (err error) {
+func (h *Handler) doRequest(r *Request, c *clientConn) (err error) {
 	// Send request to the server
-
-	if _, err = srvconn.Write(r.raw.Bytes()); err != nil {
+	if _, err = h.buf.Write(r.raw.Bytes()); err != nil {
 		// The srv connection maybe already closed.
 		// Need to delete the connection and reconnect in that case.
 		errl.Println("Sending request header:", err)
+		return errRetry
+	}
+	if h.buf.Writer.Flush() != nil {
+		errl.Println("Flushing request header:", err)
 		return errRetry
 	}
 
@@ -482,7 +508,7 @@ func (srvconn *Handler) doRequest(r *Request, c *clientConn) (err error) {
 
 	// Send request body
 	if r.Method == "POST" {
-		if err = sendBody(bufio.NewWriter(srvconn), c.buf.Reader, r.Chunking, r.ContLen); err != nil {
+		if err = sendBody(h.buf.Writer, c.buf.Reader, r.Chunking, r.ContLen); err != nil {
 			errl.Println("Sending request body:", err)
 			return err
 		}
@@ -491,8 +517,19 @@ func (srvconn *Handler) doRequest(r *Request, c *clientConn) (err error) {
 	// Read server reply is handled in the goroutine started when creating the
 	// server connection
 	// Send request method to response read goroutine
-	srvconn.request <- r
-
+	switch h.state {
+	case hsConnected:
+		// debug.Println("waiting response for req:", r)
+		err = c.readResponse(h, r)
+	case hsResponsReceived:
+		go c.responseReader(h)
+		fallthrough
+	case hsPipelining:
+		// debug.Println("pipelining req:", r)
+		h.request <- r
+	case hsStopped:
+		return errRetry
+	}
 	return
 }
 
