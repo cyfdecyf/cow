@@ -64,9 +64,11 @@ func newHandler(c conn, host string) *Handler {
 }
 
 type clientConn struct {
-	buf      *bufio.ReadWriter
-	net.Conn                     // connection to the proxy client
-	handler  map[string]*Handler // request handler, host:port as key
+	buf        *bufio.ReadWriter
+	net.Conn                       // connection to the proxy client
+	handler    map[string]*Handler // request handler, host:port as key
+	finHandler chan *Handler       // Finished handler will pass it's self to request goroutine
+	reqNo      int                 // How many request has been received
 }
 
 var (
@@ -135,6 +137,18 @@ func (c *clientConn) serve() {
 	// Refer to implementation.md for the design choices on parsing the request
 	// and response.
 	for {
+		// TODO do retry request first. The problem here is that it's
+		// difficult to send the request to the server in the same order as
+		// they arrived. Between the time we get a new request from the client
+		// and sending it to the server (newly connected as previous
+		// connection is closed), there maybe previous failed request which
+		// needs retry.
+
+		// If reording request to the server is OK, proxy should ensure that
+		// response to the client is not reordered, thus the proxy has to
+		// reorder response if request is reordered. This is too complicated,
+		// so I thought it's better to give up on HTTP pipelining first, and
+		// come back when I have a better solution.
 		if r, err = parseRequest(c.buf.Reader); err != nil {
 			// io.EOF means the client connection is closed
 			errl.Printf("Reading client %s request: %v", c.RemoteAddr(), err)
@@ -222,9 +236,6 @@ var readTimeout = 10 * time.Second
 func (c *clientConn) readResponse(h *Handler, r *Request) (err error) {
 	var rp *Response
 
-	// GFW may return wrong DNS record, which we can connect to but block
-	// forever on read. (e.g. twitter.com) If we have never received any
-	// response yet, then we should set a timeout for read/write.
 	if h.mayBeFake() && h.Conn.SetReadDeadline(time.Now().Add(readTimeout)) != nil {
 		debug.Println("Setting ReadDeadline before receiving the first response")
 	}
@@ -310,11 +321,7 @@ func (c *clientConn) responseReader(h *Handler) {
 	// It's possbile that request is being sent through the server
 	// connection. The sending side will discover closed server connection
 	// and try to redo the request.
-
-	// TODO find a way to delete stopped handler in the request goroutine
-	// Not removing the handler from client's handler map will stop the
-	// handler from being recycled. But as client connection will close at
-	// some point, it's not likely to have memory leak.
+	c.finHandler <- h
 	h.Close()
 	debug.Printf("Closed srv conn to %s for client %s\n", h.host, c.RemoteAddr())
 }
@@ -439,6 +446,9 @@ func copyData(dst, src net.Conn, srcReader *bufio.Reader, dstStopped notificatio
 }
 
 func (h *Handler) mayBeFake() bool {
+	// GFW may return wrong DNS record, which we can connect to but block
+	// forever on read. (e.g. twitter.com) If we have never received any
+	// response yet, then we should set a timeout for read/write.
 	return h.state == hsConnected && h.connType == directConn
 }
 
@@ -489,6 +499,8 @@ func (srvconn *Handler) doConnect(r *Request, c *clientConn) (err error) {
 
 // Do HTTP request other that CONNECT
 func (h *Handler) doRequest(r *Request, c *clientConn) (err error) {
+	c.reqNo++
+	r.no = c.reqNo
 	// Send request to the server
 	if _, err = h.buf.Write(r.raw.Bytes()); err != nil {
 		// The srv connection maybe already closed.
