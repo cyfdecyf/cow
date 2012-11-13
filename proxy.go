@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"container/heap"
 	"errors"
 	"fmt"
 	"io"
@@ -56,11 +57,12 @@ type Handler struct {
 }
 
 func newHandler(c conn, host string) *Handler {
-	h := &Handler{conn: c, host: host}
-	br := bufio.NewReaderSize(c, bufSize)
-	bw := bufio.NewWriter(c)
-	h.buf = bufio.NewReadWriter(br, bw)
-	return h
+	return &Handler{
+		conn: c,
+		host: host,
+		buf: bufio.NewReadWriter(bufio.NewReaderSize(c, bufSize),
+			bufio.NewWriter(c)),
+	}
 }
 
 type clientConn struct {
@@ -69,6 +71,7 @@ type clientConn struct {
 	handler    map[string]*Handler // request handler, host:port as key
 	finHandler chan *Handler       // Finished handler will pass it's self to request goroutine
 	reqNo      int                 // How many request has been received
+	reqPQ      RequestPQ           // Holds redo request
 }
 
 var (
@@ -103,13 +106,15 @@ func (py *Proxy) Serve() {
 // bufio.Reader's Read
 const bufSize = 4096
 
-func newClientConn(rwc net.Conn) (c *clientConn) {
-	c = &clientConn{Conn: rwc, handler: map[string]*Handler{}}
-	// http pkg uses io.LimitReader with no limit to create a reader, why?
-	br := bufio.NewReaderSize(rwc, bufSize)
-	bw := bufio.NewWriter(rwc)
-	c.buf = bufio.NewReadWriter(br, bw)
-	return
+func newClientConn(rwc net.Conn) *clientConn {
+	return &clientConn{
+		Conn:       rwc,
+		handler:    map[string]*Handler{},
+		reqPQ:      make(RequestPQ, 0, 0),
+		finHandler: make(chan *Handler, 5),
+		buf: bufio.NewReadWriter(bufio.NewReaderSize(rwc, bufSize),
+			bufio.NewWriter(rwc)),
+	}
 }
 
 func (c *clientConn) close() {
@@ -128,6 +133,67 @@ func isSelfURL(h string) bool {
 	return h == "" || h == selfURL127 || h == selfURLLH
 }
 
+func (c *clientConn) getRedoRequest() *Request {
+	// Collect all redo request into priority queue
+loop:
+	for {
+		select {
+		case h := <-c.finHandler:
+			for {
+				if r := h.nextRequest(); r != nil {
+					errl.Println("Add redo request", r)
+					heap.Push(&c.reqPQ, r)
+				} else {
+					break
+				}
+			}
+			c.removeHandler(h)
+		default:
+			break loop
+		}
+	}
+	if len(c.reqPQ) == 0 {
+		return nil
+	}
+	return heap.Pop(&c.reqPQ).(*Request)
+}
+
+func (c *clientConn) getRequest() (r *Request) {
+	// TODO It's difficult to send the request to the server in the same order
+	// as they arrived.
+
+	// Between the time we get a new request from the client and sending it to
+	// the server (newly connected as previous connection is closed), there
+	// maybe previous failed request which needs retry.
+
+	// One possible solution is to disallow pipelining request to different
+	// servers.
+	var err error
+retry:
+	if r = c.getRedoRequest(); r != nil {
+		errl.Println("Redo")
+		return
+	}
+	if c.SetReadDeadline(time.Now().Add(time.Second)) != nil {
+		debug.Println("Setting read deadline before parsing request")
+	}
+	if r, err = parseRequest(c.buf.Reader); err != nil {
+		if ne, ok := err.(*net.OpError); ok && ne.Timeout() {
+			goto retry
+		}
+		if err != io.EOF {
+			errl.Printf("Reading client %s request: %v", c.RemoteAddr(), err)
+		}
+		return nil
+	}
+	if redoReq := c.getRedoRequest(); redoReq != nil {
+		errl.Println("Redo")
+		heap.Push(&c.reqPQ, r)
+		return redoReq
+	}
+	return
+}
+
 func (c *clientConn) serve() {
 	defer c.close()
 	var r *Request
@@ -137,26 +203,13 @@ func (c *clientConn) serve() {
 	// Refer to implementation.md for the design choices on parsing the request
 	// and response.
 	for {
-		// TODO do retry request first. The problem here is that it's
-		// difficult to send the request to the server in the same order as
-		// they arrived. Between the time we get a new request from the client
-		// and sending it to the server (newly connected as previous
-		// connection is closed), there maybe previous failed request which
-		// needs retry.
-
-		// If reording request to the server is OK, proxy should ensure that
-		// response to the client is not reordered, thus the proxy has to
-		// reorder response if request is reordered. This is too complicated,
-		// so I thought it's better to give up on HTTP pipelining first, and
-		// come back when I have a better solution.
-		if r, err = parseRequest(c.buf.Reader); err != nil {
-			// io.EOF means the client connection is closed
-			errl.Printf("Reading client %s request: %v", c.RemoteAddr(), err)
+		if r = c.getRequest(); r == nil {
 			return
 		}
 		if dbgRq {
 			dbgRq.Printf("%v %v\n", c.RemoteAddr(), r)
 		}
+
 		if isSelfURL(r.URL.Host) {
 			// Send PAC file if requesting self
 			sendPAC(c.buf.Writer)
@@ -236,7 +289,7 @@ var readTimeout = 10 * time.Second
 func (c *clientConn) readResponse(h *Handler, r *Request) (err error) {
 	var rp *Response
 
-	if h.mayBeFake() && h.Conn.SetReadDeadline(time.Now().Add(readTimeout)) != nil {
+	if h.mayBeFake() && h.SetReadDeadline(time.Now().Add(readTimeout)) != nil {
 		debug.Println("Setting ReadDeadline before receiving the first response")
 	}
 	if rp, err = parseResponse(h.buf.Reader); err != nil {
@@ -245,7 +298,7 @@ func (c *clientConn) readResponse(h *Handler, r *Request) (err error) {
 			return
 		}
 		if err == io.EOF {
-			debug.Println("server closed connection, should retry:", r)
+			debug.Println("Server closed connection, should retry:", r)
 			return errRetry
 		}
 		c.handleResponseError(r, h, err)
@@ -255,10 +308,12 @@ func (c *clientConn) readResponse(h *Handler, r *Request) (err error) {
 	// After have received the first reponses from the server, we consider
 	// ther server as real instead of fake one caused by wrong DNS reply. So
 	// don't time out later.
-	if h.mayBeFake() && h.Conn.SetReadDeadline(time.Time{}) != nil {
+	if h.mayBeFake() && h.SetReadDeadline(time.Time{}) != nil {
 		debug.Println("Unset ReadDeadline")
 	}
-	h.state = hsResponsReceived
+	if h.state == hsConnected {
+		h.state = hsResponsReceived
+	}
 
 	if _, err = c.buf.WriteString(rp.raw.String()); err != nil {
 		errl.Println("Writing response back to client %s: %v\n", c.RemoteAddr(), err)
@@ -313,7 +368,11 @@ func (c *clientConn) responseReader(h *Handler) {
 			}
 			continue
 		}
-		if c.readResponse(h, r) != nil {
+		if err := c.readResponse(h, r); err != nil {
+			if err == errRetry {
+				errl.Println("Retry request added to handler")
+				h.request <- r
+			}
 			break
 		}
 	}
@@ -321,6 +380,7 @@ func (c *clientConn) responseReader(h *Handler) {
 	// It's possbile that request is being sent through the server
 	// connection. The sending side will discover closed server connection
 	// and try to redo the request.
+	errl.Println("handler added to finHandler", c.RemoteAddr())
 	c.finHandler <- h
 	h.Close()
 	debug.Printf("Closed srv conn to %s for client %s\n", h.host, c.RemoteAddr())
@@ -452,6 +512,16 @@ func (h *Handler) mayBeFake() bool {
 	return h.state == hsConnected && h.connType == directConn
 }
 
+func (h *Handler) nextRequest() (r *Request) {
+	select {
+	case r = <-h.request:
+		return
+	default:
+		return
+	}
+	return
+}
+
 var connEstablished = []byte("HTTP/1.0 200 Connection established\r\nProxy-agent: cow-proxy/0.1\r\n\r\n")
 
 // Do HTTP CONNECT
@@ -534,10 +604,9 @@ func (h *Handler) doRequest(r *Request, c *clientConn) (err error) {
 		// debug.Println("waiting response for req:", r)
 		err = c.readResponse(h, r)
 	case hsResponsReceived:
+		h.request <- r
 		go c.responseReader(h)
-		fallthrough
 	case hsPipelining:
-		// debug.Println("pipelining req:", r)
 		h.request <- r
 	case hsStopped:
 		return errRetry
