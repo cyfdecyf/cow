@@ -255,7 +255,7 @@ func (c *clientConn) handleResponseError(r *Request, h *Handler, err error) {
 	detailMsg := genErrMsg(r)
 	// debug.Println("Type of error", reflect.TypeOf(err))
 	ne, ok := err.(*net.OpError)
-	if !ok {
+	if !ok || (ne.Err != syscall.ECONNRESET && !ne.Timeout()) {
 		sendErrorPage(c.buf.Writer, "502", "read error", err.Error(), detailMsg)
 		return
 	}
@@ -299,14 +299,17 @@ func (c *clientConn) readResponse(h *Handler) (err error) {
 			return
 		}
 		if err == io.EOF {
-			// Don't receive request from channel, as it should be retried
-			debug.Println("Server closed connection, should retry")
+			// Don't receive request from channel because there may be none
+			debug.Println("Server closed connection")
 			return errRetry
 		}
 		// Handle other types of error, which should send error page back to client
-		r = <-h.request
-		c.handleResponseError(r, h, err)
-		errl.Printf("Error %v parsing response for client %s %v\n", err, c.RemoteAddr(), r)
+		if r = h.nextRequest(); r != nil {
+			c.handleResponseError(r, h, err)
+			errl.Printf("Error %v parsing response for client %s %v\n", err, c.RemoteAddr(), r)
+			return
+		}
+		errl.Printf("Error %v parsing response for client %s\n", err, c.RemoteAddr())
 		return
 	}
 	// After have received the first reponses from the server, we consider
