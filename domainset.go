@@ -87,7 +87,12 @@ func inAlwaysDs(dm string) bool {
 
 func hostInAlwaysDirectDs(host string) bool {
 	h, _ := splitHostPort(host)
-	return alwaysDirectDs[h]
+	return alwaysDirectDs[host2Domain(h)]
+}
+
+func hostInAlwaysBlockedDs(host string) bool {
+	h, _ := splitHostPort(host)
+	return alwaysBlockedDs[host2Domain(h)]
 }
 
 func isRequestBlocked(r *Request) bool {

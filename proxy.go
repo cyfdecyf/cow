@@ -329,6 +329,10 @@ func (c *clientConn) createHandler(r *Request) (*Handler, error) {
 	if isRequestBlocked(r) {
 		// In case of connection error to socks server, fallback to direct connection
 		if srvconn, err = createSocksConnection(r.URL.Host); err != nil {
+			if hostInAlwaysBlockedDs(r.URL.Host) {
+				connFailed = true
+				goto connDone
+			}
 			if srvconn, err = createDirectConnection(r.URL.Host); err != nil {
 				connFailed = true
 				goto connDone
@@ -338,6 +342,10 @@ func (c *clientConn) createHandler(r *Request) (*Handler, error) {
 	} else {
 		// In case of error on direction connection, try socks server
 		if srvconn, err = createDirectConnection(r.URL.Host); err != nil {
+			if hostInAlwaysDirectDs(r.URL.Host) {
+				connFailed = true
+				goto connDone
+			}
 			// debug.Printf("type of err %v\n", reflect.TypeOf(err))
 			// GFW may cause dns lookup fail, may also cause connection time out
 			if _, ok := err.(*net.DNSError); ok {
@@ -346,7 +354,6 @@ func (c *clientConn) createHandler(r *Request) (*Handler, error) {
 				connFailed = true
 				goto connDone
 			}
-
 			// Try to create socks connection
 			if srvconn, err = createSocksConnection(r.URL.Host); err != nil {
 				connFailed = true
