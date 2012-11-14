@@ -123,7 +123,9 @@ func (c *clientConn) getRequest() (r *Request) {
 	var err error
 	if r, err = parseRequest(c.buf.Reader); err != nil {
 		if err != io.EOF {
-			errl.Printf("Reading client %s request: %v", c.RemoteAddr(), err)
+			if ne, ok := err.(*net.OpError); !ok || ne.Err != syscall.ECONNRESET {
+				errl.Printf("Reading client %s request: %v", c.RemoteAddr(), err)
+			}
 		}
 		return nil
 	}
@@ -155,7 +157,7 @@ func (c *clientConn) serve() {
 	retry:
 		if h, err = c.getHandler(r); err != nil {
 			// Failed connection will send error page back to client
-			errl.Printf("Failed to get handler for %s %v\n", c.RemoteAddr(), r)
+			// debug.Printf("Failed to get handler for %s %v\n", c.RemoteAddr(), r)
 			continue
 		}
 
@@ -167,14 +169,14 @@ func (c *clientConn) serve() {
 			// tell the client this is to close client connection (proxy
 			// don't know the protocol between the client and server)
 			h.doConnect(r, c)
-			debug.Printf("doConnect for %s to %s done\n", c.RemoteAddr(), r.URL.Host)
+			// debug.Printf("doConnect for %s to %s done\n", c.RemoteAddr(), r.URL.Host)
 			return
 		}
 
 		if err = h.doRequest(r, c); err != nil {
 			c.removeHandler(h)
 			if err == errRetry {
-				errl.Printf("%s retry request %v\n", c.RemoteAddr(), r)
+				debug.Printf("%s retry request %v\n", c.RemoteAddr(), r)
 				goto retry
 			}
 			errl.Printf("Error doRequest for client %s %v: %v\n", c.RemoteAddr(), r, err)
@@ -428,8 +430,7 @@ func (srvconn *Handler) doConnect(r *Request, c *clientConn) (err error) {
 	if debug {
 		debug.Printf("%v 200 Connection established to %s\n", c.RemoteAddr(), r.URL.Host)
 	}
-	_, err = c.Write(connEstablished)
-	if err != nil {
+	if _, err = c.Write(connEstablished); err != nil {
 		errl.Printf("%v Error sending 200 Connecion established\n", c.RemoteAddr())
 		return err
 	}
@@ -471,11 +472,11 @@ func (h *Handler) doRequest(r *Request, c *clientConn) (err error) {
 	if _, err = h.buf.Write(r.raw.Bytes()); err != nil {
 		// The srv connection maybe already closed.
 		// Need to delete the connection and reconnect in that case.
-		errl.Println("Sending request header:", err)
+		debug.Println("Sending request header:", err)
 		return errRetry
 	}
 	if h.buf.Writer.Flush() != nil {
-		errl.Println("Flushing request header:", err)
+		debug.Println("Flushing request header:", err)
 		return errRetry
 	}
 
@@ -487,7 +488,7 @@ func (h *Handler) doRequest(r *Request, c *clientConn) (err error) {
 	// Send request body
 	if r.Method == "POST" {
 		if err = sendBody(h.buf.Writer, c.buf.Reader, r.Chunking, r.ContLen); err != nil {
-			errl.Println("Sending request body:", err)
+			debug.Println("Sending request body:", err)
 			if ne, ok := err.(*net.OpError); ok &&
 				(ne.Err == syscall.EPIPE || ne.Err == syscall.ECONNRESET) {
 				return errRetry
