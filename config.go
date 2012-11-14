@@ -31,19 +31,20 @@ const (
 )
 
 var config struct {
-	listenAddr string // server listen address
-	socksAddr  string
-	numProc    int    // max number of cores to use
-	sshServer  string // ssh to the given server to start socks proxy
+	listenAddr    string
+	socksAddr     string
+	numProc       int
+	sshServer     string
+	updateBlocked bool
+	updateDirect  bool
+	pipeline      bool
 
+	// These are for internal use
 	dir         string // directory containing config file and blocked site list
 	blockedFile string // contains blocked domains
 	directFile  string // contains sites that can be directly accessed
 	chouFile    string // chou feng, sites which will be temporary blocked
 	rcFile      string
-
-	updateBlocked bool // whether update blocked site list
-	updateDirect  bool // whether update direct site list
 }
 
 func printVersion() {
@@ -67,6 +68,7 @@ func init() {
 
 	flag.BoolVar(&config.updateBlocked, "update_blocked", true, "update blocked site list")
 	flag.BoolVar(&config.updateDirect, "update_direct", true, "update direct site list")
+	flag.BoolVar(&config.pipeline, "pipeline", true, "enable HTTP pipelining (experimental)")
 
 	config.dir = path.Join(homeDir, dotDir)
 	config.blockedFile = path.Join(config.dir, blockedFname)
@@ -117,8 +119,7 @@ func parseConfig() {
 		if err == io.EOF {
 			return
 		} else if err != nil {
-			errl.Println("Error reading rc file:", err)
-			errl.Println("Exit")
+			errl.Printf("Error reading rc file: %v\n", err)
 			os.Exit(1)
 		}
 
@@ -163,6 +164,8 @@ func parseConfig() {
 			config.updateBlocked = parseBool(val, "update_blocked")
 		case key == "update_direct":
 			config.updateDirect = parseBool(val, "update_direct")
+		case key == "pipeline":
+			config.pipeline = parseBool(val, "pipeline")
 		default:
 			fmt.Println("Config error: no such option", key)
 			os.Exit(1)
