@@ -219,7 +219,7 @@ func (c *clientConn) serve() {
 
 		if h, err = c.getHandler(r); err != nil {
 			// Failed connection will send error page back to client
-			errl.Println("Failed to get handler for %s %v\n", c.RemoteAddr(), r)
+			errl.Printf("Failed to get handler for %s %v\n", c.RemoteAddr(), r)
 			continue
 		}
 
@@ -251,36 +251,37 @@ func genErrMsg(r *Request) string {
 	return fmt.Sprintf("<p>HTTP Request <strong>%v</strong></p>", r)
 }
 
-func (c *clientConn) handleResponseError(r *Request, h *Handler, err error) {
-	detailMsg := genErrMsg(r)
-	// debug.Println("Type of error", reflect.TypeOf(err))
-	ne, ok := err.(*net.OpError)
-	if !ok || (ne.Err != syscall.ECONNRESET && !ne.Timeout()) {
-		sendErrorPage(c.buf.Writer, "502", "read error", err.Error(), detailMsg)
-		return
-	}
-	// GFW may connection reset here, may also make it time out Is it normal
-	// for connection to a site timeout? If so, it's better not add it to
-	// blocked site
+func genBlockedSiteMsg(r *Request) string {
 	host, _ := splitHostPort(r.URL.Host)
-	if !hostIsIP(host) && h.connType == directConn {
-		detailMsg += fmt.Sprintf(
+	if !hostIsIP(host) {
+		return fmt.Sprintf(
 			"<p>Domain <strong>%s</strong> added to blocked list. <strong>Try to refresh.</strong></p>",
 			host2Domain(host))
 	}
-	if ne.Err == syscall.ECONNRESET {
-		if h.connType == directConn {
+	return ""
+}
+
+func (c *clientConn) sendErrorPage(r *Request, h *Handler, err error) {
+	msg := genErrMsg(r)
+	// debug.Println("Type of error", reflect.TypeOf(err))
+	if ne, ok := err.(*net.OpError); ok && h.connType == directConn {
+		// GFW may connection reset here, may also make it time out Is it
+		// normal for connection to a site timeout? If so, it's better not add
+		// it to blocked site
+		if ne.Err == syscall.ECONNRESET {
 			addBlockedRequest(r)
-		}
-		sendErrorPage(c.buf.Writer, "503", "Connection reset",
-			ne.Error(), detailMsg)
-	} else if ne.Timeout() {
-		if h.connType == directConn {
+			sendErrorPage(c.buf.Writer, "503", "Connection reset", ne.Error(), msg+genBlockedSiteMsg(r))
+			return
+		} else if ne.Timeout() {
 			addBlockedRequest(r)
+			sendErrorPage(c.buf.Writer, "504", "Time out reading response",
+				ne.Error(), msg+genBlockedSiteMsg(r))
+			return
 		}
-		sendErrorPage(c.buf.Writer, "504", "Time out reading response",
-			ne.Error(), detailMsg)
+		// fallthrough to send general error page
 	}
+	sendErrorPage(c.buf.Writer, "502", "read error", err.Error(), msg)
+	return
 }
 
 // What value is appropriate?
@@ -305,7 +306,7 @@ func (c *clientConn) readResponse(h *Handler) (err error) {
 		}
 		// Handle other types of error, which should send error page back to client
 		if r = h.nextRequest(); r != nil {
-			c.handleResponseError(r, h, err)
+			c.sendErrorPage(r, h, err)
 			errl.Printf("Error %v parsing response for client %s %v\n", err, c.RemoteAddr(), r)
 			return
 		}
@@ -334,7 +335,7 @@ func (c *clientConn) readResponse(h *Handler) (err error) {
 
 	// Read response first then receive request, so we can detect closed
 	// server connection earlier.
-	// TODO baidu image stills will encounter many closed connection even with
+	// TODO baidu image still encounters many closed connection even with
 	// this optimization.
 	r = <-h.request
 	// Wrap inside if to avoid function argument evaluation.
@@ -465,7 +466,7 @@ connDone:
 	h.stop = newNotification()
 	h.request = make(chan *Request, requestNum)
 
-	c.handler[r.URL.Host] = h
+	c.handler[h.host] = h
 	// client will connect to differnet servers in a single proxy connection
 	// debug.Printf("handler to for client %v %v\n", c.RemoteAddr(), c.handler)
 
