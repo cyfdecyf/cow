@@ -304,13 +304,16 @@ func (c *clientConn) sendErrorPage(r *Request, h *Handler, err error) {
 		// normal for connection to a site timeout? If so, it's better not add
 		// it to blocked site
 		if ne.Err == syscall.ECONNRESET {
-			addBlockedRequest(r)
-			sendErrorPage(c.buf.Writer, "503", "Connection reset", ne.Error(), msg+genBlockedSiteMsg(r))
+			if addBlockedRequest(r) {
+				msg += genBlockedSiteMsg(r)
+			}
+			sendErrorPage(c.buf.Writer, "503", "Connection reset", ne.Error(), msg)
 			return
 		} else if ne.Timeout() {
-			addBlockedRequest(r)
-			sendErrorPage(c.buf.Writer, "504", "Time out reading response",
-				ne.Error(), msg+genBlockedSiteMsg(r))
+			if addBlockedRequest(r) {
+				msg += genBlockedSiteMsg(r)
+			}
+			sendErrorPage(c.buf.Writer, "504", "Time out reading response", ne.Error(), msg)
 			return
 		}
 		// fallthrough to send general error page
@@ -550,7 +553,8 @@ func (h *Handler) mayBeFake() bool {
 	// GFW may return wrong DNS record, which we can connect to but block
 	// forever on read. (e.g. twitter.com) If we have never received any
 	// response yet, then we should set a timeout for read/write.
-	return h.state == hsConnected && h.connType == directConn
+	return h.state == hsConnected && h.connType == directConn &&
+		!hostInAlwaysDirectDs(h.host)
 }
 
 func (h *Handler) nextRequest() (r *Request) {

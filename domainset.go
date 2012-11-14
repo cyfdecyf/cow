@@ -78,24 +78,48 @@ var directDs = newParaDomainSet()
 var blockedDomainChanged = false
 var directDomainChanged = false
 
-func isRequestBlocked(r *Request) bool {
-	host, _ := splitHostPort(r.URL.Host)
-	return blockedDs.has(host2Domain(host))
+var alwaysBlockedDs = newDomainSet()
+var alwaysDirectDs = newDomainSet()
+
+func inAlwaysDs(dm string) bool {
+	return alwaysBlockedDs[dm] || alwaysDirectDs[dm]
 }
 
-func addBlockedRequest(r *Request) {
+func hostInAlwaysDirectDs(host string) bool {
+	h, _ := splitHostPort(host)
+	return alwaysDirectDs[h]
+}
+
+func isRequestBlocked(r *Request) bool {
+	host, _ := splitHostPort(r.URL.Host)
+	dm := host2Domain(host)
+	if alwaysDirectDs[dm] {
+		return false
+	}
+	if alwaysBlockedDs[dm] {
+		return true
+	}
+	return blockedDs.has(dm)
+}
+
+func addBlockedRequest(r *Request) bool {
 	host, _ := splitHostPort(r.URL.Host)
 	if hostIsIP(host) {
-		return
+		return false
 	}
 	dm := host2Domain(host)
+	if inAlwaysDs(dm) {
+		return false
+	}
 	if !blockedDs.has(dm) {
 		blockedDs.add(dm)
 		blockedDomainChanged = true
 		debug.Printf("%v added to blocked list\n", dm)
+		return true
 	}
 	// Delete this request from direct domain set
 	delDirectRequest(r)
+	return false
 }
 
 func delBlockedRequest(r *Request) {

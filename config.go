@@ -22,10 +22,12 @@ var (
 )
 
 const (
-	dotDir       = ".cow"
-	blockedFname = "blocked"
-	directFname  = "direct"
-	rcFname      = "rc"
+	dotDir             = ".cow"
+	blockedFname       = "auto-blocked"
+	directFname        = "auto-direct"
+	alwaysBlockedFname = "blocked"
+	alwaysDirectFname  = "direct"
+	rcFname            = "rc"
 
 	version = "0.2.1"
 )
@@ -40,11 +42,13 @@ var config struct {
 	pipeline      bool
 
 	// These are for internal use
-	dir         string // directory containing config file and blocked site list
-	blockedFile string // contains blocked domains
-	directFile  string // contains sites that can be directly accessed
-	chouFile    string // chou feng, sites which will be temporary blocked
-	rcFile      string
+	dir               string // directory containing config file and blocked site list
+	blockedFile       string // contains blocked domains
+	directFile        string // contains sites that can be directly accessed
+	chouFile          string // chou feng, sites which will be temporary blocked
+	alwaysDirectFile  string
+	alwaysBlockedFile string
+	rcFile            string
 }
 
 func printVersion() {
@@ -73,6 +77,9 @@ func init() {
 	config.dir = path.Join(homeDir, dotDir)
 	config.blockedFile = path.Join(config.dir, blockedFname)
 	config.directFile = path.Join(config.dir, directFname)
+	config.directFile = path.Join(config.dir, directFname)
+	config.alwaysBlockedFile = path.Join(config.dir, alwaysBlockedFname)
+	config.alwaysDirectFile = path.Join(config.dir, alwaysDirectFname)
 	config.rcFile = path.Join(config.dir, rcFname)
 }
 
@@ -178,6 +185,9 @@ func loadConfig() {
 
 	blockedDs.loadDomainList(config.blockedFile)
 	directDs.loadDomainList(config.directFile)
+
+	alwaysBlockedDs.loadDomainList(config.alwaysBlockedFile)
+	alwaysDirectDs.loadDomainList(config.alwaysDirectFile)
 
 	_, port := splitHostPort(config.listenAddr)
 	selfURL127 = "127.0.0.1:" + port
