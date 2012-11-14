@@ -88,7 +88,9 @@ func (py *Proxy) Serve() {
 			debug.Println("Client connection:", err)
 			continue
 		}
-		debug.Println("New Client:", conn.RemoteAddr())
+		if debug {
+			debug.Println("New Client:", conn.RemoteAddr())
+		}
 		c := newClientConn(conn)
 		go c.serve()
 	}
@@ -111,7 +113,9 @@ func newClientConn(rwc net.Conn) *clientConn {
 func (c *clientConn) close() {
 	c.buf = nil
 	c.Close()
-	debug.Printf("Client %v connection closed\n", c.RemoteAddr())
+	if debug {
+		debug.Printf("Client %v connection closed\n", c.RemoteAddr())
+	}
 	runtime.GC()
 }
 
@@ -176,10 +180,9 @@ func (c *clientConn) serve() {
 		if err = h.doRequest(r, c); err != nil {
 			c.removeHandler(h)
 			if err == errRetry {
-				debug.Printf("%s retry request %v\n", c.RemoteAddr(), r)
+				debug.Printf("retry request %v\n", r)
 				goto retry
 			}
-			errl.Printf("Error doRequest for client %s %v: %v\n", c.RemoteAddr(), r, err)
 			return
 		}
 	}
@@ -274,8 +277,11 @@ func (c *clientConn) readResponse(h *Handler, r *Request) (err error) {
 			// TODO need to identify whether the err is caused by the server connection,
 			// in that case, need to retry request
 			if err != io.EOF {
-				errl.Printf("readResponse sendBody error %v for client %s %v\n", err,
-					c.RemoteAddr(), r)
+				if ne, ok := err.(*net.OpError); !ok || ne.Err != syscall.ECONNRESET ||
+					ne.Err != syscall.EPIPE {
+					errl.Printf("readResponse sendBody error %v for client %s %v\n", err,
+						c.RemoteAddr(), r)
+				}
 			}
 			return
 		}
@@ -319,7 +325,7 @@ func createDirectConnection(host string) (conn, error) {
 		debug.Printf("Connecting to: %s %v\n", host, err)
 		return conn{nil, nilConn}, err
 	}
-	debug.Println("Connected to", host)
+	// debug.Println("Connected to", host)
 	return conn{c, directConn}, nil
 }
 
