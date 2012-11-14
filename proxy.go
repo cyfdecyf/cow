@@ -320,7 +320,7 @@ func (c *clientConn) sendErrorPage(r *Request, h *Handler, err error) {
 }
 
 // What value is appropriate?
-var readTimeout = 10 * time.Second
+var readTimeout = 15 * time.Second
 
 func (c *clientConn) readResponse(h *Handler, r *Request) (err error) {
 	// If pipeline is enabled, request should always be received from h.request channel
@@ -330,7 +330,7 @@ func (c *clientConn) readResponse(h *Handler, r *Request) (err error) {
 		debug.Println("Setting ReadDeadline before receiving the first response")
 	}
 	if rp, err = parseResponse(h.buf.Reader); err != nil {
-		if h.stop.hasNotified() {
+		if config.pipeline && h.stop.hasNotified() {
 			debug.Println("readResponse stop requested after parseResponse error:", err)
 			return
 		}
@@ -389,7 +389,7 @@ func (c *clientConn) readResponse(h *Handler, r *Request) (err error) {
 			// TODO need to identify whether the err is caused by the server connection,
 			// in that case, need to retry request
 			if err != io.EOF {
-				errl.Println("readResponse sendBody error %v for client %s %v", err,
+				errl.Printf("readResponse sendBody error %v for client %s %v\n", err,
 					c.RemoteAddr(), r)
 			}
 			return
@@ -442,7 +442,7 @@ func (c *clientConn) removeHandler(h *Handler) {
 	delete(c.handler, h.host)
 }
 
-var dialTimeout = 10 * time.Second
+var dialTimeout = 15 * time.Second
 
 func createDirectConnection(host string) (conn, error) {
 	c, err := net.DialTimeout("tcp", host, dialTimeout)
@@ -633,6 +633,10 @@ func (h *Handler) doRequest(r *Request, c *clientConn) (err error) {
 	if r.Method == "POST" {
 		if err = sendBody(h.buf.Writer, c.buf.Reader, r.Chunking, r.ContLen); err != nil {
 			errl.Println("Sending request body:", err)
+			if ne, ok := err.(*net.OpError); ok &&
+				(ne.Err == syscall.EPIPE || ne.Err == syscall.ECONNRESET) {
+				return errRetry
+			}
 			return err
 		}
 	}
@@ -674,24 +678,25 @@ func sendBodyWithContLen(w *bufio.Writer, r *bufio.Reader, contLen int64) (err e
 // Send response body if header specifies chunked encoding
 func sendBodyChunked(w *bufio.Writer, r *bufio.Reader) (err error) {
 	// debug.Println("Sending chunked body")
-
 	done := false
 	for !done {
 		var s string
 		// Read chunk size line, ignore chunk extension if any
 		if s, err = ReadLine(r); err != nil {
 			errl.Println("Reading chunk size:", err)
-			return err
+			return
 		}
 		// debug.Println("Chunk size line", s)
 		f := strings.SplitN(s, ";", 2)
 		var size int64
 		if size, err = strconv.ParseInt(strings.TrimSpace(f[0]), 16, 64); err != nil {
 			errl.Println("Chunk size not valid:", err)
-			return err
+			return
 		}
-		w.WriteString(s)
-		w.WriteString("\r\n")
+		if _, err = w.WriteString(s + "\r\n"); err != nil {
+			errl.Println("Writing chunk size:", err)
+			return
+		}
 
 		if size == 0 { // end of chunked data, ignore any trailers
 			done = true
@@ -699,19 +704,18 @@ func sendBodyChunked(w *bufio.Writer, r *bufio.Reader) (err error) {
 			// Read chunk data and send to client
 			if _, err = io.CopyN(w, r, size); err != nil {
 				errl.Println("Reading chunked data from server:", err)
-				return err
+				return
 			}
 		}
 
-		// XXX maybe this kind of error handling should be passed to the
-		// client? But if the proxy doesn't know when to stop reading from the
-		// server, the only way to avoid blocked reading is to set read time
-		// out on server connection. Would that be easier?
 		if err = readCheckCRLF(r); err != nil {
 			errl.Println("Reading chunked data CRLF:", err)
-			return err
+			return
 		}
-		w.WriteString("\r\n")
+		if _, err = w.WriteString("\r\n"); err != nil {
+			errl.Println("Writing end line in sendBodyChunked:", err)
+			return
+		}
 	}
 	return
 }
@@ -724,15 +728,18 @@ func sendBodySplitIntoChunk(w *bufio.Writer, r *bufio.Reader) (err error) {
 		// debug.Println("split into chunk n =", n, "err =", err)
 		if err != nil {
 			// err maybe EOF which is expected here as the server is closing connection
-			// For other errors, report the error it in readResponse
+			// For other errors, report the error it in readResponse.
 			w.WriteString("0\r\n\r\n")
 			break
 		}
 
-		w.WriteString(fmt.Sprintf("%x\r\n", n))
-		w.Write(buf[:n])
+		if _, err = w.WriteString(fmt.Sprintf("%x\r\n", n)); err != nil {
+			errl.Printf("Writing chunk size %v\n", err)
+		}
+		if _, err = w.Write(buf[:n]); err != nil {
+			errl.Printf("Writing chunk %v\n", err)
+		}
 	}
-	w.Flush()
 	return
 }
 
