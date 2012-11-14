@@ -56,6 +56,19 @@ type Handler struct {
 	state   handlerState
 }
 
+var one = make([]byte, 1)
+
+func hasClosed(c net.Conn) bool {
+	c.SetReadDeadline(time.Now())
+	_, err := c.Read(one)
+	if ne, ok := err.(*net.OpError); !ok || !ne.Timeout() {
+		errl.Println("actively detected closed connection", c.RemoteAddr(), err)
+		return true
+	}
+	c.SetReadDeadline(time.Time{})
+	return false
+}
+
 func newHandler(c conn, host string) *Handler {
 	return &Handler{
 		conn: c,
@@ -170,8 +183,10 @@ func (c *clientConn) getRequest() (r *Request) {
 	// servers.
 	var err error
 retry:
-	// TODO detect closed client connection and discard any pending requests
 	if r = c.getRedoRequest(); r != nil {
+		if hasClosed(c) {
+			return nil
+		}
 		errl.Println("Redo")
 		return
 	}
