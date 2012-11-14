@@ -120,21 +120,26 @@ func (py *Proxy) Serve() {
 const bufSize = 4096
 
 func newClientConn(rwc net.Conn) *clientConn {
-	return &clientConn{
-		Conn:       rwc,
-		handler:    map[string]*Handler{},
-		reqPQ:      make(RequestPQ, 0, 0),
-		finHandler: make(chan *Handler, 5),
+	c := &clientConn{
+		Conn:    rwc,
+		handler: map[string]*Handler{},
 		buf: bufio.NewReadWriter(bufio.NewReaderSize(rwc, bufSize),
 			bufio.NewWriter(rwc)),
 	}
+	if config.pipeline {
+		c.reqPQ = make(RequestPQ, 0, 0)
+		c.finHandler = make(chan *Handler, 5)
+	}
+	return c
 }
 
 func (c *clientConn) close() {
 	// There's no need to wait response goroutine finish. They will finish
 	// When see the stop notification or detects client connection error.
-	for _, h := range c.handler {
-		h.stop.notify()
+	if config.pipeline {
+		for _, h := range c.handler {
+			h.stop.notify()
+		}
 	}
 	// Can't set c.buf to nil because maybe used in response goroutine
 	c.Close()
@@ -172,6 +177,16 @@ loop:
 }
 
 func (c *clientConn) getRequest() (r *Request) {
+	var err error
+	if !config.pipeline {
+		if r, err = parseRequest(c.buf.Reader); err != nil {
+			if err != io.EOF {
+				errl.Printf("Reading client %s request: %v", c.RemoteAddr(), err)
+			}
+			return nil
+		}
+		return r
+	}
 	// TODO It's difficult to send the request to the server in the same order
 	// as they arrived.
 
@@ -181,7 +196,6 @@ func (c *clientConn) getRequest() (r *Request) {
 
 	// One possible solution is to disallow pipelining request to different
 	// servers.
-	var err error
 retry:
 	if r = c.getRedoRequest(); r != nil {
 		if hasClosed(c) {
@@ -232,6 +246,7 @@ func (c *clientConn) serve() {
 			return
 		}
 
+	retry:
 		if h, err = c.getHandler(r); err != nil {
 			// Failed connection will send error page back to client
 			errl.Printf("Failed to get handler for %s %v\n", c.RemoteAddr(), r)
@@ -253,10 +268,15 @@ func (c *clientConn) serve() {
 		if err = h.doRequest(r, c); err != nil {
 			c.removeHandler(h)
 			if err == errRetry {
-				heap.Push(&c.reqPQ, r)
+				if !config.pipeline {
+					errl.Printf("%s retry request %v\n", c.RemoteAddr(), r)
+					goto retry
+				} else {
+					heap.Push(&c.reqPQ, r)
+				}
 				continue
 			}
-			errl.Printf("Error doRequest for client %s %v", c.RemoteAddr(), r)
+			errl.Printf("Error doRequest for client %s %v: %v\n", c.RemoteAddr(), r, err)
 			return
 		}
 	}
@@ -302,8 +322,8 @@ func (c *clientConn) sendErrorPage(r *Request, h *Handler, err error) {
 // What value is appropriate?
 var readTimeout = 10 * time.Second
 
-func (c *clientConn) readResponse(h *Handler) (err error) {
-	var r *Request
+func (c *clientConn) readResponse(h *Handler, r *Request) (err error) {
+	// If pipeline is enabled, request should always be received from h.request channel
 	var rp *Response
 
 	if h.mayBeFake() && h.SetReadDeadline(time.Now().Add(readTimeout)) != nil {
@@ -316,16 +336,20 @@ func (c *clientConn) readResponse(h *Handler) (err error) {
 		}
 		if err == io.EOF {
 			// Don't receive request from channel because there may be none
-			debug.Println("Server closed connection")
+			debug.Println("Server closed connection", h.host)
 			return errRetry
 		}
 		// Handle other types of error, which should send error page back to client
-		if r = h.nextRequest(); r != nil {
+		if config.pipeline {
+			if r = h.nextRequest(); r != nil {
+				c.sendErrorPage(r, h, err)
+				errl.Printf("Error %v parsing response for client %s %v\n", err, c.RemoteAddr(), r)
+				return
+			}
+			errl.Printf("Error %v parsing response for client %s\n", err, c.RemoteAddr())
+		} else {
 			c.sendErrorPage(r, h, err)
-			errl.Printf("Error %v parsing response for client %s %v\n", err, c.RemoteAddr(), r)
-			return
 		}
-		errl.Printf("Error %v parsing response for client %s\n", err, c.RemoteAddr())
 		return
 	}
 	// After have received the first reponses from the server, we consider
@@ -352,7 +376,9 @@ func (c *clientConn) readResponse(h *Handler) (err error) {
 	// server connection earlier.
 	// TODO baidu image still encounters many closed connection even with
 	// this optimization.
-	r = <-h.request
+	if config.pipeline {
+		r = <-h.request
+	}
 	// Wrap inside if to avoid function argument evaluation.
 	if dbgRep {
 		dbgRep.Printf("%v %s %v %v", c.RemoteAddr(), r.Method, r.URL, rp)
@@ -385,7 +411,7 @@ func (c *clientConn) readResponse(h *Handler) (err error) {
 func (c *clientConn) responseReader(h *Handler) {
 	// debug.Printf("Started response goroutine for client %s for host %s\n", c.RemoteAddr(), h.host)
 	for {
-		if c.readResponse(h) != nil {
+		if c.readResponse(h, nil) != nil {
 			break
 		}
 	}
@@ -416,7 +442,7 @@ func (c *clientConn) removeHandler(h *Handler) {
 	delete(c.handler, h.host)
 }
 
-var dialTimeout = 5 * time.Second
+var dialTimeout = 10 * time.Second
 
 func createDirectConnection(host string) (conn, error) {
 	c, err := net.DialTimeout("tcp", host, dialTimeout)
@@ -478,8 +504,10 @@ connDone:
 		return h, nil
 	}
 
-	h.stop = newNotification()
-	h.request = make(chan *Request, requestNum)
+	if config.pipeline {
+		h.stop = newNotification()
+		h.request = make(chan *Request, requestNum)
+	}
 
 	c.handler[h.host] = h
 	// client will connect to differnet servers in a single proxy connection
@@ -609,15 +637,21 @@ func (h *Handler) doRequest(r *Request, c *clientConn) (err error) {
 		}
 	}
 
-	h.request <- r
-	switch h.state {
-	case hsConnected:
-		// debug.Println("waiting response for req:", r)
-		err = c.readResponse(h)
-	case hsResponsReceived:
-		go c.responseReader(h)
-		h.state = hsPipelining
+	if !config.pipeline {
+		err = c.readResponse(h, r)
+	} else {
+		h.request <- r
+		switch h.state {
+		case hsConnected:
+			// Enable pipelining for the connection only if it's persistent.
+			// debug.Println("waiting response for req:", r)
+			err = c.readResponse(h, nil)
+		case hsResponsReceived:
+			go c.responseReader(h)
+			h.state = hsPipelining
+		}
 	}
+
 	return
 }
 
