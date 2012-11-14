@@ -39,7 +39,6 @@ var config struct {
 	sshServer     string
 	updateBlocked bool
 	updateDirect  bool
-	pipeline      bool
 
 	// These are for internal use
 	dir               string // directory containing config file and blocked site list
@@ -72,7 +71,6 @@ func init() {
 
 	flag.BoolVar(&config.updateBlocked, "update_blocked", true, "update blocked site list")
 	flag.BoolVar(&config.updateDirect, "update_direct", true, "update direct site list")
-	flag.BoolVar(&config.pipeline, "pipeline", true, "enable HTTP pipelining (experimental)")
 
 	config.dir = path.Join(homeDir, dotDir)
 	config.blockedFile = path.Join(config.dir, blockedFname)
@@ -171,8 +169,6 @@ func parseConfig() {
 			config.updateBlocked = parseBool(val, "update_blocked")
 		case key == "update_direct":
 			config.updateDirect = parseBool(val, "update_direct")
-		case key == "pipeline":
-			config.pipeline = parseBool(val, "pipeline")
 		default:
 			fmt.Println("Config error: no such option", key)
 			os.Exit(1)

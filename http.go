@@ -24,10 +24,6 @@ type Request struct {
 	Header
 	isConnect bool
 
-	// Number of requests for a client, to serve the client request in the
-	// same order as they arrived.
-	no int
-
 	raw bytes.Buffer
 }
 
