@@ -10,42 +10,21 @@ import (
 	"sync"
 )
 
-type domainCmd int
+type domainSet map[string]bool
 
 // Basically a concurrent map. I don't want to use channels to implement
 // concurrent access to this as I'm comfortable to use locks for simple tasks
 // like this
-type domainSet struct {
+type paraDomainSet struct {
 	sync.RWMutex
-	domain map[string]bool
+	domainSet
 }
 
-func newDomainSet() *domainSet {
-	ds := new(domainSet)
-	ds.domain = make(map[string]bool)
-	return ds
+func newDomainSet() domainSet {
+	return make(map[string]bool)
 }
 
-func (ds *domainSet) add(dm string) {
-	ds.Lock()
-	ds.domain[dm] = true
-	ds.Unlock()
-}
-
-func (ds *domainSet) has(dm string) bool {
-	ds.RLock()
-	_, ok := ds.domain[dm]
-	ds.RUnlock()
-	return ok
-}
-
-func (ds *domainSet) del(dm string) {
-	ds.Lock()
-	delete(ds.domain, dm)
-	ds.Unlock()
-}
-
-func (ds *domainSet) loadDomainList(fpath string) (lst []string, err error) {
+func (ds domainSet) loadDomainList(fpath string) (lst []string, err error) {
 	lst, err = loadDomainList(fpath)
 	if err != nil {
 		return
@@ -53,25 +32,48 @@ func (ds *domainSet) loadDomainList(fpath string) (lst []string, err error) {
 	// This executes in single goroutine, so no need to use lock
 	for _, v := range lst {
 		// debug.Println("loaded domain:", v)
-		ds.domain[v] = true
+		ds[v] = true
 	}
 	return
 }
 
-func (ds *domainSet) toArray() []string {
-	l := len(ds.domain)
+func (ds domainSet) toArray() []string {
+	l := len(ds)
 	lst := make([]string, l, l)
 
 	i := 0
-	for k, _ := range ds.domain {
+	for k, _ := range ds {
 		lst[i] = k
 		i++
 	}
 	return lst
 }
 
-var blockedDs = newDomainSet()
-var directDs = newDomainSet()
+func newParaDomainSet() *paraDomainSet {
+	return &paraDomainSet{domainSet: newDomainSet()}
+}
+
+func (ds *paraDomainSet) add(dm string) {
+	ds.Lock()
+	ds.domainSet[dm] = true
+	ds.Unlock()
+}
+
+func (ds *paraDomainSet) has(dm string) bool {
+	ds.RLock()
+	_, ok := ds.domainSet[dm]
+	ds.RUnlock()
+	return ok
+}
+
+func (ds *paraDomainSet) del(dm string) {
+	ds.Lock()
+	delete(ds.domainSet, dm)
+	ds.Unlock()
+}
+
+var blockedDs = newParaDomainSet()
+var directDs = newParaDomainSet()
 
 var blockedDomainChanged = false
 var directDomainChanged = false
@@ -155,8 +157,8 @@ func writeDomainSet() {
 		return
 	}
 	for _, v := range lst {
-		delete(blockedDs.domain, v)
-		delete(directDs.domain, v)
+		delete(blockedDs.domainSet, v)
+		delete(directDs.domainSet, v)
 	}
 	writeBlockedDs()
 	writeDirectDs()
