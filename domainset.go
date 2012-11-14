@@ -130,6 +130,9 @@ func delDirectRequest(r *Request) {
 }
 
 func writeBlockedDs() {
+	if !config.updateBlocked {
+		return
+	}
 	if !blockedDomainChanged {
 		return
 	}
@@ -137,6 +140,9 @@ func writeBlockedDs() {
 }
 
 func writeDirectDs() {
+	if !config.updateDirect {
+		return
+	}
 	if !directDomainChanged {
 		return
 	}

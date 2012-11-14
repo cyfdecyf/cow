@@ -41,6 +41,9 @@ var config struct {
 	directFile  string // contains sites that can be directly accessed
 	chouFile    string // chou feng, sites which will be temporary blocked
 	rcFile      string
+
+	updateBlocked bool // whether update blocked site list
+	updateDirect  bool // whether update direct site list
 }
 
 func printVersion() {
@@ -62,6 +65,9 @@ func init() {
 	flag.IntVar(&config.numProc, "core", 2, "number of cores to use")
 	flag.StringVar(&config.sshServer, "ssh_server", "", "remote server which will ssh to and provide sock server")
 
+	flag.BoolVar(&config.updateBlocked, "update_blocked", true, "update blocked site list")
+	flag.BoolVar(&config.updateDirect, "update_direct", true, "update direct site list")
+
 	config.dir = path.Join(homeDir, dotDir)
 	config.blockedFile = path.Join(config.dir, blockedFname)
 	config.directFile = path.Join(config.dir, directFname)
@@ -79,6 +85,19 @@ func openFile(path string) (f *os.File, err error) {
 		return nil, err
 	}
 	return
+}
+
+func parseBool(v string, msg string) bool {
+	switch v {
+	case "true":
+		return true
+	case "false":
+		return false
+	default:
+		fmt.Printf("%s should be true or false\n", msg)
+		os.Exit(1)
+	}
+	return false
 }
 
 func parseConfig() {
@@ -140,6 +159,10 @@ func parseConfig() {
 			config.blockedFile = val
 		case key == "ssh_server":
 			config.sshServer = val
+		case key == "update_blocked":
+			config.updateBlocked = parseBool(val, "update_blocked")
+		case key == "update_direct":
+			config.updateDirect = parseBool(val, "update_direct")
 		default:
 			fmt.Println("Config error: no such option", key)
 			os.Exit(1)
