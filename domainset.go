@@ -143,6 +143,9 @@ func addDirectRequest(r *Request) {
 		return
 	}
 	dm := host2Domain(host)
+	if inAlwaysDs(dm) {
+		return
+	}
 	if !directDs.has(dm) {
 		directDs.add(dm)
 		directDomainChanged = true
