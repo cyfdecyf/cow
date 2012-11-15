@@ -43,9 +43,10 @@ type conn struct {
 
 type Handler struct {
 	conn
-	buf   *bufio.ReadWriter
-	host  string
-	state handlerState
+	buf     *bufio.ReadWriter
+	host    string
+	state   handlerState
+	lastUse time.Time
 }
 
 var one = make([]byte, 1)
@@ -257,11 +258,11 @@ func (c *clientConn) handleServerWriteError(r *Request, h *Handler, err error, m
 
 func (c *clientConn) handleClientReadError(r *Request, err error, msg string) error {
 	if err == io.EOF {
-		debug.Printf("%s client closed connection")
+		debug.Printf("%s client closed connection", msg)
 	} else if ne, ok := err.(*net.OpError); ok && ne.Err == syscall.ECONNRESET {
 		debug.Printf("%s connection reset", msg)
 	} else {
-		errl.Printf("%s %v %v\n", msg, r, err)
+		errl.Printf("%s %v %v\n", msg, err, r)
 	}
 	return err
 }
@@ -274,8 +275,9 @@ func (c *clientConn) handleClientWriteError(r *Request, err error, msg string) e
 		} else if ne.Err == syscall.ECONNRESET {
 			debug.Println("%s connection reset %v\n", msg, r)
 		}
+	} else {
+		errl.Printf("%s %v %v\n", msg, err, r)
 	}
-	errl.Printf("%s %v %v\n", msg, r, err)
 	return err
 }
 
@@ -288,7 +290,7 @@ func isErrOpWrite(err error) bool {
 }
 
 // What value is appropriate?
-var readTimeout = 20 * time.Second
+const readTimeout = 20 * time.Second
 
 func (c *clientConn) readResponse(h *Handler, r *Request) (err error) {
 	var rp *Response
@@ -349,17 +351,19 @@ func (c *clientConn) readResponse(h *Handler, r *Request) (err error) {
 
 	if !rp.KeepAlive {
 		c.removeHandler(h)
+	} else {
+		h.lastUse = time.Now()
 	}
 	return
 }
 
 func (c *clientConn) getHandler(r *Request) (h *Handler, err error) {
 	h, ok := c.handler[r.URL.Host]
-	if ok && h.state == hsStopped {
+	if ok && h.mayBeClosed() {
+		// debug.Printf("Connection to %s maybe closed\n", h.host)
 		c.removeHandler(h)
 		ok = false
 	}
-
 	if !ok {
 		h, err = c.createHandler(r)
 	}
@@ -371,7 +375,7 @@ func (c *clientConn) removeHandler(h *Handler) {
 	delete(c.handler, h.host)
 }
 
-var dialTimeout = 15 * time.Second
+const dialTimeout = 15 * time.Second
 
 func createDirectConnection(host string) (conn, error) {
 	c, err := net.DialTimeout("tcp", host, dialTimeout)
@@ -482,6 +486,16 @@ func (h *Handler) mayBeFake() bool {
 	// response yet, then we should set a timeout for read/write.
 	return h.state == hsConnected && h.connType == directConn &&
 		!hostInAlwaysDirectDs(h.host)
+}
+
+// Apache 2.2 keep-alive timeout defaults to 5 seconds. Plus 2 more seconds
+const persistentTimeout = 7 * time.Second
+
+func (h *Handler) mayBeClosed() bool {
+	if h.connType == socksConn {
+		return false
+	}
+	return time.Now().Sub(h.lastUse) > persistentTimeout
 }
 
 var connEstablished = []byte("HTTP/1.0 200 Connection established\r\nProxy-agent: cow-proxy/0.1\r\n\r\n")
