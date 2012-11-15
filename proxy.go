@@ -324,22 +324,16 @@ func (c *clientConn) readResponse(h *Handler, r *Request) (err error) {
 
 	if rp.hasBody(r.Method) {
 		if err = sendBody(c.buf.Writer, h.buf.Reader, rp.Chunking, rp.ContLen); err != nil {
+			// Non persistent connection will return nil upon successful response reading
 			if err == io.EOF {
-				// Server closed connection.
-				if rp.KeepAlive {
-					// For persistent connection, EOF from server is error.
-					// Response header has been read, server using persistent
-					// connection indicates the end of response and proxy should
-					// not got EOF while reading response.
-					// The client connection will be closed to indicate error.
-					// Can't send error page here because response header has
-					// been sent.
-					errl.Println("Unexpected EOF reading body from server", r)
-				} else {
-					// EOF is normal if the server use closed connection to
-					// indicate end of response.
-					err = nil
-				}
+				// For persistent connection, EOF from server is error.
+				// Response header has been read, server using persistent
+				// connection indicates the end of response and proxy should
+				// not got EOF while reading response.
+				// The client connection will be closed to indicate this error.
+				// Proxy can't send error page here because response header has
+				// been sent.
+				errl.Println("Unexpected EOF reading body from server", r)
 			} else if isErrOpWrite(err) {
 				err = c.handleClientWriteError(r, err, "Write to client response body.")
 			} else {
@@ -665,7 +659,7 @@ func sendBody(w *bufio.Writer, r *bufio.Reader, chunk bool, contLen int64) (err 
 		err = sendBodySplitIntoChunk(w, r)
 	}
 
-	if err != nil {
+	if err != nil && err != io.EOF {
 		return
 	}
 	if err = w.Flush(); err != nil {
