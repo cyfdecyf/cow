@@ -8,7 +8,7 @@ import (
 	"os"
 	"os/user"
 	"path"
-	// "reflect"
+	"reflect"
 	"strconv"
 	"strings"
 )
@@ -107,6 +107,46 @@ func parseBool(v string, msg string) bool {
 	return false
 }
 
+type configParser struct{}
+
+func (p configParser) ParseListen(val string) {
+	config.listenAddr = val
+}
+
+func (p configParser) ParseSocks(val string) {
+	_, port := splitHostPort(val)
+	if port == "" {
+		fmt.Println("socks server must have port specified")
+		os.Exit(1)
+	}
+	config.socksAddr = val
+}
+
+func (p configParser) ParseCore(val string) {
+	var err error
+	config.numProc, err = strconv.Atoi(val)
+	if err != nil {
+		fmt.Printf("Config error: core number %s %v", val, err)
+		os.Exit(1)
+	}
+}
+
+func (p configParser) ParseSshServer(val string) {
+	config.sshServer = val
+}
+
+func (p configParser) ParseUpdateBlocked(val string) {
+	config.updateBlocked = parseBool(val, "updateBlocked")
+}
+
+func (p configParser) ParseUpdateDirect(val string) {
+	config.updateDirect = parseBool(val, "updateDirect")
+}
+
+func (p configParser) ParseLogFile(val string) {
+	config.logFile = val
+}
+
 func parseConfig() {
 	f, err := openFile(config.rcFile)
 	if f == nil || err != nil {
@@ -115,6 +155,9 @@ func parseConfig() {
 	defer f.Close()
 
 	fr := bufio.NewReader(f)
+
+	parser := reflect.ValueOf(configParser{})
+	zeroMethod := reflect.Value{}
 
 	var line string
 	var n int
@@ -145,36 +188,14 @@ func parseConfig() {
 		}
 		key, val := strings.TrimSpace(v[0]), strings.TrimSpace(v[1])
 
-		switch {
-		case key == "listen":
-			config.listenAddr = val
-		case key == "core":
-			config.numProc, err = strconv.Atoi(val)
-			if err != nil {
-				fmt.Printf("Config error: core number %d %v", n, err)
-				os.Exit(1)
-			}
-		case key == "socks":
-			_, port := splitHostPort(val)
-			if port == "" {
-				fmt.Println("socks server must have port specified")
-				os.Exit(1)
-			}
-			config.socksAddr = val
-		case key == "blocked":
-			config.blockedFile = val
-		case key == "sshServer":
-			config.sshServer = val
-		case key == "updateBlocked":
-			config.updateBlocked = parseBool(val, "update_blocked")
-		case key == "updateDirect":
-			config.updateDirect = parseBool(val, "update_direct")
-		case key == "logFile":
-			config.logFile = val
-		default:
-			fmt.Println("Config error: no such option", key)
+		methodName := "Parse" + strings.ToUpper(key[0:1]) + key[1:]
+		method := parser.MethodByName(methodName)
+		if method == zeroMethod {
+			fmt.Printf("Config error: no such option \"%s\"\n", key)
 			os.Exit(1)
 		}
+		args := []reflect.Value{reflect.ValueOf(val)}
+		method.Call(args)
 	}
 }
 

@@ -77,7 +77,7 @@ func NewProxy(addr string) *Proxy {
 func (py *Proxy) Serve() {
 	ln, err := net.Listen("tcp", py.addr)
 	if err != nil {
-		info.Println("Server creation failed:", err)
+		fmt.Println("Server creation failed:", err)
 		os.Exit(1)
 	}
 	info.Println("COW proxy listening", py.addr)
