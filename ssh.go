@@ -20,6 +20,6 @@ func runSSH() {
 			errl.Println("ssh:", err)
 		}
 		info.Println("ssh exited, reconnect")
-		time.Sleep(time.Second)
+		time.Sleep(5 * time.Second)
 	}
 }

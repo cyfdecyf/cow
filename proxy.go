@@ -229,7 +229,7 @@ func (c *clientConn) sendErrorPage(r *Request, h *Handler, err error) {
 }
 
 // What value is appropriate?
-var readTimeout = 15 * time.Second
+var readTimeout = 20 * time.Second
 
 func (c *clientConn) readResponse(h *Handler, r *Request) (err error) {
 	var rp *Response
