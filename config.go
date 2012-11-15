@@ -71,7 +71,7 @@ func init() {
 	flag.StringVar(&config.sshServer, "sshServer", "", "remote server which will ssh to and provide sock server")
 	flag.BoolVar(&config.updateBlocked, "updateBlocked", true, "update blocked site list")
 	flag.BoolVar(&config.updateDirect, "updateDirect", true, "update direct site list")
-	flag.StringVar(&config.logFile, "logFile", "~/.cow/log", "write output to file, empty means stdout")
+	flag.StringVar(&config.logFile, "logFile", "", "write output to file, empty means stdout")
 
 	config.dir = path.Join(homeDir, dotDir)
 	config.blockedFile = path.Join(config.dir, blockedFname)
