@@ -7,7 +7,6 @@ import (
 	"io"
 	"net"
 	"os"
-	// "reflect"
 	"runtime"
 	"strconv"
 	"strings"
@@ -127,7 +126,7 @@ func (c *clientConn) getRequest() (r *Request) {
 	var err error
 	if r, err = parseRequest(c.buf.Reader); err != nil {
 		if err != io.EOF {
-			if ne, ok := err.(*net.OpError); !ok || ne.Err != syscall.ECONNRESET {
+			if ne, ok := err.(*net.OpError); !(ok && ne.Err == syscall.ECONNRESET) {
 				errl.Printf("Reading client %s request: %v", c.RemoteAddr(), err)
 			}
 		}
@@ -243,7 +242,7 @@ func (c *clientConn) readResponse(h *Handler, r *Request) (err error) {
 			return errRetry
 		}
 		// Handle other types of error, which should send error page back to client
-		errl.Printf("Error %v parsing response for client %s %v\n", err, c.RemoteAddr(), r)
+		errl.Printf("Error parsing response for %v %v\n", r, err)
 		c.sendErrorPage(r, h, err)
 		return
 	}
@@ -277,8 +276,8 @@ func (c *clientConn) readResponse(h *Handler, r *Request) (err error) {
 			// TODO need to identify whether the err is caused by the server connection,
 			// in that case, need to retry request
 			if err != io.EOF {
-				if ne, ok := err.(*net.OpError); !ok || ne.Err != syscall.ECONNRESET ||
-					ne.Err != syscall.EPIPE {
+				if ne, ok := err.(*net.OpError); !(ok &&
+					(ne.Err == syscall.ECONNRESET || ne.Err == syscall.EPIPE)) {
 					errl.Printf("readResponse sendBody error %v for client %s %v\n", err,
 						c.RemoteAddr(), r)
 				}
