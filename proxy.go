@@ -178,6 +178,7 @@ func (c *clientConn) serve() {
 
 		if err = h.doRequest(r, c); err != nil {
 			c.removeHandler(h)
+			// TODO not all other kind of error should close client connection
 			if err == errRetry {
 				debug.Printf("retry request %v\n", r)
 				goto retry
@@ -187,8 +188,8 @@ func (c *clientConn) serve() {
 	}
 }
 
-func genErrMsg(r *Request) string {
-	return fmt.Sprintf("<p>HTTP Request <strong>%v</strong></p>", r)
+func genErrMsg(r *Request, what string) string {
+	return fmt.Sprintf("<p>HTTP Request <strong>%v</strong></p> <p>%s</p>", r, what)
 }
 
 func genBlockedSiteMsg(r *Request) string {
@@ -201,30 +202,84 @@ func genBlockedSiteMsg(r *Request) string {
 	return ""
 }
 
-func (c *clientConn) sendErrorPage(r *Request, h *Handler, err error) {
-	msg := genErrMsg(r)
-	// debug.Println("Type of error", reflect.TypeOf(err))
-	if ne, ok := err.(*net.OpError); ok && h.connType == directConn {
+func (c *clientConn) handleServerConnectionReset(r *Request, err error, msg string) {
+	if addBlockedRequest(r) {
+		msg += genBlockedSiteMsg(r)
+	}
+	sendErrorPage(c.buf.Writer, "503 connection reset", err.Error(), msg)
+}
+
+func (c *clientConn) handleServerReadTimeout(r *Request, err error, msg string) {
+	if addBlockedRequest(r) {
+		msg += genBlockedSiteMsg(r)
+	}
+	sendErrorPage(c.buf.Writer, "504 time out reading response", err.Error(), msg)
+}
+
+func (c *clientConn) handleServerReadError(r *Request, err error, msg string) error {
+	if err == io.EOF {
+		debug.Println("Read from server EOF")
+		return errRetry
+	}
+	errMsg := genErrMsg(r, msg)
+	if ne, ok := err.(*net.OpError); ok {
 		// GFW may connection reset here, may also make it time out Is it
 		// normal for connection to a site timeout? If so, it's better not add
-		// it to blocked site
+		// it to blocked site.
 		if ne.Err == syscall.ECONNRESET {
-			if addBlockedRequest(r) {
-				msg += genBlockedSiteMsg(r)
-			}
-			sendErrorPage(c.buf.Writer, "503", "Connection reset", ne.Error(), msg)
-			return
-		} else if ne.Timeout() {
-			if addBlockedRequest(r) {
-				msg += genBlockedSiteMsg(r)
-			}
-			sendErrorPage(c.buf.Writer, "504", "Time out reading response", ne.Error(), msg)
-			return
+			// Very likely caused by GFW
+			c.handleServerConnectionReset(r, err, errMsg)
+			return err
 		}
-		// fallthrough to send general error page
+		if ne.Timeout() {
+			c.handleServerReadTimeout(r, err, errMsg)
+			return err
+		}
+		// fall through to send general error message
 	}
-	sendErrorPage(c.buf.Writer, "502", "read error", err.Error(), msg)
-	return
+	errl.Printf("Read from server unhandled error for %v %v\n", r, err)
+	sendErrorPage(c.buf.Writer, "502 read error", err.Error(), errMsg)
+	return err
+}
+
+func (c *clientConn) handleServerWriteError(r *Request, h *Handler, err error, msg string) error {
+	errMsg := genErrMsg(r, msg)
+	if h.mayBeFake() {
+		if ne, ok := err.(*net.OpError); ok {
+			if ne.Err == syscall.ECONNRESET {
+				c.handleServerConnectionReset(r, err, errMsg)
+				return err
+			}
+			// TODO What about broken PIPE?
+		}
+		sendErrorPage(c.buf.Writer, "502 write error", err.Error(), errMsg)
+		return err
+	}
+	return errRetry
+}
+
+func (c *clientConn) handleClientReadError(r *Request, err error, msg string) {
+	errl.Printf("%s %v %v\n", msg, r, err)
+}
+
+func (c *clientConn) handleClientWriteError(r *Request, err error, msg string) {
+	// Write to client error could be either broken pipe or connection reset
+	if ne, ok := err.(*net.OpError); ok {
+		if ne.Err == syscall.EPIPE {
+			debug.Printf("%s broken pipe %v\n", msg, r)
+		} else if ne.Err == syscall.ECONNRESET {
+			debug.Println("%s connection reset %v\n", msg, r)
+		}
+	}
+	errl.Printf("%s %v %v\n", msg, r, err)
+}
+
+func isErrOpWrite(err error) bool {
+	if ne, ok := err.(*net.OpError); ok && ne.Op == "write" {
+		errl.Println("error net op is write")
+		return true
+	}
+	return false
 }
 
 // What value is appropriate?
@@ -237,14 +292,7 @@ func (c *clientConn) readResponse(h *Handler, r *Request) (err error) {
 		debug.Println("Setting ReadDeadline before receiving the first response")
 	}
 	if rp, err = parseResponse(h.buf.Reader); err != nil {
-		if err == io.EOF {
-			debug.Println("Server closed connection", h.host)
-			return errRetry
-		}
-		// Handle other types of error, which should send error page back to client
-		errl.Printf("Error parsing response for %v %v\n", r, err)
-		c.sendErrorPage(r, h, err)
-		return
+		return c.handleServerReadError(r, err, "Parse response from server.")
 	}
 	// After have received the first reponses from the server, we consider
 	// ther server as real instead of fake one caused by wrong DNS reply. So
@@ -257,12 +305,12 @@ func (c *clientConn) readResponse(h *Handler, r *Request) (err error) {
 	}
 
 	if _, err = c.buf.WriteString(rp.raw.String()); err != nil {
-		errl.Println("Writing response back to client %s: %v\n", c.RemoteAddr(), err)
+		c.handleClientWriteError(r, err, "Write response header back to client")
 		return
 	}
 	// Flush response header to the client ASAP
 	if err = c.buf.Flush(); err != nil {
-		errl.Printf("Flushing response header to client %s: %v\n", c.RemoteAddr(), err)
+		c.handleClientWriteError(r, err, "Flushing response header to client")
 		return
 	}
 
@@ -273,16 +321,27 @@ func (c *clientConn) readResponse(h *Handler, r *Request) (err error) {
 
 	if rp.hasBody(r.Method) {
 		if err = sendBody(c.buf.Writer, h.buf.Reader, rp.Chunking, rp.ContLen); err != nil {
-			// TODO need to identify whether the err is caused by the server connection,
-			// in that case, need to retry request
-			if err != io.EOF {
-				if ne, ok := err.(*net.OpError); !(ok &&
-					(ne.Err == syscall.ECONNRESET || ne.Err == syscall.EPIPE)) {
-					errl.Printf("readResponse sendBody error %v for client %s %v\n", err,
-						c.RemoteAddr(), r)
+			if err == io.EOF {
+				// Server closed connection.
+				if rp.KeepAlive {
+					// For persistent connection, EOF from server is error.
+					// Response header has been read, server using persistent
+					// connection indicates the end of response and proxy should
+					// not got EOF while reading response.
+					// The client connection will be closed to indicate error.
+					// Can't send error page here because response header has
+					// been sent.
+					errl.Println("Unexpected EOF reading body from server", r)
+				} else {
+					// EOF is normal if the server use closed connection to
+					// indicate end of response.
+					err = nil
 				}
+			} else if isErrOpWrite(err) {
+				c.handleClientWriteError(r, err, "Write to client response body.")
+			} else {
+				c.handleServerReadError(r, err, "Read response body from server.")
 			}
-			return
 		}
 	}
 	/*
@@ -292,8 +351,8 @@ func (c *clientConn) readResponse(h *Handler, r *Request) (err error) {
 	*/
 
 	if !rp.KeepAlive {
-		h.state = hsStopped
-		return
+		h.Close()
+		c.removeHandler(h)
 	}
 	return
 }
@@ -374,7 +433,8 @@ func (c *clientConn) createHandler(r *Request) (*Handler, error) {
 
 connDone:
 	if connFailed {
-		sendErrorPage(c.buf.Writer, "504", "Connection failed", err.Error(), genErrMsg(r))
+		sendErrorPage(c.buf.Writer, "504 Connection failed", err.Error(),
+			genErrMsg(r, "Creating connection."))
 		return nil, err
 	}
 
@@ -477,28 +537,27 @@ func (h *Handler) doRequest(r *Request, c *clientConn) (err error) {
 	if _, err = h.buf.Write(r.raw.Bytes()); err != nil {
 		// The srv connection maybe already closed.
 		// Need to delete the connection and reconnect in that case.
-		debug.Println("Sending request header:", err)
-		return errRetry
+		return c.handleServerWriteError(r, h, err, "Sending request header")
 	}
 	if h.buf.Writer.Flush() != nil {
-		debug.Println("Flushing request header:", err)
-		return errRetry
+		return c.handleServerWriteError(r, h, err, "Flushing request header")
 	}
-
-	// All possible error that caused by closed server connection should
-	// redo request. (Otherwise, client request are lost.)
-	// TODO It's possible that server connection is closed during POST, how to
-	// identify this?
 
 	// Send request body
 	if r.Method == "POST" {
 		if err = sendBody(h.buf.Writer, c.buf.Reader, r.Chunking, r.ContLen); err != nil {
-			debug.Println("Sending request body:", err)
-			if ne, ok := err.(*net.OpError); ok &&
-				(ne.Err == syscall.EPIPE || ne.Err == syscall.ECONNRESET) {
-				return errRetry
+			if err == io.EOF {
+				if r.KeepAlive {
+					errl.Println("Unexpected EOF reading request body from client", r)
+				} else {
+					err = nil
+				}
+			} else if isErrOpWrite(err) {
+				c.handleServerWriteError(r, h, err, "Sending request body")
+			} else {
+				c.handleClientReadError(r, err, "Reading request body")
 			}
-			return err
+			return
 		}
 	}
 
@@ -574,17 +633,21 @@ func sendBodySplitIntoChunk(w *bufio.Writer, r *bufio.Reader) (err error) {
 		n, err = r.Read(buf)
 		// debug.Println("split into chunk n =", n, "err =", err)
 		if err != nil {
-			// err maybe EOF which is expected here as the server is closing connection
-			// For other errors, report the error it in readResponse.
 			w.WriteString("0\r\n\r\n")
-			break
+			// EOF is expected here as the server is closing connection.
+			if err == io.EOF {
+				err = nil
+			}
+			return
 		}
 
 		if _, err = w.WriteString(fmt.Sprintf("%x\r\n", n)); err != nil {
 			errl.Printf("Writing chunk size %v\n", err)
+			return
 		}
 		if _, err = w.Write(buf[:n]); err != nil {
 			errl.Printf("Writing chunk %v\n", err)
+			return
 		}
 	}
 	return
@@ -597,17 +660,16 @@ func sendBody(w *bufio.Writer, r *bufio.Reader, chunk bool, contLen int64) (err 
 	} else if contLen >= 0 {
 		err = sendBodyWithContLen(w, r, contLen)
 	} else {
-		// Server use close connection to indicate end of data
+		// Server use close connection to indicate end of data.
+		// Return EOF when finished
 		err = sendBodySplitIntoChunk(w, r)
 	}
 
 	if err != nil {
 		return
 	}
-
 	if err = w.Flush(); err != nil {
-		// Maybe the client has closed the connection
-		debug.Println("Flushing body to client:", err)
+		errl.Println("Send body final flushing", err)
 		return err
 	}
 	return
