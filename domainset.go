@@ -114,6 +114,8 @@ func addBlockedRequest(r *Request) bool {
 		return false
 	}
 	dm := host2Domain(host)
+	// For chou domain, we should add it to the blocked list in order to use
+	// parent proxy, but don't write it back to auto-block file.
 	if inAlwaysDs(dm) {
 		return false
 	}
