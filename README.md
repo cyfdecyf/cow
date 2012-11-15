@@ -31,16 +31,18 @@ Configuration file is located at `~/.cow/rc`. Here's an example:
 
     # proxy listen address
     listen = 127.0.0.1:7777
-    # Nubmer of cores to use
-    core = 2
     # parent socks proxy address
     socks = 127.0.0.1:1080
+    # Nubmer of cores to use
+    core = 2
     # ssh to the given server to start socks proxy
-    ssh_server = gfw
-    # update blocked sites list in ~/.cow/auto-blocked
-    update_blocked = true
-    # update direct sites list in ~/.cow/auto-direct
-    update_direct = true
+    sshServer = gfw
+    # Update blocked site list (~/.cow/auto-blocked)
+    updateBlocked = true
+    # Update direct accessable site list (~/.cow/auto-direct)
+    updateDirect = true
+    # empty path means stdout, use /dev/null to disable output
+    logFile = ~/.cow/log
 
 To start cow, just execute `cow` on the command line.
 
