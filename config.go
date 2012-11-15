@@ -184,6 +184,7 @@ func loadConfig() {
 
 	alwaysBlockedDs.loadDomainList(config.alwaysBlockedFile)
 	alwaysDirectDs.loadDomainList(config.alwaysDirectFile)
+	chouDs.loadDomainList(config.chouFile)
 
 	_, port := splitHostPort(config.listenAddr)
 	selfURL127 = "127.0.0.1:" + port

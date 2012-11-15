@@ -80,6 +80,7 @@ var directDomainChanged = false
 
 var alwaysBlockedDs = newDomainSet()
 var alwaysDirectDs = newDomainSet()
+var chouDs = newDomainSet()
 
 func inAlwaysDs(dm string) bool {
 	return alwaysBlockedDs[dm] || alwaysDirectDs[dm]
@@ -143,7 +144,7 @@ func addDirectRequest(r *Request) {
 		return
 	}
 	dm := host2Domain(host)
-	if inAlwaysDs(dm) {
+	if inAlwaysDs(dm) || chouDs[dm] {
 		return
 	}
 	if !directDs.has(dm) {
@@ -184,13 +185,9 @@ func writeDirectDs() {
 }
 
 func writeDomainSet() {
-	lst, err := loadDomainList(config.chouFile)
-	if err != nil {
-		return
-	}
-	for _, v := range lst {
-		delete(blockedDs.domainSet, v)
-		delete(directDs.domainSet, v)
+	for k, _ := range chouDs {
+		delete(blockedDs.domainSet, k)
+		delete(directDs.domainSet, k)
 	}
 	writeBlockedDs()
 	writeDirectDs()
