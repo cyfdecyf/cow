@@ -29,10 +29,10 @@ var (
 )
 
 var (
-	errorLog    = log.New(os.Stderr, "\033[31m[Error]\033[0m ", log.LstdFlags)
-	debugLog    = log.New(os.Stderr, "\033[34m[Debug]\033[0m ", log.LstdFlags)
-	requestLog  = log.New(os.Stderr, "\033[32m[>>>>>]\033[0m ", log.LstdFlags)
-	responseLog = log.New(os.Stderr, "\033[33m[<<<<<]\033[0m ", log.LstdFlags)
+	errorLog    = log.New(os.Stdout, "\033[31m[Error]\033[0m ", log.LstdFlags)
+	debugLog    = log.New(os.Stdout, "\033[34m[Debug]\033[0m ", log.LstdFlags)
+	requestLog  = log.New(os.Stdout, "\033[32m[>>>>>]\033[0m ", log.LstdFlags)
+	responseLog = log.New(os.Stdout, "\033[33m[<<<<<]\033[0m ", log.LstdFlags)
 )
 
 func init() {
@@ -48,10 +48,10 @@ func init() {
 
 func initLog() {
 	if !colorize {
-		errorLog = log.New(os.Stderr, "[ERROR ] ", log.LstdFlags)
-		debugLog = log.New(os.Stderr, "[DEBUG ] ", log.LstdFlags)
-		requestLog = log.New(os.Stderr, "[Rqst  ] ", log.LstdFlags)
-		responseLog = log.New(os.Stderr, "[Rpns  ] ", log.LstdFlags)
+		errorLog = log.New(os.Stdout, "[ERROR] ", log.LstdFlags)
+		debugLog = log.New(os.Stdout, "[DEBUG] ", log.LstdFlags)
+		requestLog = log.New(os.Stdout, "[>>>>>] ", log.LstdFlags)
+		responseLog = log.New(os.Stdout, "[<<<<<] ", log.LstdFlags)
 	}
 }
 
