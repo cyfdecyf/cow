@@ -39,6 +39,7 @@ var config struct {
 	sshServer     string
 	updateBlocked bool
 	updateDirect  bool
+	logFile       string
 
 	// These are for internal use
 	dir               string // directory containing config file and blocked site list
@@ -67,14 +68,13 @@ func init() {
 	flag.StringVar(&config.listenAddr, "listen", "127.0.0.1:7777", "proxy server listen address")
 	flag.StringVar(&config.socksAddr, "socks", "127.0.0.1:1080", "socks server address")
 	flag.IntVar(&config.numProc, "core", 2, "number of cores to use")
-	flag.StringVar(&config.sshServer, "ssh_server", "", "remote server which will ssh to and provide sock server")
-
-	flag.BoolVar(&config.updateBlocked, "update_blocked", true, "update blocked site list")
-	flag.BoolVar(&config.updateDirect, "update_direct", true, "update direct site list")
+	flag.StringVar(&config.sshServer, "sshServer", "", "remote server which will ssh to and provide sock server")
+	flag.BoolVar(&config.updateBlocked, "updateBlocked", true, "update blocked site list")
+	flag.BoolVar(&config.updateDirect, "updateDirect", true, "update direct site list")
+	flag.StringVar(&config.logFile, "logFile", "", "write output to file, empty means stdout")
 
 	config.dir = path.Join(homeDir, dotDir)
 	config.blockedFile = path.Join(config.dir, blockedFname)
-	config.directFile = path.Join(config.dir, directFname)
 	config.directFile = path.Join(config.dir, directFname)
 	config.alwaysBlockedFile = path.Join(config.dir, alwaysBlockedFname)
 	config.alwaysDirectFile = path.Join(config.dir, alwaysDirectFname)
@@ -163,12 +163,14 @@ func parseConfig() {
 			config.socksAddr = val
 		case key == "blocked":
 			config.blockedFile = val
-		case key == "ssh_server":
+		case key == "sshServer":
 			config.sshServer = val
-		case key == "update_blocked":
+		case key == "updateBlocked":
 			config.updateBlocked = parseBool(val, "update_blocked")
-		case key == "update_direct":
+		case key == "updateDirect":
 			config.updateDirect = parseBool(val, "update_direct")
+		case key == "logFile":
+			config.logFile = val
 		default:
 			fmt.Println("Config error: no such option", key)
 			os.Exit(1)

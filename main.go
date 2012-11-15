@@ -18,6 +18,9 @@ func sigHandler() {
 	for sig := range sigChan {
 		info.Printf("%v caught, exit\n", sig)
 		writeDomainSet()
+		if logBuf != nil {
+			logBuf.Flush()
+		}
 		break
 	}
 	os.Exit(0)
@@ -33,6 +36,7 @@ func main() {
 		os.Exit(0)
 	}
 
+	initLog()
 	/*
 		if *cpuprofile != "" {
 			f, err := os.Create(*cpuprofile)
