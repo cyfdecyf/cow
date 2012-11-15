@@ -66,7 +66,8 @@ type clientConn struct {
 }
 
 var (
-	errRetry = errors.New("Retry")
+	errRetry    = errors.New("Retry")
+	errPageSent = errors.New("Error page has sent")
 )
 
 func NewProxy(addr string) *Proxy {
@@ -125,11 +126,7 @@ func isSelfURL(h string) bool {
 func (c *clientConn) getRequest() (r *Request) {
 	var err error
 	if r, err = parseRequest(c.buf.Reader); err != nil {
-		if err != io.EOF {
-			if ne, ok := err.(*net.OpError); !(ok && ne.Err == syscall.ECONNRESET) {
-				errl.Printf("Reading client %s request: %v", c.RemoteAddr(), err)
-			}
-		}
+		c.handleClientReadError(r, err, "parse client request")
 		return nil
 	}
 	return r
@@ -178,8 +175,9 @@ func (c *clientConn) serve() {
 
 		if err = h.doRequest(r, c); err != nil {
 			c.removeHandler(h)
-			// TODO not all other kind of error should close client connection
-			if err == errRetry {
+			if err == errPageSent {
+				continue
+			} else if err == errRetry {
 				debug.Printf("retry request %v\n", r)
 				goto retry
 			}
@@ -202,18 +200,20 @@ func genBlockedSiteMsg(r *Request) string {
 	return ""
 }
 
-func (c *clientConn) handleServerConnectionReset(r *Request, err error, msg string) {
+func (c *clientConn) handleServerConnectionReset(r *Request, err error, msg string) error {
 	if addBlockedRequest(r) {
 		msg += genBlockedSiteMsg(r)
 	}
 	sendErrorPage(c.buf.Writer, "503 connection reset", err.Error(), msg)
+	return errPageSent
 }
 
-func (c *clientConn) handleServerReadTimeout(r *Request, err error, msg string) {
+func (c *clientConn) handleServerReadTimeout(r *Request, err error, msg string) error {
 	if addBlockedRequest(r) {
 		msg += genBlockedSiteMsg(r)
 	}
 	sendErrorPage(c.buf.Writer, "504 time out reading response", err.Error(), msg)
+	return errPageSent
 }
 
 func (c *clientConn) handleServerReadError(r *Request, err error, msg string) error {
@@ -228,18 +228,16 @@ func (c *clientConn) handleServerReadError(r *Request, err error, msg string) er
 		// it to blocked site.
 		if ne.Err == syscall.ECONNRESET {
 			// Very likely caused by GFW
-			c.handleServerConnectionReset(r, err, errMsg)
-			return err
+			return c.handleServerConnectionReset(r, err, errMsg)
 		}
 		if ne.Timeout() {
-			c.handleServerReadTimeout(r, err, errMsg)
-			return err
+			return c.handleServerReadTimeout(r, err, errMsg)
 		}
 		// fall through to send general error message
 	}
 	errl.Printf("Read from server unhandled error for %v %v\n", r, err)
 	sendErrorPage(c.buf.Writer, "502 read error", err.Error(), errMsg)
-	return err
+	return errPageSent
 }
 
 func (c *clientConn) handleServerWriteError(r *Request, h *Handler, err error, msg string) error {
@@ -247,22 +245,28 @@ func (c *clientConn) handleServerWriteError(r *Request, h *Handler, err error, m
 	if h.mayBeFake() {
 		if ne, ok := err.(*net.OpError); ok {
 			if ne.Err == syscall.ECONNRESET {
-				c.handleServerConnectionReset(r, err, errMsg)
-				return err
+				return c.handleServerConnectionReset(r, err, errMsg)
 			}
 			// TODO What about broken PIPE?
 		}
 		sendErrorPage(c.buf.Writer, "502 write error", err.Error(), errMsg)
-		return err
+		return errPageSent
 	}
 	return errRetry
 }
 
-func (c *clientConn) handleClientReadError(r *Request, err error, msg string) {
-	errl.Printf("%s %v %v\n", msg, r, err)
+func (c *clientConn) handleClientReadError(r *Request, err error, msg string) error {
+	if err == io.EOF {
+		debug.Printf("%s client closed connection")
+	} else if ne, ok := err.(*net.OpError); ok && ne.Err == syscall.ECONNRESET {
+		debug.Printf("%s connection reset", msg)
+	} else {
+		errl.Printf("%s %v %v\n", msg, r, err)
+	}
+	return err
 }
 
-func (c *clientConn) handleClientWriteError(r *Request, err error, msg string) {
+func (c *clientConn) handleClientWriteError(r *Request, err error, msg string) error {
 	// Write to client error could be either broken pipe or connection reset
 	if ne, ok := err.(*net.OpError); ok {
 		if ne.Err == syscall.EPIPE {
@@ -272,6 +276,7 @@ func (c *clientConn) handleClientWriteError(r *Request, err error, msg string) {
 		}
 	}
 	errl.Printf("%s %v %v\n", msg, r, err)
+	return err
 }
 
 func isErrOpWrite(err error) bool {
@@ -305,13 +310,11 @@ func (c *clientConn) readResponse(h *Handler, r *Request) (err error) {
 	}
 
 	if _, err = c.buf.WriteString(rp.raw.String()); err != nil {
-		c.handleClientWriteError(r, err, "Write response header back to client")
-		return
+		return c.handleClientWriteError(r, err, "Write response header back to client")
 	}
 	// Flush response header to the client ASAP
 	if err = c.buf.Flush(); err != nil {
-		c.handleClientWriteError(r, err, "Flushing response header to client")
-		return
+		return c.handleClientWriteError(r, err, "Flushing response header to client")
 	}
 
 	// Wrap inside if to avoid function argument evaluation.
@@ -338,9 +341,9 @@ func (c *clientConn) readResponse(h *Handler, r *Request) (err error) {
 					err = nil
 				}
 			} else if isErrOpWrite(err) {
-				c.handleClientWriteError(r, err, "Write to client response body.")
+				err = c.handleClientWriteError(r, err, "Write to client response body.")
 			} else {
-				c.handleServerReadError(r, err, "Read response body from server.")
+				err = c.handleServerReadError(r, err, "Read response body from server.")
 			}
 		}
 	}
@@ -435,7 +438,7 @@ connDone:
 	if connFailed {
 		sendErrorPage(c.buf.Writer, "504 Connection failed", err.Error(),
 			genErrMsg(r, "Creating connection."))
-		return nil, err
+		return nil, errPageSent
 	}
 
 	h := newHandler(srvconn, r.URL.Host)
@@ -553,16 +556,15 @@ func (h *Handler) doRequest(r *Request, c *clientConn) (err error) {
 					err = nil
 				}
 			} else if isErrOpWrite(err) {
-				c.handleServerWriteError(r, h, err, "Sending request body")
+				err = c.handleServerWriteError(r, h, err, "Sending request body")
 			} else {
-				c.handleClientReadError(r, err, "Reading request body")
+				errl.Println("Reading request body:", err)
 			}
 			return
 		}
 	}
 
-	err = c.readResponse(h, r)
-	return
+	return c.readResponse(h, r)
 }
 
 // Send response body if header specifies content length
@@ -660,8 +662,6 @@ func sendBody(w *bufio.Writer, r *bufio.Reader, chunk bool, contLen int64) (err 
 	} else if contLen >= 0 {
 		err = sendBodyWithContLen(w, r, contLen)
 	} else {
-		// Server use close connection to indicate end of data.
-		// Return EOF when finished
 		err = sendBodySplitIntoChunk(w, r)
 	}
 
