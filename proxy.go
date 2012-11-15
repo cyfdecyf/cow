@@ -348,7 +348,6 @@ func (c *clientConn) readResponse(h *Handler, r *Request) (err error) {
 	*/
 
 	if !rp.KeepAlive {
-		h.Close()
 		c.removeHandler(h)
 	}
 	return
@@ -368,6 +367,7 @@ func (c *clientConn) getHandler(r *Request) (h *Handler, err error) {
 }
 
 func (c *clientConn) removeHandler(h *Handler) {
+	h.Close()
 	delete(c.handler, h.host)
 }
 
