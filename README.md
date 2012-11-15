@@ -48,12 +48,8 @@ To start cow, just execute `cow` on the command line.
 
 - The PAC file can be access at the same address as proxy listen address
   - For the above example, accessing `http://127.0.0.1:7777/anypath` will get the generated PAC file
-
 - You can manually specify blocked and direct accessable sites. Just edit `~/.cow/blocked` and `~/.cow/direct`
   - One line for each domain
-
 - When update blocked/direct sites is enabled, cow will update `~/.cow/auto-blocked` and `~/.cow/auto-direct`
-
 - For sites which will be temporarily blocked, they should always go through cow and thus should not appear in blocked or direct site lists. Put them in `~/.cow/chou`. (If you are Chinese, this stands for 抽风.)
-
 - Command line options can override options in configuration file. For more details, see the output of `cow -h`.
