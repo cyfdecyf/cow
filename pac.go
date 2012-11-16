@@ -21,15 +21,32 @@ for (var i = 0; i < directList.length; i += 1) {
 	directAcc[directList[i]] = true;
 }
 
+var topLevel = {
+	"co":  true,
+	"org": true,
+	"com": true,
+	"net": true,
+	"edu": true
+};
+
 function host2domain(host) {
-	var dotpos = host.lastIndexOf(".");
-	if (dotpos === -1)
+	var lastDot = host.lastIndexOf(".");
+	if (lastDot === -1)
 		return host;
 	// Find the second last dot
-	dotpos = host.lastIndexOf(".", dotpos - 1);
-	if (dotpos === -1)
-		return host;
-	return host.substring(dotpos + 1);
+	dot2ndLast = host.lastIndexOf(".", lastDot-1);
+	if (dot2ndLast === -1)
+	return host;
+
+	var part = host.substring(dot2ndLast+1, lastDot)
+	if (topLevel[part]) {
+		var dot3rdLast = host.lastIndexOf(".", dot2ndLast-1)
+		if (dot3rdLast === -1) {
+			return host
+		}
+		return host.substring(dot3rdLast+1)
+	}
+	return host.substring(dot2ndLast+1);
 };
 
 function FindProxyForURL(url, host) {
@@ -37,26 +54,31 @@ function FindProxyForURL(url, host) {
 };
 `
 
-var pacCont string
+var pacTmpl *template.Template
 
-func genPAC() {
-	lst, err := loadDomainList(config.directFile)
-	if err != nil {
-		return
-	}
-
-	pacTmpl, err := template.New("pac").Parse(pacRawTmpl)
+func init() {
+	var err error
+	pacTmpl, err = template.New("pac").Parse(pacRawTmpl)
 	if err != nil {
 		fmt.Println("Internal error on generating pac file template")
 		os.Exit(1)
 	}
+}
 
+func genPAC() string {
+	// domains in PAC file needs double quote
+	ds1 := strings.Join(alwaysDirectDs.toArray(), "\",\n\"")
+	ds2 := strings.Join(directDs.toArray(), "\",\n\"")
+	ds := ""
+	if ds1 != "" && ds2 != "" {
+		ds = ds1 + "\",\n\"" + ds2
+	}
 	data := struct {
 		ProxyAddr     string
 		DirectDomains string
 	}{
 		config.listenAddr,
-		strings.Join(lst, "\",\n\""), // domains in PAC file needs double quote
+		ds,
 	}
 
 	// debug.Println("direct:", data.DirectDomains)
@@ -64,15 +86,16 @@ func genPAC() {
 	buf := new(bytes.Buffer)
 	if err := pacTmpl.Execute(buf, data); err != nil {
 		errl.Println("Error generating pac file:", err)
-		return
+		os.Exit(1)
 	}
-	pacCont = buf.String()
+	pac := buf.String()
 	pacHeader := "HTTP/1.1 200 Okay\r\nServer: cow-proxy\r\nContent-Type: text/html\r\nConnection: close\r\n" +
-		fmt.Sprintf("Content-Length: %d\r\n\r\n", len(pacCont))
-	pacCont = pacHeader + pacCont
+		fmt.Sprintf("Content-Length: %d\r\n\r\n", len(pac))
+	pac = pacHeader + pac
+	return pac
 }
 
 func sendPAC(w *bufio.Writer) {
-	w.WriteString(pacCont)
+	w.WriteString(genPAC())
 	w.Flush()
 }

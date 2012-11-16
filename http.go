@@ -220,7 +220,6 @@ func drainHeader(reader *bufio.Reader) (err error) {
 // Parse the initial line and header, does not touch body
 func parseRequest(reader *bufio.Reader) (r *Request, err error) {
 	r = new(Request)
-	r.KeepAlive = true
 	r.ContLen = -1
 	var s string
 
@@ -246,7 +245,6 @@ func parseRequest(reader *bufio.Reader) (r *Request, err error) {
 		// Consume remaining header and just return. Headers are not used for
 		// CONNECT method.
 		r.isConnect = true
-		r.KeepAlive = false
 		err = drainHeader(reader)
 		return
 	}
@@ -262,12 +260,8 @@ func parseRequest(reader *bufio.Reader) (r *Request, err error) {
 }
 
 func (r *Request) genRequestLine() {
-	r.raw.WriteString(r.Method)
-	r.raw.WriteString(" ")
-	r.raw.WriteString(r.URL.Path)
-	r.raw.WriteString(" ")
-	r.raw.WriteString("HTTP/1.1\r\n")
-	r.raw.WriteString("Connection: Keep-Alive\r\n")
+	r.raw.WriteString(r.Method + " " + r.URL.Path)
+	r.raw.WriteString(" HTTP/1.1\r\nConnection: Keep-Alive\r\n")
 }
 
 var crlfBuf = make([]byte, 2)
@@ -291,6 +285,8 @@ func (rp *Response) hasBody(method string) bool {
 		strings.HasPrefix(rp.Status, "1"))
 }
 
+var malformedHTTPResponseErr = errors.New("malformed HTTP response")
+
 // Parse response status and headers.
 func parseResponse(reader *bufio.Reader) (rp *Response, err error) {
 	rp = new(Response)
@@ -300,13 +296,15 @@ func parseResponse(reader *bufio.Reader) (rp *Response, err error) {
 START:
 	if s, err = ReadLine(reader); err != nil {
 		if err != io.EOF {
-			errl.Printf("Reading Response status line: %v\n", err)
+			// err maybe timeout caused by explicity setting deadline
+			debug.Printf("Reading Response status line: %v\n", err)
 		}
 		return nil, err
 	}
 	var f []string
-	if f = strings.SplitN(s, " ", 3); len(f) < 3 {
-		return nil, errors.New(fmt.Sprintf("malformed HTTP response status line: %s\n", s))
+	if f = strings.SplitN(s, " ", 3); len(f) < 2 {
+		errl.Println("malformed HTTP response status line:", s)
+		return nil, malformedHTTPResponseErr
 	}
 	// Handle 1xx response
 	if f[1] == "100" {
@@ -317,12 +315,15 @@ START:
 		goto START
 	}
 	rp.Status = f[1]
-	rp.Reason = f[2]
+	if len(f) == 3 {
+		rp.Reason = f[2]
+	}
 
 	rp.raw.WriteString(s)
 	rp.raw.WriteString("\r\n")
 
 	if err = rp.parseHeader(reader, &rp.raw, "Connection: Keep-Alive\r\n"); err != nil {
+		errl.Println("Reading response header:", err)
 		return nil, err
 	}
 

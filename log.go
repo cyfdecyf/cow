@@ -3,10 +3,11 @@ package main
 // This trick is learnt from a post by Rob Pike
 // https://groups.google.com/d/msg/golang-nuts/gU7oQGoCkmg/j3nNxuS2O_sJ
 
-// For error message, use log pkg directly
-
 import (
+	"bufio"
 	"flag"
+	"fmt"
+	"io"
 	"log"
 	"os"
 )
@@ -24,34 +25,53 @@ var (
 	dbgRq  requestLogging
 	dbgRep responseLogging
 
-	verbose  bool
-	colorize bool
+	logFile io.Writer
+	logBuf  *bufio.Writer // only set if output is not stdio
+
+	debugLog, errorLog, requestLog, responseLog *log.Logger
 )
 
 var (
-	errorLog    = log.New(os.Stderr, "\033[31m[Error]\033[0m ", log.LstdFlags)
-	debugLog    = log.New(os.Stderr, "\033[34m[Debug]\033[0m ", log.LstdFlags)
-	requestLog  = log.New(os.Stderr, "\033[32m[>>>>>]\033[0m ", log.LstdFlags)
-	responseLog = log.New(os.Stderr, "\033[33m[<<<<<]\033[0m ", log.LstdFlags)
+	verbose  bool
+	colorize bool
 )
 
 func init() {
 	flag.BoolVar((*bool)(&info), "info", true, "info log")
 	flag.BoolVar((*bool)(&debug), "debug", false, "debug log")
 	flag.BoolVar((*bool)(&errl), "err", true, "error log")
-	flag.BoolVar((*bool)(&dbgRq), "reqest", false, "request log")
+	flag.BoolVar((*bool)(&dbgRq), "request", false, "request log")
 	flag.BoolVar((*bool)(&dbgRep), "reply", false, "reply log")
-
 	flag.BoolVar(&verbose, "v", false, "More info in request/response logging")
-	flag.BoolVar(&colorize, "c", false, "Colorize log output")
+	flag.BoolVar(&colorize, "color", false, "Colorize log output")
 }
 
 func initLog() {
-	if !colorize {
-		errorLog = log.New(os.Stderr, "[ERROR ] ", log.LstdFlags)
-		debugLog = log.New(os.Stderr, "[DEBUG ] ", log.LstdFlags)
-		requestLog = log.New(os.Stderr, "[Rqst  ] ", log.LstdFlags)
-		responseLog = log.New(os.Stderr, "[Rpns  ] ", log.LstdFlags)
+	logFile = os.Stdout
+	if config.logFile != "" {
+		if config.logFile[0] == '~' {
+			config.logFile = homeDir + config.logFile[1:]
+		}
+
+		if f, err := os.OpenFile(config.logFile,
+			os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600); err != nil {
+			fmt.Printf("Can't open log file, logging to stdout: %v\n", err)
+		} else {
+			logBuf = bufio.NewWriter(f)
+			logFile = logBuf
+		}
+	}
+	log.SetOutput(logFile)
+	if colorize {
+		errorLog = log.New(logFile, "\033[31m[Error]\033[0m ", log.LstdFlags)
+		debugLog = log.New(logFile, "\033[34m[Debug]\033[0m ", log.LstdFlags)
+		requestLog = log.New(logFile, "\033[32m[>>>>>]\033[0m ", log.LstdFlags)
+		responseLog = log.New(logFile, "\033[33m[<<<<<]\033[0m ", log.LstdFlags)
+	} else {
+		errorLog = log.New(logFile, "[ERROR] ", log.LstdFlags)
+		debugLog = log.New(logFile, "[DEBUG] ", log.LstdFlags)
+		requestLog = log.New(logFile, "[>>>>>] ", log.LstdFlags)
+		responseLog = log.New(logFile, "[<<<<<] ", log.LstdFlags)
 	}
 }
 

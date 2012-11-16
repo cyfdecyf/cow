@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"strings"
 )
 
 // Almost same with net/textproto/reader.go ReadLine
@@ -29,16 +28,23 @@ func IsDigit(b byte) bool {
 	return '0' <= b && b <= '9'
 }
 
-func host2Domain(h string) (domain string) {
-	host, _ := splitHostPort(h)
-	dotPos := strings.LastIndex(host, ".")
-	if dotPos == -1 {
-		return host // simple host name
+type notification chan byte
+
+func newNotification() notification {
+	// Notification channle has size 1, so sending a single one will not block
+	return make(chan byte, 1)
+}
+
+func (n notification) notify() {
+	n <- 1
+}
+
+func (n notification) hasNotified() bool {
+	select {
+	case <-n:
+		return true
+	default:
+		return false
 	}
-	// Find the 2nd last dot
-	dotPos = strings.LastIndex(host[:dotPos], ".")
-	if dotPos == -1 {
-		return host
-	}
-	return host[dotPos+1:]
+	return false
 }
