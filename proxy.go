@@ -492,14 +492,14 @@ func (h *Handler) mayBeFake() bool {
 		!hostInAlwaysDirectDs(h.host)
 }
 
-// Apache 2.2 keep-alive timeout defaults to 5 seconds. Plus 2 more seconds
-const persistentTimeout = 7 * time.Second
+// Apache 2.2 keep-alive timeout defaults to 5 seconds.
+const serverConnTimeout = 5 * time.Second
 
 func (h *Handler) mayBeClosed() bool {
 	if h.connType == socksConn {
 		return false
 	}
-	return time.Now().Sub(h.lastUse) > persistentTimeout
+	return time.Now().Sub(h.lastUse) > serverConnTimeout
 }
 
 var connEstablished = []byte("HTTP/1.0 200 Connection established\r\nProxy-agent: cow-proxy/0.1\r\n\r\n")
