@@ -112,11 +112,15 @@ func newClientConn(rwc net.Conn) *clientConn {
 }
 
 func (c *clientConn) close() {
+	for _, h := range c.handler {
+		h.Close()
+	}
 	c.buf = nil
 	c.Close()
 	if debug {
 		debug.Printf("Client %v connection closed\n", c.RemoteAddr())
 	}
+	c = nil
 	runtime.GC()
 }
 
