@@ -128,11 +128,20 @@ func isSelfURL(h string) bool {
 	return h == "" || h == selfURL127 || h == selfURLLH
 }
 
+// Close client connection if no new requests come in after 5 seconds.
+const clientConnTimeout = 5 * time.Second
+
 func (c *clientConn) getRequest() (r *Request) {
 	var err error
+	if c.SetReadDeadline(time.Now().Add(clientConnTimeout)) != nil {
+		debug.Println("SetReadDeadline BEFORE receiving client request")
+	}
 	if r, err = parseRequest(c.buf.Reader); err != nil {
 		c.handleClientReadError(r, err, "parse client request")
 		return nil
+	}
+	if c.SetReadDeadline(time.Time{}) != nil {
+		debug.Println("Un-SetReadDeadline AFTER receiving client request")
 	}
 	return r
 }
@@ -263,8 +272,12 @@ func (c *clientConn) handleServerWriteError(r *Request, h *Handler, err error, m
 func (c *clientConn) handleClientReadError(r *Request, err error, msg string) error {
 	if err == io.EOF {
 		debug.Printf("%s client closed connection", msg)
-	} else if ne, ok := err.(*net.OpError); ok && ne.Err == syscall.ECONNRESET {
-		debug.Printf("%s connection reset", msg)
+	} else if ne, ok := err.(*net.OpError); ok {
+		if ne.Err == syscall.ECONNRESET {
+			debug.Printf("%s connection reset", msg)
+		} else if ne.Timeout() {
+			debug.Printf("%s client read timeout, maybe has closed\n", msg)
+		}
 	} else {
 		errl.Printf("%s %v %v\n", msg, err, r)
 	}
@@ -300,7 +313,7 @@ func (c *clientConn) readResponse(h *Handler, r *Request) (err error) {
 	var rp *Response
 
 	if h.mayBeFake() && h.SetReadDeadline(time.Now().Add(readTimeout)) != nil {
-		debug.Println("Setting ReadDeadline before receiving the first response")
+		debug.Println("SetReadDeadline BEFORE receiving the first response")
 	}
 	if rp, err = parseResponse(h.buf.Reader); err != nil {
 		return c.handleServerReadError(r, err, "Parse response from server.")
@@ -309,7 +322,7 @@ func (c *clientConn) readResponse(h *Handler, r *Request) (err error) {
 	// ther server as real instead of fake one caused by wrong DNS reply. So
 	// don't time out later.
 	if h.mayBeFake() && h.SetReadDeadline(time.Time{}) != nil {
-		debug.Println("Unset ReadDeadline")
+		debug.Println("Un-SetReadDeadline AFTER receiving the first response")
 	}
 	if h.state == hsConnected {
 		h.state = hsResponsReceived
