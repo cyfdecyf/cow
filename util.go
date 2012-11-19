@@ -27,3 +27,24 @@ func ReadLine(r *bufio.Reader) (string, error) {
 func IsDigit(b byte) bool {
 	return '0' <= b && b <= '9'
 }
+
+type notification chan byte
+
+func newNotification() notification {
+	// Notification channle has size 1, so sending a single one will not block
+	return make(chan byte, 1)
+}
+
+func (n notification) notify() {
+	n <- 1
+}
+
+func (n notification) hasNotified() bool {
+	select {
+	case <-n:
+		return true
+	default:
+		return false
+	}
+	return false
+}

@@ -220,7 +220,6 @@ func drainHeader(reader *bufio.Reader) (err error) {
 // Parse the initial line and header, does not touch body
 func parseRequest(reader *bufio.Reader) (r *Request, err error) {
 	r = new(Request)
-	r.KeepAlive = true
 	r.ContLen = -1
 	var s string
 
@@ -246,7 +245,6 @@ func parseRequest(reader *bufio.Reader) (r *Request, err error) {
 		// Consume remaining header and just return. Headers are not used for
 		// CONNECT method.
 		r.isConnect = true
-		r.KeepAlive = false
 		err = drainHeader(reader)
 		return
 	}
@@ -262,12 +260,8 @@ func parseRequest(reader *bufio.Reader) (r *Request, err error) {
 }
 
 func (r *Request) genRequestLine() {
-	r.raw.WriteString(r.Method)
-	r.raw.WriteString(" ")
-	r.raw.WriteString(r.URL.Path)
-	r.raw.WriteString(" ")
-	r.raw.WriteString("HTTP/1.1\r\n")
-	r.raw.WriteString("Connection: Keep-Alive\r\n")
+	r.raw.WriteString(r.Method + " " + r.URL.Path)
+	r.raw.WriteString(" HTTP/1.1\r\nConnection: Keep-Alive\r\n")
 }
 
 var crlfBuf = make([]byte, 2)

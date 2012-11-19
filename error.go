@@ -22,7 +22,7 @@ var htmlRawTemplate = `<!DOCTYPE html>
 `
 
 // Do not end with "\r\n" so we can add more header later
-var headRawTemplate = "HTTP/1.1 {{.Code}} {{.Reason}}\r\n" +
+var headRawTemplate = "HTTP/1.1 {{.CodeReason}}\r\n" +
 	"Connection: keep-alive\r\n" +
 	"Cache-Control: no-cache\r\n" +
 	"Pragma: no-cache\r\n" +
@@ -60,7 +60,7 @@ func genErrorPage(errMsg, detailedMsg string) (string, error) {
 	return buf.String(), err
 }
 
-func sendErrorPage(w *bufio.Writer, errCode, errReason, errMsg, detailedMsg string) {
+func sendErrorPage(w *bufio.Writer, errCodeReason, errMsg, detailedMsg string) {
 	page, err := genErrorPage(errMsg, detailedMsg)
 	if err != nil {
 		errl.Println("Error generating error page:", err)
@@ -68,12 +68,10 @@ func sendErrorPage(w *bufio.Writer, errCode, errReason, errMsg, detailedMsg stri
 	}
 
 	data := struct {
-		Code   string
-		Reason string
-		Length int
+		CodeReason string
+		Length     int
 	}{
-		errCode,
-		errReason,
+		errCodeReason,
 		len(page),
 	}
 	buf := new(bytes.Buffer)

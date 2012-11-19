@@ -10,42 +10,21 @@ import (
 	"sync"
 )
 
-type domainCmd int
+type domainSet map[string]bool
 
 // Basically a concurrent map. I don't want to use channels to implement
 // concurrent access to this as I'm comfortable to use locks for simple tasks
 // like this
-type domainSet struct {
+type paraDomainSet struct {
 	sync.RWMutex
-	domain map[string]bool
+	domainSet
 }
 
-func newDomainSet() *domainSet {
-	ds := new(domainSet)
-	ds.domain = make(map[string]bool)
-	return ds
+func newDomainSet() domainSet {
+	return make(map[string]bool)
 }
 
-func (ds *domainSet) add(dm string) {
-	ds.Lock()
-	ds.domain[dm] = true
-	ds.Unlock()
-}
-
-func (ds *domainSet) has(dm string) bool {
-	ds.RLock()
-	_, ok := ds.domain[dm]
-	ds.RUnlock()
-	return ok
-}
-
-func (ds *domainSet) del(dm string) {
-	ds.Lock()
-	delete(ds.domain, dm)
-	ds.Unlock()
-}
-
-func (ds *domainSet) loadDomainList(fpath string) (lst []string, err error) {
+func (ds domainSet) loadDomainList(fpath string) (lst []string, err error) {
 	lst, err = loadDomainList(fpath)
 	if err != nil {
 		return
@@ -53,47 +32,102 @@ func (ds *domainSet) loadDomainList(fpath string) (lst []string, err error) {
 	// This executes in single goroutine, so no need to use lock
 	for _, v := range lst {
 		// debug.Println("loaded domain:", v)
-		ds.domain[v] = true
+		ds[v] = true
 	}
 	return
 }
 
-func (ds *domainSet) toArray() []string {
-	l := len(ds.domain)
+func (ds domainSet) toArray() []string {
+	l := len(ds)
 	lst := make([]string, l, l)
 
 	i := 0
-	for k, _ := range ds.domain {
+	for k, _ := range ds {
 		lst[i] = k
 		i++
 	}
 	return lst
 }
 
-var blockedDs = newDomainSet()
-var directDs = newDomainSet()
+func newParaDomainSet() *paraDomainSet {
+	return &paraDomainSet{domainSet: newDomainSet()}
+}
+
+func (ds *paraDomainSet) add(dm string) {
+	ds.Lock()
+	ds.domainSet[dm] = true
+	ds.Unlock()
+}
+
+func (ds *paraDomainSet) has(dm string) bool {
+	ds.RLock()
+	_, ok := ds.domainSet[dm]
+	ds.RUnlock()
+	return ok
+}
+
+func (ds *paraDomainSet) del(dm string) {
+	ds.Lock()
+	delete(ds.domainSet, dm)
+	ds.Unlock()
+}
+
+var blockedDs = newParaDomainSet()
+var directDs = newParaDomainSet()
 
 var blockedDomainChanged = false
 var directDomainChanged = false
 
-func isRequestBlocked(r *Request) bool {
-	host, _ := splitHostPort(r.URL.Host)
-	return blockedDs.has(host2Domain(host))
+var alwaysBlockedDs = newDomainSet()
+var alwaysDirectDs = newDomainSet()
+var chouDs = newDomainSet()
+
+func inAlwaysDs(dm string) bool {
+	return alwaysBlockedDs[dm] || alwaysDirectDs[dm]
 }
 
-func addBlockedRequest(r *Request) {
+func hostInAlwaysDirectDs(host string) bool {
+	h, _ := splitHostPort(host)
+	return alwaysDirectDs[host2Domain(h)]
+}
+
+func hostInAlwaysBlockedDs(host string) bool {
+	h, _ := splitHostPort(host)
+	return alwaysBlockedDs[host2Domain(h)]
+}
+
+func isRequestBlocked(r *Request) bool {
+	host, _ := splitHostPort(r.URL.Host)
+	dm := host2Domain(host)
+	if alwaysDirectDs[dm] {
+		return false
+	}
+	if alwaysBlockedDs[dm] {
+		return true
+	}
+	return blockedDs.has(dm)
+}
+
+func addBlockedRequest(r *Request) bool {
 	host, _ := splitHostPort(r.URL.Host)
 	if hostIsIP(host) {
-		return
+		return false
 	}
 	dm := host2Domain(host)
+	// For chou domain, we should add it to the blocked list in order to use
+	// parent proxy, but don't write it back to auto-block file.
+	if inAlwaysDs(dm) {
+		return false
+	}
 	if !blockedDs.has(dm) {
 		blockedDs.add(dm)
 		blockedDomainChanged = true
 		debug.Printf("%v added to blocked list\n", dm)
+		return true
 	}
 	// Delete this request from direct domain set
 	delDirectRequest(r)
+	return false
 }
 
 func delBlockedRequest(r *Request) {
@@ -112,6 +146,9 @@ func addDirectRequest(r *Request) {
 		return
 	}
 	dm := host2Domain(host)
+	if inAlwaysDs(dm) || chouDs[dm] {
+		return
+	}
 	if !directDs.has(dm) {
 		directDs.add(dm)
 		directDomainChanged = true
@@ -130,6 +167,9 @@ func delDirectRequest(r *Request) {
 }
 
 func writeBlockedDs() {
+	if !config.updateBlocked {
+		return
+	}
 	if !blockedDomainChanged {
 		return
 	}
@@ -137,6 +177,9 @@ func writeBlockedDs() {
 }
 
 func writeDirectDs() {
+	if !config.updateDirect {
+		return
+	}
 	if !directDomainChanged {
 		return
 	}
@@ -144,13 +187,9 @@ func writeDirectDs() {
 }
 
 func writeDomainSet() {
-	lst, err := loadDomainList(config.chouFile)
-	if err != nil {
-		return
-	}
-	for _, v := range lst {
-		delete(blockedDs.domain, v)
-		delete(directDs.domain, v)
+	for k, _ := range chouDs {
+		delete(blockedDs.domainSet, k)
+		delete(directDs.domainSet, k)
 	}
 	writeBlockedDs()
 	writeDirectDs()
@@ -229,11 +268,8 @@ func host2Domain(host string) (domain string) {
 		dot3rdLast := strings.LastIndex(host[:dot2ndLast], ".")
 		if dot3rdLast == -1 {
 			return host
-		} else {
-			return host[dot3rdLast+1:]
 		}
-	} else {
-		return host[dot2ndLast+1:]
+		return host[dot3rdLast+1:]
 	}
-	return
+	return host[dot2ndLast+1:]
 }

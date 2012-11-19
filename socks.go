@@ -30,9 +30,9 @@ var socksMsgVerMethodSelection = []byte{
 	0,   // no authorization required
 }
 
-func createSocksConnection(hostFull string) (c net.Conn, ct connectionType, err error) {
-	ct = nilConn	
-	if c, err = net.Dial("tcp", config.socksAddr); err != nil {
+func createSocksConnection(hostFull string) (cn conn, err error) {
+	c, err := net.Dial("tcp", config.socksAddr)
+	if err != nil {
 		errl.Printf("Can't connect to socks server %v\n", err)
 		return
 	}
@@ -100,24 +100,23 @@ func createSocksConnection(hostFull string) (c net.Conn, ct connectionType, err 
 		if err != io.EOF {
 			errl.Printf("Read socks reply err %v n %d\n", err, n)
 		}
-		return nil, ct, errors.New("Connection failed (by socks server). No such host?")
+		return conn{}, errors.New("Connection failed (by socks server). No such host?")
 	}
 	// debug.Printf("Socks reply length %d\n", n)
 
 	if replyBuf[0] != 5 {
 		errl.Printf("Socks reply connect %s VER %d not supported\n", hostFull, replyBuf[0])
-		return nil, ct, socksProtocolErr
+		return conn{}, socksProtocolErr
 	}
 	if replyBuf[1] != 0 {
 		errl.Printf("Socks reply connect %s error %d\n", hostFull, socksError[replyBuf[1]])
-		return nil, ct, socksProtocolErr
+		return conn{}, socksProtocolErr
 	}
 	if replyBuf[3] != 1 {
 		errl.Printf("Socks reply connect %s ATYP %d\n", hostFull, replyBuf[3])
-		return nil, ct, socksProtocolErr
+		return conn{}, socksProtocolErr
 	}
 
 	// Now the socket can be used to pass data.
-	ct = socksConn
-	return
+	return conn{c, socksConn}, nil
 }
