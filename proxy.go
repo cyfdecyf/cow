@@ -300,7 +300,6 @@ func (c *clientConn) handleClientWriteError(r *Request, err error, msg string) e
 
 func isErrOpWrite(err error) bool {
 	if ne, ok := err.(*net.OpError); ok && ne.Op == "write" {
-		errl.Println("error net op is write")
 		return true
 	}
 	return false
@@ -694,7 +693,7 @@ func sendBody(w *bufio.Writer, r *bufio.Reader, chunk bool, contLen int64) (err 
 		return
 	}
 	if err = w.Flush(); err != nil {
-		errl.Println("Send body final flushing", err)
+		// errl.Println("Send body final flushing", err)
 		return err
 	}
 	return
