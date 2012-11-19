@@ -112,11 +112,15 @@ func newClientConn(rwc net.Conn) *clientConn {
 }
 
 func (c *clientConn) close() {
+	for _, h := range c.handler {
+		h.Close()
+	}
 	c.buf = nil
 	c.Close()
 	if debug {
 		debug.Printf("Client %v connection closed\n", c.RemoteAddr())
 	}
+	c = nil
 	runtime.GC()
 }
 
@@ -124,11 +128,20 @@ func isSelfURL(h string) bool {
 	return h == "" || h == selfURL127 || h == selfURLLH
 }
 
+// Close client connection if no new requests come in after 5 seconds.
+const clientConnTimeout = 5 * time.Second
+
 func (c *clientConn) getRequest() (r *Request) {
 	var err error
+	if c.SetReadDeadline(time.Now().Add(clientConnTimeout)) != nil {
+		debug.Println("SetReadDeadline BEFORE receiving client request")
+	}
 	if r, err = parseRequest(c.buf.Reader); err != nil {
 		c.handleClientReadError(r, err, "parse client request")
 		return nil
+	}
+	if c.SetReadDeadline(time.Time{}) != nil {
+		debug.Println("Un-SetReadDeadline AFTER receiving client request")
 	}
 	return r
 }
@@ -259,8 +272,12 @@ func (c *clientConn) handleServerWriteError(r *Request, h *Handler, err error, m
 func (c *clientConn) handleClientReadError(r *Request, err error, msg string) error {
 	if err == io.EOF {
 		debug.Printf("%s client closed connection", msg)
-	} else if ne, ok := err.(*net.OpError); ok && ne.Err == syscall.ECONNRESET {
-		debug.Printf("%s connection reset", msg)
+	} else if ne, ok := err.(*net.OpError); ok {
+		if ne.Err == syscall.ECONNRESET {
+			debug.Printf("%s connection reset", msg)
+		} else if ne.Timeout() {
+			debug.Printf("%s client read timeout, maybe has closed\n", msg)
+		}
 	} else {
 		errl.Printf("%s %v %v\n", msg, err, r)
 	}
@@ -283,7 +300,6 @@ func (c *clientConn) handleClientWriteError(r *Request, err error, msg string) e
 
 func isErrOpWrite(err error) bool {
 	if ne, ok := err.(*net.OpError); ok && ne.Op == "write" {
-		errl.Println("error net op is write")
 		return true
 	}
 	return false
@@ -296,7 +312,7 @@ func (c *clientConn) readResponse(h *Handler, r *Request) (err error) {
 	var rp *Response
 
 	if h.mayBeFake() && h.SetReadDeadline(time.Now().Add(readTimeout)) != nil {
-		debug.Println("Setting ReadDeadline before receiving the first response")
+		debug.Println("SetReadDeadline BEFORE receiving the first response")
 	}
 	if rp, err = parseResponse(h.buf.Reader); err != nil {
 		return c.handleServerReadError(r, err, "Parse response from server.")
@@ -305,7 +321,7 @@ func (c *clientConn) readResponse(h *Handler, r *Request) (err error) {
 	// ther server as real instead of fake one caused by wrong DNS reply. So
 	// don't time out later.
 	if h.mayBeFake() && h.SetReadDeadline(time.Time{}) != nil {
-		debug.Println("Unset ReadDeadline")
+		debug.Println("Un-SetReadDeadline AFTER receiving the first response")
 	}
 	if h.state == hsConnected {
 		h.state = hsResponsReceived
@@ -488,14 +504,14 @@ func (h *Handler) mayBeFake() bool {
 		!hostInAlwaysDirectDs(h.host)
 }
 
-// Apache 2.2 keep-alive timeout defaults to 5 seconds. Plus 2 more seconds
-const persistentTimeout = 7 * time.Second
+// Apache 2.2 keep-alive timeout defaults to 5 seconds.
+const serverConnTimeout = 5 * time.Second
 
 func (h *Handler) mayBeClosed() bool {
 	if h.connType == socksConn {
 		return false
 	}
-	return time.Now().Sub(h.lastUse) > persistentTimeout
+	return time.Now().Sub(h.lastUse) > serverConnTimeout
 }
 
 var connEstablished = []byte("HTTP/1.0 200 Connection established\r\nProxy-agent: cow-proxy/0.1\r\n\r\n")
@@ -677,7 +693,7 @@ func sendBody(w *bufio.Writer, r *bufio.Reader, chunk bool, contLen int64) (err 
 		return
 	}
 	if err = w.Flush(); err != nil {
-		errl.Println("Send body final flushing", err)
+		// errl.Println("Send body final flushing", err)
 		return err
 	}
 	return
