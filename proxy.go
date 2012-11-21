@@ -218,7 +218,7 @@ func (c *clientConn) handleServerConnectionReset(r *Request, err error, msg stri
 	if addBlockedRequest(r) {
 		// domain in chou domain set is likely to be blocked, should automatically
 		// restart request using parent proxy
-		if isRequestInChouDs(r) {
+		if isRequestInChouDs(r) || config.autoRetry {
 			return errRetry
 		}
 		msg += genBlockedSiteMsg(r)
@@ -229,6 +229,7 @@ func (c *clientConn) handleServerConnectionReset(r *Request, err error, msg stri
 
 func (c *clientConn) handleServerReadTimeout(r *Request, err error, msg string) error {
 	// TODO read time out is not very reliable in detecting blocked site
+	// So I don't automatically retry upon timeout error
 	if addBlockedRequest(r) {
 		if isRequestInChouDs(r) {
 			return errRetry
