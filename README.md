@@ -13,15 +13,6 @@ COW is a HTTP proxy that tries to **automatically identify blocked websites and 
 - Convert socks proxy to HTTP proxy
   - Can start socks proxy server through ssh, requires public key authentication
 
-# Limitations #
-
-- Designed to run on your own computer
-- No caching, COW just passes traffic between clients and web servers
-  - For web browsing, browsers have their own cache
-- Beta quality now
-  - I'm using COW as system wide proxy on OS X 10.8 everyday
-  - Issue reporting is welcomed
-
 # Installation #
 
 Install [go](http://golang.org/doc/install), then run
@@ -69,3 +60,19 @@ Blocked and directly accessible web sites are specified using their domain names
 - Domains appear in `blocked/direct/chou` will not be modified by COW, and will be automatically removed from `auto-blocked` and `auto-direct`
   - Domains appear in both `blocked` and `direct` are taken as blocked, COW will output an error message for such domains
   - You'd better maintain consistency of `blocked/direct/chou`
+
+# Limitations #
+
+- Designed to run on your own computer
+- No caching, COW just passes traffic between clients and web servers
+  - For web browsing, browsers have their own cache
+- Blocked site detection not reliable
+  - Upon the following error, one domain is considered to be blocked
+      - Server connection reset
+      - Connection to server timeout
+      - Read from server timeout
+  - Directly accessible sites maybe identified as blocked site when the network connection is not reliable
+- Beta quality now
+  - Stable enough for myself. I'm using COW as system wide proxy on OS X 10.8 everyday
+  - Issue reporting is welcomed
+
