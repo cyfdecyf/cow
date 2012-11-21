@@ -40,6 +40,7 @@ var config struct {
 	sshServer     string
 	updateBlocked bool
 	updateDirect  bool
+	autoRetry     bool
 	logFile       string
 
 	// These are for internal use
@@ -71,6 +72,7 @@ func init() {
 	flag.StringVar(&config.sshServer, "sshServer", "", "remote server which will ssh to and provide sock server")
 	flag.BoolVar(&config.updateBlocked, "updateBlocked", true, "update blocked site list")
 	flag.BoolVar(&config.updateDirect, "updateDirect", true, "update direct site list")
+	flag.BoolVar(&config.autoRetry, "autoRetry", false, "automatically retry blocked requests")
 	flag.StringVar(&config.logFile, "logFile", "", "write output to file, empty means stdout")
 
 	config.dir = path.Join(homeDir, dotDir)
@@ -142,6 +144,10 @@ func (p configParser) ParseUpdateBlocked(val string) {
 
 func (p configParser) ParseUpdateDirect(val string) {
 	config.updateDirect = parseBool(val, "updateDirect")
+}
+
+func (p configParser) ParseAutoRetry(val string) {
+	config.autoRetry = parseBool(val, "autoRetry")
 }
 
 func (p configParser) ParseLogFile(val string) {
