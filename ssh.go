@@ -39,7 +39,7 @@ func runSSH() {
 		// -N do not execute remote command
 		cmd := exec.Command("ssh", "-n", "-N", "-D", port, config.sshServer)
 		if err := cmd.Run(); err != nil {
-			errl.Println("ssh:", err)
+			debug.Println("ssh:", err)
 		}
 		info.Println("ssh exited, reconnect")
 		time.Sleep(5 * time.Second)
