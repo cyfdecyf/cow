@@ -10,5 +10,7 @@ sshServer = gfw
 updateBlocked = true
 # Update direct accessable site list (~/.cow/auto-direct)
 updateDirect = true
+# Automatically retry blocked request instead of sending back error page
+autoRetry = true
 # empty path means stdout, use /dev/null to disable output
 logFile = ~/.cow/log
