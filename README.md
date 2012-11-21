@@ -52,4 +52,11 @@ To start cow, just execute `cow` on the command line.
   - One line for each domain
 - When update blocked/direct sites is enabled, cow will update `~/.cow/auto-blocked` and `~/.cow/auto-direct`
 - For sites which will be temporarily blocked, they should always go through cow and thus should not appear in blocked or direct site lists. Put them in `~/.cow/chou`. (If you are Chinese, this stands for 抽风.)
-- Command line options can override options in configuration file. For more details, see the output of `cow -h`.
+- Command line options can override options in configuration file. For more details, see the output of `cow -h`
+
+# OS X: Automatic start COW upon login
+
+- Put `doc/osx/info.chenyufei.cow.plist` into `~/Library/LaunchAgents`
+- Edit this plist file, change the COW executable path to the one on your system
+
+After this, COW will be started when you login. It will also be automatically restarted upon exit by launchd (if network is avaiable).
