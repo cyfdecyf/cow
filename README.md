@@ -47,7 +47,14 @@ To start cow, just execute `cow` on the command line.
   - For the above example, access `http://127.0.0.1:7777/anypath` will get the generated PAC file
 - Command line options can override options in the configuration file. For more details, see the output of `cow -h`
 
-## Blocked and directly accessible sites list
+## OS X: Start COW on login ##
+
+1. Put `doc/osx/info.chenyufei.cow.plist` in `~/Library/LaunchAgents` directory
+2. Edit this plist file, change the COW executable path to the one on your system
+
+After this, COW will be started when you login. It will also be restarted upon exit by `launchd` (if network is avaiable).
+
+## Blocked and directly accessible sites list ##
 
 Blocked and directly accessible web sites are specified using their domain names.
 
@@ -58,13 +65,7 @@ Blocked and directly accessible web sites are specified using their domain names
   - They will only contain domains which you visit
   - Generated PAC file will contain domains in both `direct` and `auto-direct`
 - For domains which will be temporarily blocked, put them in `~/.cow/chou`. (They will always go through COW. If you are Chinese, chou stands for 抽风)
+  - `doc/sample-config/chou` contains several such sites
 - Domains appear in `blocked/direct/chou` will not be modified by COW, and will be automatically removed from `auto-blocked` and `auto-direct`
   - Domains appear in both `blocked` and `direct` are taken as blocked, COW will output an error message for such domains
   - You'd better maintain consistency of `blocked/direct/chou`
-
-# OS X: Start COW upon login
-
-1. Put `doc/osx/info.chenyufei.cow.plist` into `~/Library/LaunchAgents`
-2. Edit this plist file, change the COW executable path to the one on your system
-
-After this, COW will be started when you login. It will also be restarted upon exit by `launchd` (if network is avaiable).
