@@ -6,9 +6,9 @@ socks = 127.0.0.1:1080
 core = 2
 # ssh to the given server to start socks proxy
 sshServer = gfw
-# Update blocked site list (~/.cow/auto-blocked)
+# Update blocked domain list (~/.cow/auto-blocked)
 updateBlocked = true
-# Update direct accessable site list (~/.cow/auto-direct)
+# Update directly accessable domain list (~/.cow/auto-direct)
 updateDirect = true
 # Automatically retry blocked request instead of sending back error page
 autoRetry = true
