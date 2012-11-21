@@ -69,8 +69,12 @@ func genPAC() string {
 	// domains in PAC file needs double quote
 	ds1 := strings.Join(alwaysDirectDs.toArray(), "\",\n\"")
 	ds2 := strings.Join(directDs.toArray(), "\",\n\"")
-	ds := ""
-	if ds1 != "" && ds2 != "" {
+	var ds string
+	if ds1 == "" {
+		ds = ds2
+	} else if ds2 == "" {
+		ds = ds1
+	} else {
 		ds = ds1 + "\",\n\"" + ds2
 	}
 	data := struct {
