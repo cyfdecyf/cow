@@ -307,7 +307,7 @@ func isErrOpWrite(err error) bool {
 }
 
 // What value is appropriate?
-const readTimeout = 20 * time.Second
+const readTimeout = 15 * time.Second
 
 func (c *clientConn) readResponse(h *Handler, r *Request) (err error) {
 	var rp *Response
@@ -392,7 +392,7 @@ func (c *clientConn) removeHandler(h *Handler) {
 	delete(c.handler, h.host)
 }
 
-const dialTimeout = 15 * time.Second
+const dialTimeout = 10 * time.Second
 
 func createDirectConnection(host string) (conn, error) {
 	c, err := net.DialTimeout("tcp", host, dialTimeout)
