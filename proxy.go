@@ -214,29 +214,21 @@ func genBlockedSiteMsg(r *Request) string {
 	return ""
 }
 
-func (c *clientConn) handleServerConnectionReset(r *Request, err error, msg string) error {
+const (
+	errCodeReset   = "503 connection reset"
+	errCodeTimeout = "504 time out reading response"
+)
+
+func (c *clientConn) handleBlockedRequest(r *Request, err error, errCode, msg string) error {
 	if addBlockedRequest(r) {
 		// domain in chou domain set is likely to be blocked, should automatically
-		// restart request using parent proxy
-		if isRequestInChouDs(r) || config.autoRetry {
+		// restart request using parent proxy no matter if autoRetry is enabled.
+		if config.autoRetry || isRequestInChouDs(r) {
 			return errRetry
 		}
 		msg += genBlockedSiteMsg(r)
 	}
-	sendErrorPage(c.buf.Writer, "503 connection reset", err.Error(), msg)
-	return errPageSent
-}
-
-func (c *clientConn) handleServerReadTimeout(r *Request, err error, msg string) error {
-	// TODO read time out is not very reliable in detecting blocked site
-	// So I don't automatically retry upon timeout error
-	if addBlockedRequest(r) {
-		if isRequestInChouDs(r) {
-			return errRetry
-		}
-		msg += genBlockedSiteMsg(r)
-	}
-	sendErrorPage(c.buf.Writer, "504 time out reading response", err.Error(), msg)
+	sendErrorPage(c.buf.Writer, errCode, err.Error(), msg)
 	return errPageSent
 }
 
@@ -251,11 +243,10 @@ func (c *clientConn) handleServerReadError(r *Request, err error, msg string) er
 		// normal for connection to a site timeout? If so, it's better not add
 		// it to blocked site.
 		if ne.Err == syscall.ECONNRESET {
-			// Very likely caused by GFW
-			return c.handleServerConnectionReset(r, err, errMsg)
+			return c.handleBlockedRequest(r, err, errCodeReset, errMsg)
 		}
 		if ne.Timeout() {
-			return c.handleServerReadTimeout(r, err, errMsg)
+			return c.handleBlockedRequest(r, err, errCodeTimeout, errMsg)
 		}
 		// fall through to send general error message
 	}
@@ -269,7 +260,7 @@ func (c *clientConn) handleServerWriteError(r *Request, h *Handler, err error, m
 	if h.mayBeFake() {
 		if ne, ok := err.(*net.OpError); ok {
 			if ne.Err == syscall.ECONNRESET {
-				return c.handleServerConnectionReset(r, err, errMsg)
+				return c.handleBlockedRequest(r, err, errCodeReset, errMsg)
 			}
 			// TODO What about broken PIPE?
 		}
