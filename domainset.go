@@ -193,21 +193,41 @@ func writeDirectDs() {
 	writeDomainList(config.directFile, directDs.toArray())
 }
 
-func filterOutChouDs() {
-	for k, _ := range chouDs {
-		if _, ok := blockedDs.domainSet[k]; ok {
+// filter out domain in blocked and direct domain set.
+func filterOutDs(ds domainSet) {
+	for k, _ := range ds {
+		if blockedDs.domainSet[k] {
 			delete(blockedDs.domainSet, k)
 			blockedDomainChanged = true
 		}
-		if _, ok := directDs.domainSet[k]; ok {
+		if directDs.domainSet[k] {
 			delete(directDs.domainSet, k)
 			directDomainChanged = true
 		}
 	}
 }
 
+// If a domain name appears in both blocked and direct domain set, only keep
+// it in the blocked set.
+func filterOutBlockedDsInDirectDs() {
+	for k, _ := range blockedDs.domainSet {
+		if directDs.domainSet[k] {
+			delete(directDs.domainSet, k)
+			directDomainChanged = true
+		}
+	}
+	for k, _ := range alwaysBlockedDs {
+		if alwaysDirectDs[k] {
+			errl.Printf("%s in both always blocked and direct domain lists, taken as blocked.\n", k)
+			delete(alwaysDirectDs, k)
+		}
+	}
+}
+
 func writeDomainSet() {
-	filterOutChouDs()
+	// chou domain set maybe added to blocked site during execution,
+	// filter them out before writing back to disk.
+	filterOutDs(chouDs)
 
 	writeBlockedDs()
 	writeDirectDs()
@@ -299,5 +319,8 @@ func loadDomainSet() {
 	alwaysDirectDs.loadDomainList(config.alwaysDirectFile)
 	chouDs.loadDomainList(config.chouFile)
 
-	filterOutChouDs()
+	filterOutDs(chouDs)
+	filterOutDs(alwaysDirectDs)
+	filterOutDs(alwaysBlockedDs)
+	filterOutBlockedDsInDirectDs()
 }
