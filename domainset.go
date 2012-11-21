@@ -82,6 +82,11 @@ var alwaysBlockedDs = newDomainSet()
 var alwaysDirectDs = newDomainSet()
 var chouDs = newDomainSet()
 
+func requestDomain(r *Request) string {
+	host, _ := splitHostPort(r.URL.Host)
+	return host2Domain(host)
+}
+
 func inAlwaysDs(dm string) bool {
 	return alwaysBlockedDs[dm] || alwaysDirectDs[dm]
 }
@@ -97,8 +102,7 @@ func hostInAlwaysBlockedDs(host string) bool {
 }
 
 func isRequestBlocked(r *Request) bool {
-	host, _ := splitHostPort(r.URL.Host)
-	dm := host2Domain(host)
+	dm := requestDomain(r)
 	if alwaysDirectDs[dm] {
 		return false
 	}
@@ -106,6 +110,11 @@ func isRequestBlocked(r *Request) bool {
 		return true
 	}
 	return blockedDs.has(dm)
+}
+
+func isRequestInChouDs(r *Request) bool {
+	dm := requestDomain(r)
+	return chouDs[dm]
 }
 
 func addBlockedRequest(r *Request) bool {
@@ -131,8 +140,7 @@ func addBlockedRequest(r *Request) bool {
 }
 
 func delBlockedRequest(r *Request) {
-	host, _ := splitHostPort(r.URL.Host)
-	dm := host2Domain(host)
+	dm := requestDomain(r)
 	if blockedDs.has(dm) {
 		blockedDs.del(dm)
 		blockedDomainChanged = true
@@ -158,8 +166,7 @@ func addDirectRequest(r *Request) {
 }
 
 func delDirectRequest(r *Request) {
-	host, _ := splitHostPort(r.URL.Host)
-	dm := host2Domain(host)
+	dm := requestDomain(r)
 	if directDs.has(dm) {
 		directDs.del(dm)
 		directDomainChanged = true

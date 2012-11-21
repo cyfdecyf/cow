@@ -216,6 +216,11 @@ func genBlockedSiteMsg(r *Request) string {
 
 func (c *clientConn) handleServerConnectionReset(r *Request, err error, msg string) error {
 	if addBlockedRequest(r) {
+		// domain in chou domain set is likely to be blocked, should automatically
+		// restart request using parent proxy
+		if isRequestInChouDs(r) {
+			return errRetry
+		}
 		msg += genBlockedSiteMsg(r)
 	}
 	sendErrorPage(c.buf.Writer, "503 connection reset", err.Error(), msg)
@@ -223,7 +228,11 @@ func (c *clientConn) handleServerConnectionReset(r *Request, err error, msg stri
 }
 
 func (c *clientConn) handleServerReadTimeout(r *Request, err error, msg string) error {
+	// TODO read time out is not very reliable in detecting blocked site
 	if addBlockedRequest(r) {
+		if isRequestInChouDs(r) {
+			return errRetry
+		}
 		msg += genBlockedSiteMsg(r)
 	}
 	sendErrorPage(c.buf.Writer, "504 time out reading response", err.Error(), msg)
