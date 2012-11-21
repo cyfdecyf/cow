@@ -193,11 +193,22 @@ func writeDirectDs() {
 	writeDomainList(config.directFile, directDs.toArray())
 }
 
-func writeDomainSet() {
+func filterOutChouDs() {
 	for k, _ := range chouDs {
-		delete(blockedDs.domainSet, k)
-		delete(directDs.domainSet, k)
+		if _, ok := blockedDs.domainSet[k]; ok {
+			delete(blockedDs.domainSet, k)
+			blockedDomainChanged = true
+		}
+		if _, ok := directDs.domainSet[k]; ok {
+			delete(directDs.domainSet, k)
+			directDomainChanged = true
+		}
 	}
+}
+
+func writeDomainSet() {
+	filterOutChouDs()
+
 	writeBlockedDs()
 	writeDirectDs()
 }
@@ -279,4 +290,14 @@ func host2Domain(host string) (domain string) {
 		return host[dot3rdLast+1:]
 	}
 	return host[dot2ndLast+1:]
+}
+
+func loadDomainSet() {
+	blockedDs.loadDomainList(config.blockedFile)
+	directDs.loadDomainList(config.directFile)
+	alwaysBlockedDs.loadDomainList(config.alwaysBlockedFile)
+	alwaysDirectDs.loadDomainList(config.alwaysDirectFile)
+	chouDs.loadDomainList(config.chouFile)
+
+	filterOutChouDs()
 }
