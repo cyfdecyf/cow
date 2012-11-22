@@ -208,9 +208,10 @@ func parseConfig() {
 
 func loadConfig() {
 	parseConfig()
-
 	loadDomainSet()
+}
 
+func setSelfURL() {
 	_, port := splitHostPort(config.listenAddr)
 	selfURL127 = "127.0.0.1:" + port
 	selfURLLH = "localhost:" + port
