@@ -228,7 +228,7 @@ func (c *clientConn) handleBlockedRequest(r *Request, err error, errCode, msg st
 		}
 		msg += genBlockedSiteMsg(r)
 	}
-	sendErrorPage(c.buf.Writer, errCode, err.Error(), msg)
+	sendBlockedErrorPage(c.buf.Writer, errCode, err.Error(), msg, r)
 	return errPageSent
 }
 

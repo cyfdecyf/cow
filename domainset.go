@@ -83,8 +83,8 @@ var alwaysDirectDs = newDomainSet()
 var chouDs = newDomainSet()
 
 func requestDomain(r *Request) string {
-	host, _ := splitHostPort(r.URL.Host)
-	return host2Domain(host)
+	h, _ := splitHostPort(r.URL.Host)
+	return host2Domain(h)
 }
 
 func inAlwaysDs(dm string) bool {
