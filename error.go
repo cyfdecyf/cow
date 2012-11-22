@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-var htmlRawTemplate = `<!DOCTYPE html>
+var errPageRawTemplate = `<!DOCTYPE html>
 <html>
 	<head> <title>Proxy error</title> </head>
 	<body>
@@ -29,7 +29,7 @@ var headRawTemplate = "HTTP/1.1 {{.CodeReason}}\r\n" +
 	"Content-Type: text/html\r\n" +
 	"Content-Length: {{.Length}}\r\n"
 
-var htmlTmpl, headTmpl *template.Template
+var errPageTmpl, headTmpl *template.Template
 
 func init() {
 	var err error
@@ -37,7 +37,7 @@ func init() {
 		fmt.Println("Internal error on generating error head template")
 		os.Exit(1)
 	}
-	if htmlTmpl, err = template.New("errorPage").Parse(htmlRawTemplate); err != nil {
+	if errPageTmpl, err = template.New("errorPage").Parse(errPageRawTemplate); err != nil {
 		fmt.Println("Internal error on generating error page template")
 		os.Exit(1)
 	}
@@ -56,7 +56,7 @@ func genErrorPage(errMsg, detailedMsg string) (string, error) {
 	}
 
 	buf := new(bytes.Buffer)
-	err = htmlTmpl.Execute(buf, data)
+	err = errPageTmpl.Execute(buf, data)
 	return buf.String(), err
 }
 
