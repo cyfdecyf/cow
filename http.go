@@ -36,6 +36,10 @@ func (r *Request) String() (s string) {
 	return
 }
 
+func (r *Request) toURI() string {
+	return r.Proto + "://" + r.URL.String()
+}
+
 type Response struct {
 	Status string
 	Reason string

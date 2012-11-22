@@ -62,3 +62,18 @@ func TestParseRequestURI(t *testing.T) {
 		}
 	}
 }
+
+func TestRequestToURI(t *testing.T) {
+	var testData = []struct {
+		req Request
+		uri string
+	}{
+		{Request{Proto: "http", URL: &URL{"google.com", "/ncr"}}, "http://google.com/ncr"},
+		{Request{Proto: "https", URL: &URL{"www.google.com", "/ncr"}}, "https://www.google.com/ncr"},
+	}
+	for _, td := range testData {
+		if td.req.toURI() != td.uri {
+			t.Error("Request", td.req.String(), "toURI got", td.req.toURI(), "should be", td.uri)
+		}
+	}
+}
