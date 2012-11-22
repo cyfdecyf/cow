@@ -240,7 +240,7 @@ func parseRequest(reader *bufio.Reader) (r *Request, err error) {
 		return nil, errors.New(fmt.Sprintf("malformed HTTP request: %s", s))
 	}
 	var requestURI string
-	r.Method, requestURI, r.Proto = f[0], f[1], f[2]
+	r.Method, requestURI, r.Proto = strings.ToUpper(f[0]), f[1], f[2]
 
 	// Parse URI into host and path
 	r.URL, err = ParseRequestURI(requestURI)
