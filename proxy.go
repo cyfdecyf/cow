@@ -358,6 +358,10 @@ func (c *clientConn) readResponse(h *Handler, r *Request) (err error) {
 			} else {
 				err = c.handleServerReadError(r, err, "Read response body from server.")
 			}
+		} else {
+			if err = c.buf.Flush(); err != nil {
+				return c.handleClientWriteError(r, err, "Flushing response body to client")
+			}
 		}
 	}
 	/*
@@ -587,13 +591,16 @@ func (h *Handler) doRequest(r *Request, c *clientConn) (err error) {
 			}
 			return
 		}
+		if err = h.buf.Writer.Flush(); err != nil {
+			return c.handleServerWriteError(r, h, err, "Flushing request body")
+		}
 	}
 
 	return c.readResponse(h, r)
 }
 
 // Send response body if header specifies content length
-func sendBodyWithContLen(w *bufio.Writer, r *bufio.Reader, contLen int64) (err error) {
+func sendBodyWithContLen(w io.Writer, r *bufio.Reader, contLen int64) (err error) {
 	// debug.Println("Sending body with content length", contLen)
 	if contLen == 0 {
 		return
@@ -609,7 +616,7 @@ func sendBodyWithContLen(w *bufio.Writer, r *bufio.Reader, contLen int64) (err e
 }
 
 // Send response body if header specifies chunked encoding
-func sendBodyChunked(w *bufio.Writer, r *bufio.Reader) (err error) {
+func sendBodyChunked(w io.Writer, r *bufio.Reader) (err error) {
 	// debug.Println("Sending chunked body")
 	done := false
 	for !done {
@@ -626,7 +633,7 @@ func sendBodyChunked(w *bufio.Writer, r *bufio.Reader) (err error) {
 			errl.Println("Chunk size not valid:", err)
 			return
 		}
-		if _, err = w.WriteString(s + "\r\n"); err != nil {
+		if _, err = io.WriteString(w, s+"\r\n"); err != nil {
 			errl.Println("Writing chunk size:", err)
 			return
 		}
@@ -645,7 +652,7 @@ func sendBodyChunked(w *bufio.Writer, r *bufio.Reader) (err error) {
 			errl.Println("Reading chunked data CRLF:", err)
 			return
 		}
-		if _, err = w.WriteString("\r\n"); err != nil {
+		if _, err = io.WriteString(w, "\r\n"); err != nil {
 			errl.Println("Writing end line in sendBodyChunked:", err)
 			return
 		}
@@ -653,14 +660,14 @@ func sendBodyChunked(w *bufio.Writer, r *bufio.Reader) (err error) {
 	return
 }
 
-func sendBodySplitIntoChunk(w *bufio.Writer, r *bufio.Reader) (err error) {
+func sendBodySplitIntoChunk(w io.Writer, r *bufio.Reader) (err error) {
 	buf := make([]byte, bufSize)
 	var n int
 	for {
 		n, err = r.Read(buf)
 		// debug.Println("split into chunk n =", n, "err =", err)
 		if err != nil {
-			w.WriteString("0\r\n\r\n")
+			io.WriteString(w, "0\r\n\r\n")
 			// EOF is expected here as the server is closing connection.
 			if err == io.EOF {
 				err = nil
@@ -668,7 +675,7 @@ func sendBodySplitIntoChunk(w *bufio.Writer, r *bufio.Reader) (err error) {
 			return
 		}
 
-		if _, err = w.WriteString(fmt.Sprintf("%x\r\n", n)); err != nil {
+		if _, err = io.WriteString(w, fmt.Sprintf("%x\r\n", n)); err != nil {
 			errl.Printf("Writing chunk size %v\n", err)
 			return
 		}
@@ -681,21 +688,13 @@ func sendBodySplitIntoChunk(w *bufio.Writer, r *bufio.Reader) (err error) {
 }
 
 // Send message body
-func sendBody(w *bufio.Writer, r *bufio.Reader, chunk bool, contLen int64) (err error) {
+func sendBody(w io.Writer, r *bufio.Reader, chunk bool, contLen int64) (err error) {
 	if chunk {
 		err = sendBodyChunked(w, r)
 	} else if contLen >= 0 {
 		err = sendBodyWithContLen(w, r, contLen)
 	} else {
 		err = sendBodySplitIntoChunk(w, r)
-	}
-
-	if err != nil && err != io.EOF {
-		return
-	}
-	if err = w.Flush(); err != nil {
-		// errl.Println("Send body final flushing", err)
-		return err
 	}
 	return
 }
