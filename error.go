@@ -58,7 +58,7 @@ func init() {
 	}
 }
 
-func genErrorPage(errMsg, detailedMsg, form string) (string, error) {
+func genErrorPage(h1, msg, form string) (string, error) {
 	var err error
 	data := struct {
 		H1   string
@@ -66,8 +66,8 @@ func genErrorPage(errMsg, detailedMsg, form string) (string, error) {
 		Form string
 		T    string
 	}{
-		errMsg,
-		detailedMsg,
+		h1,
+		msg,
 		form,
 		time.Now().Format(time.ANSIC),
 	}
@@ -77,8 +77,8 @@ func genErrorPage(errMsg, detailedMsg, form string) (string, error) {
 	return buf.String(), err
 }
 
-func sendErrorPageGeneric(w *bufio.Writer, errCodeReason, errMsg, detailedMsg, form string) {
-	page, err := genErrorPage(errMsg, detailedMsg, form)
+func sendErrorPageGeneric(w *bufio.Writer, errCodeReason, h1, msg, form string) {
+	page, err := genErrorPage(h1, msg, form)
 	if err != nil {
 		errl.Println("Error generating error page:", err)
 		return
