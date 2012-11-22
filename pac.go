@@ -13,6 +13,8 @@ var pacRawTmpl = `var direct = 'DIRECT';
 var httpProxy = 'PROXY {{.ProxyAddr}}; DIRECT';
 
 var directList = [
+localhost,
+0.1,
 "{{.DirectDomains}}"
 ];
 
@@ -36,7 +38,7 @@ function host2domain(host) {
 	// Find the second last dot
 	dot2ndLast = host.lastIndexOf(".", lastDot-1);
 	if (dot2ndLast === -1)
-	return host;
+		return host;
 
 	var part = host.substring(dot2ndLast+1, lastDot)
 	if (topLevel[part]) {
