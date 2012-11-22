@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
-	"net/url"
 	"os"
 	"text/template"
 	"time"
@@ -23,10 +22,13 @@ var errPageRawTmpl = `<!DOCTYPE html>
 </html>
 `
 
-var blockedFormRawTmpl = `<p> </p>
-		<form action="http://{{.ListenAddr}}/blocked/{{.RequestURI}}" method="get">
-			<input type="submit" name="retry" value="Retry">
-			<input type="submit" name="add" value="Add {{.Domain}} to blocked sites">
+// Use GET to simplify form processing. Strictly speaking, this has side
+// effects and should use POST.
+var blockedFormRawTmpl = `<p></p>
+		<form action="http://{{.ListenAddr}}/blocked" method="get">
+		<input type="hidden" name="uri" value={{.RequestURI}}>
+		<b>Refresh to retry</b> or
+		<input type="submit" name="add" value="Add {{.Domain}} to blocked sites">
 		</form>
 `
 
@@ -112,7 +114,7 @@ func sendBlockedErrorPage(w *bufio.Writer, errCodeReason, errMsg, detailedMsg st
 		Domain     string
 	}{
 		config.listenAddr,
-		url.QueryEscape(r.toURI()), // escape URI to put it in request url
+		r.URL.toURI(), // escape URI to put it in request url
 		requestDomain(r),
 	}
 	buf := new(bytes.Buffer)
