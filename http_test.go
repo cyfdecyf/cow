@@ -28,17 +28,17 @@ func TestParseRequestURI(t *testing.T) {
 		rawurl string
 		url    *URL
 	}{
-		{"http://google.com", &URL{"google.com:80", "/"}},
-		{"http://google.com/", &URL{"google.com:80", "/"}},
-		{"https://google.com:80", &URL{"google.com:80", "/"}},
-		{"http://google.com:80/", &URL{"google.com:80", "/"}},
-		{"http://google.com:80/ncr", &URL{"google.com:80", "/ncr"}},
-		{"https://google.com/ncr/tree", &URL{"google.com:80", "/ncr/tree"}},
-		{"google.com:80/", &URL{"google.com:80", "/"}},
-		{"google.com:80", &URL{"google.com:80", "/"}},
-		{"google.com", &URL{"google.com:80", "/"}},
-		{"google.com:80/ncr", &URL{"google.com:80", "/ncr"}},
-		{"google.com/ncr/tree", &URL{"google.com:80", "/ncr/tree"}},
+		{"http://google.com", &URL{"google.com:80", "/", "http"}},
+		{"http://google.com/", &URL{"google.com:80", "/", "http"}},
+		{"https://google.com:80", &URL{"google.com:80", "/", "http"}},
+		{"http://google.com:80/", &URL{"google.com:80", "/", "http"}},
+		{"http://google.com:80/ncr", &URL{"google.com:80", "/ncr", "http"}},
+		{"https://google.com/ncr/tree", &URL{"google.com:80", "/ncr/tree", "http"}},
+		{"google.com:80/", &URL{"google.com:80", "/", "http"}},
+		{"google.com:80", &URL{"google.com:80", "/", "http"}},
+		{"google.com", &URL{"google.com:80", "/", "http"}},
+		{"google.com:80/ncr", &URL{"google.com:80", "/ncr", "http"}},
+		{"google.com/ncr/tree", &URL{"google.com:80", "/ncr/tree", "http"}},
 	}
 	for _, td := range testData {
 		url, err := ParseRequestURI(td.rawurl)
@@ -63,17 +63,17 @@ func TestParseRequestURI(t *testing.T) {
 	}
 }
 
-func TestRequestToURI(t *testing.T) {
+func TestURLToURI(t *testing.T) {
 	var testData = []struct {
-		req Request
+		url URL
 		uri string
 	}{
-		{Request{Proto: "http", URL: &URL{"google.com", "/ncr"}}, "http://google.com/ncr"},
-		{Request{Proto: "https", URL: &URL{"www.google.com", "/ncr"}}, "https://www.google.com/ncr"},
+		{URL{"google.com", "/ncr", "http"}, "http://google.com/ncr"},
+		{URL{"www.google.com", "/ncr", "https"}, "https://www.google.com/ncr"},
 	}
 	for _, td := range testData {
-		if td.req.toURI() != td.uri {
-			t.Error("Request", td.req.String(), "toURI got", td.req.toURI(), "should be", td.uri)
+		if td.url.toURI() != td.uri {
+			t.Error("URL", td.url.String(), "toURI got", td.url.toURI(), "should be", td.uri)
 		}
 	}
 }

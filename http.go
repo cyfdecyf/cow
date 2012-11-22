@@ -36,10 +36,6 @@ func (r *Request) String() (s string) {
 	return
 }
 
-func (r *Request) toURI() string {
-	return r.Proto + "://" + r.URL.String()
-}
-
 type Response struct {
 	Status string
 	Reason string
@@ -60,12 +56,17 @@ func (rp *Response) String() string {
 }
 
 type URL struct {
-	Host string // must contain port
-	Path string
+	Host   string // must contain port
+	Path   string
+	Scheme string
 }
 
 func (url *URL) String() string {
-	return fmt.Sprintf("%s%s", url.Host, url.Path)
+	return url.Host + url.Path
+}
+
+func (url *URL) toURI() string {
+	return url.Scheme + "://" + url.String()
 }
 
 // headers of interest to a proxy
@@ -110,12 +111,13 @@ func ParseRequestURI(rawurl string) (*URL, error) {
 	}
 
 	var f []string
-	var rest string
+	var rest, scheme string
 	f = strings.SplitN(rawurl, "://", 2)
 	if len(f) == 1 {
 		rest = f[0]
+		scheme = "http" // default to http
 	} else {
-		scheme := strings.ToLower(f[0])
+		scheme = strings.ToLower(f[0])
 		if scheme != "http" && scheme != "https" {
 			return nil, errors.New(scheme + " protocol not supported")
 		}
@@ -135,7 +137,7 @@ func ParseRequestURI(rawurl string) (*URL, error) {
 		host += ":80"
 	}
 
-	return &URL{Host: host, Path: path}, nil
+	return &URL{Host: host, Path: path, Scheme: scheme}, nil
 }
 
 func splitHeader(s string) (name, val string, err error) {
