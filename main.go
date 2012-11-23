@@ -30,6 +30,7 @@ func main() {
 	// Parse flags after load config to allow override options in config
 	loadConfig()
 	flag.Parse()
+	setSelfURL()
 
 	if printVer {
 		printVersion()

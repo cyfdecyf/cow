@@ -83,8 +83,8 @@ var alwaysDirectDs = newDomainSet()
 var chouDs = newDomainSet()
 
 func requestDomain(r *Request) string {
-	host, _ := splitHostPort(r.URL.Host)
-	return host2Domain(host)
+	h, _ := splitHostPort(r.URL.Host)
+	return host2Domain(h)
 }
 
 func inAlwaysDs(dm string) bool {
@@ -117,35 +117,51 @@ func isRequestInChouDs(r *Request) bool {
 	return chouDs[dm]
 }
 
-func addBlockedRequest(r *Request) bool {
-	host, _ := splitHostPort(r.URL.Host)
-	if hostIsIP(host) {
-		return false
-	}
-	dm := host2Domain(host)
+func addBlockedDomain(dm string) bool {
 	// For chou domain, we should add it to the blocked list in order to use
 	// parent proxy, but don't write it back to auto-block file.
 	if inAlwaysDs(dm) {
 		return false
 	}
+	added := false
 	if !blockedDs.has(dm) {
 		blockedDs.add(dm)
 		blockedDomainChanged = true
 		debug.Printf("%v added to blocked list\n", dm)
-		return true
+		added = true
 	}
-	// Delete this request from direct domain set
-	delDirectRequest(r)
-	return false
+	// Delete this domain from direct domain set
+	delDirectDomain(dm)
+	return added
 }
 
-func delBlockedRequest(r *Request) {
-	dm := requestDomain(r)
+func addBlockedRequest(r *Request) bool {
+	host, _ := splitHostPort(r.URL.Host)
+	if hostIsIP(host) {
+		return false
+	}
+	return addBlockedDomain(host2Domain(host))
+}
+
+func delBlockedDomain(dm string) {
 	if blockedDs.has(dm) {
 		blockedDs.del(dm)
 		blockedDomainChanged = true
-		debug.Printf("%v deleted from blocked list\n", dm)
+		debug.Printf("%s deleted from blocked list\n", dm)
 	}
+}
+
+func addDirectDomain(dm string) {
+	if inAlwaysDs(dm) || chouDs[dm] {
+		return
+	}
+	if !directDs.has(dm) {
+		directDs.add(dm)
+		directDomainChanged = true
+		debug.Printf("%s added to direct list\n", dm)
+	}
+	// Delete this domain from blocked domain set
+	delBlockedDomain(dm)
 }
 
 func addDirectRequest(r *Request) {
@@ -153,20 +169,10 @@ func addDirectRequest(r *Request) {
 	if hostIsIP(host) {
 		return
 	}
-	dm := host2Domain(host)
-	if inAlwaysDs(dm) || chouDs[dm] {
-		return
-	}
-	if !directDs.has(dm) {
-		directDs.add(dm)
-		directDomainChanged = true
-	}
-	// Delete this request from blocked domain set
-	delBlockedRequest(r)
+	addDirectDomain(host2Domain(host))
 }
 
-func delDirectRequest(r *Request) {
-	dm := requestDomain(r)
+func delDirectDomain(dm string) {
 	if directDs.has(dm) {
 		directDs.del(dm)
 		directDomainChanged = true
@@ -318,6 +324,9 @@ func loadDomainSet() {
 	alwaysBlockedDs.loadDomainList(config.alwaysBlockedFile)
 	alwaysDirectDs.loadDomainList(config.alwaysDirectFile)
 	chouDs.loadDomainList(config.chouFile)
+
+	addDirectDomain("localhost")
+	addDirectDomain("0.1")
 
 	filterOutDs(chouDs)
 	filterOutDs(alwaysDirectDs)

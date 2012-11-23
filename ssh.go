@@ -26,7 +26,7 @@ func runSSH() {
 	for {
 		if SshRunning() {
 			if !alreadyRunPrinted {
-				errl.Println("ssh socks server maybe already running, as cow can connect to",
+				debug.Println("ssh socks server maybe already running, as cow can connect to",
 					config.socksAddr)
 				alreadyRunPrinted = true
 			}
@@ -41,7 +41,7 @@ func runSSH() {
 		if err := cmd.Run(); err != nil {
 			debug.Println("ssh:", err)
 		}
-		info.Println("ssh exited, reconnect")
+		debug.Println("ssh exited, reconnect")
 		time.Sleep(5 * time.Second)
 		alreadyRunPrinted = false
 	}

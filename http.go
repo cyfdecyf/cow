@@ -14,6 +14,7 @@ type Header struct {
 	ContLen   int64
 	Chunking  bool
 	KeepAlive bool
+	Referer   string
 }
 
 type Request struct {
@@ -36,10 +37,6 @@ func (r *Request) String() (s string) {
 	return
 }
 
-func (r *Request) toURI() string {
-	return r.Proto + "://" + r.URL.String()
-}
-
 type Response struct {
 	Status string
 	Reason string
@@ -60,12 +57,17 @@ func (rp *Response) String() string {
 }
 
 type URL struct {
-	Host string // must contain port
-	Path string
+	Host   string // must contain port
+	Path   string
+	Scheme string
 }
 
 func (url *URL) String() string {
-	return fmt.Sprintf("%s%s", url.Host, url.Path)
+	return url.Host + url.Path
+}
+
+func (url *URL) toURI() string {
+	return url.Scheme + "://" + url.String()
 }
 
 // headers of interest to a proxy
@@ -78,6 +80,7 @@ const (
 	headerTransferEncoding = "transfer-encoding"
 	headerConnection       = "connection"
 	headerProxyConnection  = "proxy-connection"
+	headerReferer          = "referer"
 )
 
 // For port, return empty string if no port specified.
@@ -110,12 +113,13 @@ func ParseRequestURI(rawurl string) (*URL, error) {
 	}
 
 	var f []string
-	var rest string
+	var rest, scheme string
 	f = strings.SplitN(rawurl, "://", 2)
 	if len(f) == 1 {
 		rest = f[0]
+		scheme = "http" // default to http
 	} else {
-		scheme := strings.ToLower(f[0])
+		scheme = strings.ToLower(f[0])
 		if scheme != "http" && scheme != "https" {
 			return nil, errors.New(scheme + " protocol not supported")
 		}
@@ -135,14 +139,16 @@ func ParseRequestURI(rawurl string) (*URL, error) {
 		host += ":80"
 	}
 
-	return &URL{Host: host, Path: path}, nil
+	return &URL{Host: host, Path: path, Scheme: scheme}, nil
 }
 
 func splitHeader(s string) (name, val string, err error) {
 	var f []string
 	if f = strings.SplitN(strings.ToLower(s), ":", 2); len(f) != 2 {
 		// TODO Fix this when encounter such web servers
-		return "", "", errors.New("Multi-line header not supported")
+		err = errors.New("Multi-line header not supported")
+		errl.Println(err)
+		return "", "", err
 	}
 	return f[0], f[1], nil
 }
@@ -162,6 +168,11 @@ func (h *Header) parseTransferEncoding(s string) error {
 	return nil
 }
 
+func (h *Header) parseReferer(s string) error {
+	h.Referer = strings.TrimSpace(s)
+	return nil
+}
+
 type HeaderParserFunc func(*Header, string) error
 
 // Using Go's method expression
@@ -170,6 +181,7 @@ var headerParser = map[string]HeaderParserFunc{
 	headerProxyConnection:  (*Header).parseConnection,
 	headerContentLength:    (*Header).parseContentLength,
 	headerTransferEncoding: (*Header).parseTransferEncoding,
+	headerReferer:          (*Header).parseReferer,
 }
 
 // Only add headers that are of interest for a proxy into request's header map.
@@ -238,7 +250,7 @@ func parseRequest(reader *bufio.Reader) (r *Request, err error) {
 		return nil, errors.New(fmt.Sprintf("malformed HTTP request: %s", s))
 	}
 	var requestURI string
-	r.Method, requestURI, r.Proto = f[0], f[1], f[2]
+	r.Method, requestURI, r.Proto = strings.ToUpper(f[0]), f[1], f[2]
 
 	// Parse URI into host and path
 	r.URL, err = ParseRequestURI(requestURI)
