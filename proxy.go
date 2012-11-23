@@ -380,6 +380,9 @@ func (c *clientConn) readResponse(h *Handler, r *Request) (err error) {
 	}
 	if h.state == hsConnected {
 		h.state = hsResponsReceived
+		if h.connType == directConn {
+			addDirectRequest(r)
+		}
 	}
 
 	if _, err = c.buf.WriteString(rp.raw.String()); err != nil {
@@ -479,7 +482,6 @@ func (c *clientConn) createHandler(r *Request) (*Handler, error) {
 				connFailed = true
 				goto connDone
 			}
-			addDirectRequest(r)
 		}
 	} else {
 		// In case of error on direction connection, try socks server
@@ -502,8 +504,6 @@ func (c *clientConn) createHandler(r *Request) (*Handler, error) {
 				goto connDone
 			}
 			addBlockedRequest(r)
-		} else {
-			addDirectRequest(r)
 		}
 	}
 
