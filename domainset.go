@@ -152,6 +152,9 @@ func delBlockedDomain(dm string) {
 }
 
 func addDirectDomain(dm string) {
+	if !config.updateDirect {
+		return
+	}
 	if inAlwaysDs(dm) || chouDs[dm] || dm == "localhost" {
 		return
 	}
