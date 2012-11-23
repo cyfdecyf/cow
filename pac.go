@@ -13,8 +13,8 @@ var pacRawTmpl = `var direct = 'DIRECT';
 var httpProxy = 'PROXY {{.ProxyAddr}}; DIRECT';
 
 var directList = [
-localhost,
-0.1,
+"localhost",
+"0.1",
 "{{.DirectDomains}}"
 ];
 
