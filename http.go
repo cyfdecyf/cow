@@ -14,6 +14,7 @@ type Header struct {
 	ContLen   int64
 	Chunking  bool
 	KeepAlive bool
+	Referer   string
 }
 
 type Request struct {
@@ -79,6 +80,7 @@ const (
 	headerTransferEncoding = "transfer-encoding"
 	headerConnection       = "connection"
 	headerProxyConnection  = "proxy-connection"
+	headerReferer          = "referer"
 )
 
 // For port, return empty string if no port specified.
@@ -144,7 +146,9 @@ func splitHeader(s string) (name, val string, err error) {
 	var f []string
 	if f = strings.SplitN(strings.ToLower(s), ":", 2); len(f) != 2 {
 		// TODO Fix this when encounter such web servers
-		return "", "", errors.New("Multi-line header not supported")
+		err = errors.New("Multi-line header not supported")
+		errl.Println(err)
+		return "", "", err
 	}
 	return f[0], f[1], nil
 }
@@ -164,6 +168,11 @@ func (h *Header) parseTransferEncoding(s string) error {
 	return nil
 }
 
+func (h *Header) parseReferer(s string) error {
+	h.Referer = strings.TrimSpace(s)
+	return nil
+}
+
 type HeaderParserFunc func(*Header, string) error
 
 // Using Go's method expression
@@ -172,6 +181,7 @@ var headerParser = map[string]HeaderParserFunc{
 	headerProxyConnection:  (*Header).parseConnection,
 	headerContentLength:    (*Header).parseContentLength,
 	headerTransferEncoding: (*Header).parseTransferEncoding,
+	headerReferer:          (*Header).parseReferer,
 }
 
 // Only add headers that are of interest for a proxy into request's header map.
