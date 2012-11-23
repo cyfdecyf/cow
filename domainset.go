@@ -122,7 +122,10 @@ func addBlockedRequest(r *Request) bool {
 	if hostIsIP(host) {
 		return false
 	}
-	dm := host2Domain(host)
+	return addBlockedDomain(host2Domain(host))
+}
+
+func addBlockedDomain(dm string) bool {
 	// For chou domain, we should add it to the blocked list in order to use
 	// parent proxy, but don't write it back to auto-block file.
 	if inAlwaysDs(dm) {
@@ -134,13 +137,12 @@ func addBlockedRequest(r *Request) bool {
 		debug.Printf("%v added to blocked list\n", dm)
 		return true
 	}
-	// Delete this request from direct domain set
-	delDirectRequest(r)
+	// Delete this domain from direct domain set
+	delDirectDomain(dm)
 	return false
 }
 
-func delBlockedRequest(r *Request) {
-	dm := requestDomain(r)
+func delBlockedDomain(dm string) {
 	if blockedDs.has(dm) {
 		blockedDs.del(dm)
 		blockedDomainChanged = true
@@ -161,12 +163,11 @@ func addDirectRequest(r *Request) {
 		directDs.add(dm)
 		directDomainChanged = true
 	}
-	// Delete this request from blocked domain set
-	delBlockedRequest(r)
+	// Delete this domain from blocked domain set
+	delBlockedDomain(dm)
 }
 
-func delDirectRequest(r *Request) {
-	dm := requestDomain(r)
+func delDirectDomain(dm string) {
 	if directDs.has(dm) {
 		directDs.del(dm)
 		directDomainChanged = true
