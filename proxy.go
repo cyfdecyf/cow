@@ -286,12 +286,16 @@ func (c *clientConn) handleBlockedRequest(r *Request, err error, errCode, msg st
 	return errPageSent
 }
 
-func (c *clientConn) handleServerReadError(r *Request, err error, msg string) error {
+func (c *clientConn) handleServerReadError(h *Handler, r *Request, err error, msg string) error {
+	var errMsg string
 	if err == io.EOF {
 		debug.Println("Read from server EOF")
 		return errRetry
 	}
-	errMsg := genErrMsg(r, msg)
+	if h.connType != directConn {
+		goto generalErr
+	}
+	errMsg = genErrMsg(r, msg)
 	if ne, ok := err.(*net.OpError); ok {
 		// GFW may connection reset here, may also make it time out Is it
 		// normal for connection to a site timeout? If so, it's better not add
@@ -304,6 +308,7 @@ func (c *clientConn) handleServerReadError(r *Request, err error, msg string) er
 		}
 		// fall through to send general error message
 	}
+generalErr:
 	errl.Printf("Read from server unhandled error for %v %v\n", r, err)
 	sendErrorPage(c.buf.Writer, "502 read error", err.Error(), errMsg)
 	return errPageSent
@@ -370,7 +375,7 @@ func (c *clientConn) readResponse(h *Handler, r *Request) (err error) {
 		debug.Println("SetReadDeadline BEFORE receiving the first response")
 	}
 	if rp, err = parseResponse(h.buf.Reader); err != nil {
-		return c.handleServerReadError(r, err, "Parse response from server.")
+		return c.handleServerReadError(h, r, err, "Parse response from server.")
 	}
 	// After have received the first reponses from the server, we consider
 	// ther server as real instead of fake one caused by wrong DNS reply. So
@@ -413,7 +418,7 @@ func (c *clientConn) readResponse(h *Handler, r *Request) (err error) {
 			} else if isErrOpWrite(err) {
 				err = c.handleClientWriteError(r, err, "Write to client response body.")
 			} else {
-				err = c.handleServerReadError(r, err, "Read response body from server.")
+				err = c.handleServerReadError(h, r, err, "Read response body from server.")
 			}
 		} else {
 			if err = c.buf.Flush(); err != nil {
