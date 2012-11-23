@@ -146,6 +146,55 @@ func (c *clientConn) getRequest() (r *Request) {
 	return r
 }
 
+func getDomainFromQuery(query string) string {
+	for _, s := range strings.Split(query, "&") {
+		if strings.HasPrefix(s, "domain=") {
+			return s[len("domain="):]
+		}
+	}
+	return ""
+}
+
+func (c *clientConn) serveSelfURLBlocked(r *Request) (err error) {
+	// Adding blocked site has side effects, so should use POST in this regard.
+	// But client should not redirect for POST request, so I choose to use GET when
+	// submitting form.
+	query := r.URL.Path[9:] // "/blocked?" has 9 characters
+	dm := getDomainFromQuery(query)
+	addBlockedDomain(dm)
+
+	// As there's no reliable way to convert an encoded URL back (you don't
+	// know whether a %2F should be converted to slash or not, conside Google
+	// search results for example), so I rely on the browser sending Referer
+	// header to redirect the client back to the original web page.
+	if r.Referer != "" {
+		// debug.Println("Sending refirect page.")
+		sendRedirectPage(c.buf.Writer, r.Referer)
+		return
+	}
+	sendErrorPage(c.buf.Writer, "404 not found", "No Referer header",
+		"Domain added to blocked list, but no referer header in request so can't redirect.")
+	return
+}
+
+func (c *clientConn) serveSelfURL(r *Request) (err error) {
+	if r.Method != "GET" {
+		goto end
+	}
+	if r.URL.Path == "/pac" {
+		sendPAC(c.buf.Writer)
+		// Send non nil error to close client connection.
+		return errPageSent
+	}
+	if strings.HasPrefix(r.URL.Path, "/blocked?") {
+		return c.serveSelfURLBlocked(r)
+	}
+
+end:
+	sendErrorPage(c.buf.Writer, "404 not found", "Page not found", "Handling request to proxy itself.")
+	return
+}
+
 func (c *clientConn) serve() {
 	defer c.close()
 	var r *Request
@@ -164,8 +213,10 @@ func (c *clientConn) serve() {
 
 		if isSelfURL(r.URL.Host) {
 			// Send PAC file if requesting self
-			sendPAC(c.buf.Writer)
-			return
+			if err = c.serveSelfURL(r); err != nil {
+				return
+			}
+			continue
 		}
 
 	retry:
@@ -208,7 +259,7 @@ func genBlockedSiteMsg(r *Request) string {
 	host, _ := splitHostPort(r.URL.Host)
 	if !hostIsIP(host) {
 		return fmt.Sprintf(
-			"<p>Domain <strong>%s</strong> added to blocked list. <strong>Try to refresh.</strong></p>",
+			"<p>Domain <strong>%s</strong> maybe blocked.</p>",
 			host2Domain(host))
 	}
 	return ""
@@ -220,14 +271,17 @@ const (
 )
 
 func (c *clientConn) handleBlockedRequest(r *Request, err error, errCode, msg string) error {
-	if addBlockedRequest(r) {
-		// domain in chou domain set is likely to be blocked, should automatically
-		// restart request using parent proxy no matter if autoRetry is enabled.
-		if config.autoRetry || isRequestInChouDs(r) {
+	// Domain in chou domain set is likely to be blocked, should automatically
+	// restart request using parent proxy no matter if autoRetry is enabled.
+	if config.autoRetry || isRequestInChouDs(r) {
+		if addBlockedRequest(r) {
 			return errRetry
 		}
 		msg += genBlockedSiteMsg(r)
+		sendErrorPage(c.buf.Writer, errCode, err.Error(), msg)
+		return errPageSent
 	}
+	// If autoRetry is not enabled, let the user decide whether add the domain to blocked list.
 	sendBlockedErrorPage(c.buf.Writer, errCode, err.Error(), msg, r)
 	return errPageSent
 }
