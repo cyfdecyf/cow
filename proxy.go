@@ -115,7 +115,6 @@ func (c *clientConn) close() {
 	for _, h := range c.handler {
 		h.Close()
 	}
-	c.buf = nil
 	c.Close()
 	if debug {
 		debug.Printf("Client %v connection closed\n", c.RemoteAddr())
@@ -539,9 +538,10 @@ connDone:
 	return h, nil
 }
 
-func copyData(dst, src net.Conn, srcReader *bufio.Reader, dstStopped notification, dbgmsg string) (err error) {
+func copyData(dst, src net.Conn, srcReader *bufio.Reader, detectFake bool, dstStopped notification, dbgmsg string) (maybeFake bool, err error) {
 	buf := make([]byte, bufSize)
 	var n int
+	maybeFake = detectFake
 	for {
 		if dstStopped.hasNotified() {
 			debug.Println(dbgmsg, "dst has stopped")
@@ -551,7 +551,14 @@ func copyData(dst, src net.Conn, srcReader *bufio.Reader, dstStopped notificatio
 			debug.Println("Set ReadDeadline in copyData:", err)
 		}
 		if n, err = srcReader.Read(buf); err != nil {
+			// If no response has ever been read upon the first timeout, this
+			// connection is very likely fake.
+			// TODO maybe should always close connection upon timeout to avoid
+			// too many open connections.
 			if ne, ok := err.(*net.OpError); ok && ne.Timeout() {
+				if maybeFake {
+					return
+				}
 				continue
 			}
 			if err != io.EOF {
@@ -559,6 +566,7 @@ func copyData(dst, src net.Conn, srcReader *bufio.Reader, dstStopped notificatio
 			}
 			return
 		}
+		maybeFake = false
 
 		_, err = dst.Write(buf[0:n])
 		if err != nil {
@@ -600,8 +608,6 @@ func (srvconn *Handler) doConnect(r *Request, c *clientConn) (err error) {
 		return err
 	}
 
-	errchan := make(chan error)
-
 	// Notify the destination has stopped in copyData is important. If the
 	// client has stopped connection, while the server->client is blocked
 	// reading data from the server, the server connection will not get chance
@@ -613,20 +619,30 @@ func (srvconn *Handler) doConnect(r *Request, c *clientConn) (err error) {
 	// Must wait this goroutine finish before returning from this function.
 	// Otherwise, the server/client may have been closed and thus cause nil
 	// pointer deference
+	detectFake := srvconn.connType == directConn
+	var maybeFake bool
+	errchan := make(chan error)
 	go func() {
-		err := copyData(c, srvconn, bufio.NewReaderSize(srvconn, bufSize),
+		maybeFake, err = copyData(c, srvconn, srvconn.buf.Reader, detectFake,
 			clientStopped, "doConnect server->client")
 		srvStopped.notify()
 		errchan <- err
 	}()
 
-	err = copyData(srvconn, c, c.buf.Reader, srvStopped, "doConnect client->server")
+	_, err = copyData(srvconn, c, c.buf.Reader, false, srvStopped, "doConnect client->server")
 	clientStopped.notify()
 
 	// wait goroutine finish
-	err2 := <-errchan
-	if err2 != io.EOF {
-		return err2
+	srvErr := <-errchan
+	if maybeFake {
+		// Because this is in doConnect, there's no way reporting blocked site
+		// to the client, just add it to blocked site and let client retry.
+		addBlockedRequest(r)
+	} else if srvconn.connType == directConn {
+		addDirectRequest(r)
+	}
+	if srvErr != io.EOF {
+		return srvErr
 	}
 	return
 }
