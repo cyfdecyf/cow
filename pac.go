@@ -18,7 +18,8 @@ const pacRawTmpl = `var direct = 'DIRECT';
 var httpProxy = 'PROXY {{.ProxyAddr}}; DIRECT';
 
 var directList = [
-{{.DirectDomains}}
+"localhost",
+"0.1"{{.DirectDomains}}
 ];
 
 var directAcc = {};
@@ -85,7 +86,7 @@ func genPAC() string {
 	if ds == "" {
 		return pacDirect
 	} else {
-		ds = "\"" + ds + "\""
+		ds = ",\n\"" + ds + "\""
 	}
 
 	data := struct {

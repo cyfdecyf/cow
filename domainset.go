@@ -152,7 +152,7 @@ func delBlockedDomain(dm string) {
 }
 
 func addDirectDomain(dm string) {
-	if inAlwaysDs(dm) || chouDs[dm] {
+	if inAlwaysDs(dm) || chouDs[dm] || dm == "localhost" {
 		return
 	}
 	if !directDs.has(dm) {
@@ -324,9 +324,6 @@ func loadDomainSet() {
 	alwaysBlockedDs.loadDomainList(config.alwaysBlockedFile)
 	alwaysDirectDs.loadDomainList(config.alwaysDirectFile)
 	chouDs.loadDomainList(config.chouFile)
-
-	addDirectDomain("localhost")
-	addDirectDomain("0.1")
 
 	filterOutDs(chouDs)
 	filterOutDs(alwaysDirectDs)
