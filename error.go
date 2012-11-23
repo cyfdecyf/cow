@@ -11,9 +11,9 @@ import (
 
 var errPageRawTmpl = `<!DOCTYPE html>
 <html>
-	<head> <title>Proxy error</title> </head>
+	<head> <title>COW Proxy</title> </head>
 	<body>
-		<h1>[Error] {{.H1}}</h1>
+		<h1>{{.H1}}</h1>
 		{{.Msg}}
 		{{.Form}}
 		<hr />
@@ -22,11 +22,9 @@ var errPageRawTmpl = `<!DOCTYPE html>
 </html>
 `
 
-// Use GET to simplify form processing. Strictly speaking, this has side
-// effects and should use POST.
 var blockedFormRawTmpl = `<p></p>
 		<form action="http://{{.ListenAddr}}/blocked" method="get">
-		<input type="hidden" name="uri" value={{.RequestURI}}>
+		<input type="hidden" name="domain" value={{.Domain}}>
 		<b>Refresh to retry</b> or
 		<input type="submit" name="add" value="Add {{.Domain}} to blocked sites">
 		</form>
@@ -77,7 +75,7 @@ func genErrorPage(h1, msg, form string) (string, error) {
 	return buf.String(), err
 }
 
-func sendErrorPageGeneric(w *bufio.Writer, errCodeReason, h1, msg, form string) {
+func sendPageGeneric(w *bufio.Writer, codeReason, h1, msg, form, addHeader string) {
 	page, err := genErrorPage(h1, msg, form)
 	if err != nil {
 		errl.Println("Error generating error page:", err)
@@ -88,7 +86,7 @@ func sendErrorPageGeneric(w *bufio.Writer, errCodeReason, h1, msg, form string) 
 		CodeReason string
 		Length     int
 	}{
-		errCodeReason,
+		codeReason,
 		len(page),
 	}
 	buf := new(bytes.Buffer)
@@ -98,23 +96,26 @@ func sendErrorPageGeneric(w *bufio.Writer, errCodeReason, h1, msg, form string) 
 	}
 
 	w.WriteString(buf.String())
-	w.WriteString("\r\n")
+	w.WriteString(addHeader + "\r\n\r\n")
 	w.WriteString(page)
 	w.Flush()
 }
 
-func sendErrorPage(w *bufio.Writer, errCodeReason, errMsg, detailedMsg string) {
-	sendErrorPageGeneric(w, errCodeReason, errMsg, detailedMsg, "")
+func sendErrorPage(w *bufio.Writer, codeReason, h1, msg string) {
+	sendPageGeneric(w, codeReason, "[Error] " + h1, msg, "", "")
 }
 
-func sendBlockedErrorPage(w *bufio.Writer, errCodeReason, errMsg, detailedMsg string, r *Request) {
+func sendRedirectPage(w *bufio.Writer, location string) {
+	sendPageGeneric(w, "302 Found", "Domain added to blocked list", "Redirect to "+location,
+		"", "Location: "+location)
+}
+
+func sendBlockedErrorPage(w *bufio.Writer, codeReason, h1, msg string, r *Request) {
 	data := struct {
 		ListenAddr string
-		RequestURI string
 		Domain     string
 	}{
 		config.listenAddr,
-		r.URL.toURI(), // escape URI to put it in request url
 		requestDomain(r),
 	}
 	buf := new(bytes.Buffer)
@@ -122,5 +123,5 @@ func sendBlockedErrorPage(w *bufio.Writer, errCodeReason, errMsg, detailedMsg st
 		errl.Println("Error generating blocked form:", err)
 		return
 	}
-	sendErrorPageGeneric(w, errCodeReason, errMsg, detailedMsg, buf.String())
+	sendPageGeneric(w, codeReason, "[Error] " + h1, msg, buf.String(), "")
 }
