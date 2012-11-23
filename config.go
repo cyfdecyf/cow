@@ -67,12 +67,12 @@ func init() {
 
 	flag.BoolVar(&printVer, "version", false, "print version")
 	flag.StringVar(&config.listenAddr, "listen", "127.0.0.1:7777", "proxy server listen address")
-	flag.StringVar(&config.socksAddr, "socks", "127.0.0.1:1080", "socks server address")
+	flag.StringVar(&config.socksAddr, "socks", "127.0.0.1:1080", "socks proxy address")
 	flag.IntVar(&config.numProc, "core", 2, "number of cores to use")
 	flag.StringVar(&config.sshServer, "sshServer", "", "remote server which will ssh to and provide sock server")
 	flag.BoolVar(&config.updateBlocked, "updateBlocked", true, "update blocked site list")
 	flag.BoolVar(&config.updateDirect, "updateDirect", true, "update direct site list")
-	flag.BoolVar(&config.autoRetry, "autoRetry", true, "automatically retry blocked requests")
+	flag.BoolVar(&config.autoRetry, "autoRetry", false, "automatically retry timeout requests using socks proxy")
 	flag.StringVar(&config.logFile, "logFile", "", "write output to file, empty means stdout")
 
 	config.dir = path.Join(homeDir, dotDir)
