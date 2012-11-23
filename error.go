@@ -24,7 +24,7 @@ var errPageRawTmpl = `<!DOCTYPE html>
 
 var blockedFormRawTmpl = `<p></p>
 		<form action="http://{{.ListenAddr}}/blocked" method="get">
-		<input type="hidden" name="domain" value={{.Domain}}>
+		<input type="hidden" name="host" value={{.Host}}>
 		<b>Refresh to retry</b> or
 		<input type="submit" name="add" value="Add {{.Domain}} to blocked sites">
 		</form>
@@ -102,7 +102,7 @@ func sendPageGeneric(w *bufio.Writer, codeReason, h1, msg, form, addHeader strin
 }
 
 func sendErrorPage(w *bufio.Writer, codeReason, h1, msg string) {
-	sendPageGeneric(w, codeReason, "[Error] " + h1, msg, "", "")
+	sendPageGeneric(w, codeReason, "[Error] "+h1, msg, "", "")
 }
 
 func sendRedirectPage(w *bufio.Writer, location string) {
@@ -111,17 +111,25 @@ func sendRedirectPage(w *bufio.Writer, location string) {
 }
 
 func sendBlockedErrorPage(w *bufio.Writer, codeReason, h1, msg string, r *Request) {
+	h, _ := splitHostPort(r.URL.Host)
+	if hostIsIP(h) {
+		sendErrorPage(w, codeReason, h1, msg)
+		return
+	}
+
 	data := struct {
 		ListenAddr string
+		Host       string
 		Domain     string
 	}{
 		config.listenAddr,
-		requestDomain(r),
+		h,
+		host2Domain(r.URL.Host),
 	}
 	buf := new(bytes.Buffer)
 	if err := blockedFormTmpl.Execute(buf, data); err != nil {
 		errl.Println("Error generating blocked form:", err)
 		return
 	}
-	sendPageGeneric(w, codeReason, "[Error] " + h1, msg, buf.String(), "")
+	sendPageGeneric(w, codeReason, "[Error] "+h1, msg, buf.String(), "")
 }

@@ -69,6 +69,7 @@ type clientConn struct {
 var (
 	errRetry    = errors.New("Retry")
 	errPageSent = errors.New("Error page has sent")
+	errInternal = errors.New("Internal error")
 )
 
 func NewProxy(addr string) *Proxy {
@@ -145,10 +146,10 @@ func (c *clientConn) getRequest() (r *Request) {
 	return r
 }
 
-func getDomainFromQuery(query string) string {
+func getHostFromQuery(query string) string {
 	for _, s := range strings.Split(query, "&") {
-		if strings.HasPrefix(s, "domain=") {
-			return s[len("domain="):]
+		if strings.HasPrefix(s, "host=") {
+			return s[len("host="):]
 		}
 	}
 	return ""
@@ -159,8 +160,16 @@ func (c *clientConn) serveSelfURLBlocked(r *Request) (err error) {
 	// But client should not redirect for POST request, so I choose to use GET when
 	// submitting form.
 	query := r.URL.Path[9:] // "/blocked?" has 9 characters
-	dm := getDomainFromQuery(query)
-	addBlockedDomain(dm)
+	host := getHostFromQuery(query)
+	if hostIsIP(host) {
+		// sendBlockedErrorPage will not put IP address in form, this should not happen.
+		// server side checking to be safe
+		errl.Println("Host address is IP in add blocked domain request, shouldn't happen")
+		sendErrorPage(c.buf.Writer, "500 internal error", "Blocked site is IP address",
+			"COW can only record blocked site based on domain name.")
+		return errInternal
+	}
+	addBlockedHost(host)
 
 	// As there's no reliable way to convert an encoded URL back (you don't
 	// know whether a %2F should be converted to slash or not, conside Google
@@ -272,8 +281,8 @@ const (
 func (c *clientConn) handleBlockedRequest(r *Request, err error, errCode, msg string) error {
 	// Domain in chou domain set is likely to be blocked, should automatically
 	// restart request using parent proxy no matter if autoRetry is enabled.
-	if config.autoRetry || isRequestInChouDs(r) {
-		if addBlockedRequest(r) {
+	if config.autoRetry || isHostInChouDs(r.URL.Host) {
+		if addBlockedHost(r.URL.Host) {
 			return errRetry
 		}
 		msg += genBlockedSiteMsg(r)
@@ -385,7 +394,7 @@ func (c *clientConn) readResponse(h *Handler, r *Request) (err error) {
 	if h.state == hsConnected {
 		h.state = hsResponsReceived
 		if h.connType == directConn {
-			addDirectRequest(r)
+			addDirectHost(r.URL.Host)
 		}
 	}
 
@@ -475,7 +484,7 @@ func (c *clientConn) createHandler(r *Request) (*Handler, error) {
 	var srvconn conn
 	connFailed := false
 
-	if isRequestBlocked(r) {
+	if isHostBlocked(r.URL.Host) {
 		// In case of connection error to socks server, fallback to direct connection
 		if srvconn, err = createSocksConnection(r.URL.Host); err != nil {
 			if hostInAlwaysBlockedDs(r.URL.Host) {
@@ -508,9 +517,9 @@ func (c *clientConn) createHandler(r *Request) (*Handler, error) {
 				connFailed = true
 				goto connDone
 			}
-			// If socks connection succeeds, it's very like blocked
-			if config.autoRetry || isRequestInChouDs(r) {
-				addBlockedRequest(r)
+			// If socks connection succeeds, it's very likely blocked
+			if config.autoRetry || isHostInChouDs(r.URL.Host) {
+				addBlockedHost(r.URL.Host)
 			} else {
 				srvconn.Close()
 				sendBlockedErrorPage(c.buf.Writer, "503 connection error", err.Error(),
@@ -637,9 +646,9 @@ func (srvconn *Handler) doConnect(r *Request, c *clientConn) (err error) {
 	if maybeFake {
 		// Because this is in doConnect, there's no way reporting blocked site
 		// to the client, just add it to blocked site and let client retry.
-		addBlockedRequest(r)
+		addBlockedHost(r.URL.Host)
 	} else if srvconn.connType == directConn {
-		addDirectRequest(r)
+		addDirectHost(r.URL.Host)
 	}
 	if srvErr != io.EOF {
 		return srvErr
@@ -784,5 +793,6 @@ func sendBody(w io.Writer, r *bufio.Reader, chunk bool, contLen int64) (err erro
 }
 
 func hostIsIP(host string) bool {
+	host, _ = splitHostPort(host)
 	return net.ParseIP(host) != nil
 }

@@ -82,11 +82,6 @@ var alwaysBlockedDs = newDomainSet()
 var alwaysDirectDs = newDomainSet()
 var chouDs = newDomainSet()
 
-func requestDomain(r *Request) string {
-	h, _ := splitHostPort(r.URL.Host)
-	return host2Domain(h)
-}
-
 func inAlwaysDs(dm string) bool {
 	return alwaysBlockedDs[dm] || alwaysDirectDs[dm]
 }
@@ -101,8 +96,8 @@ func hostInAlwaysBlockedDs(host string) bool {
 	return alwaysBlockedDs[host2Domain(h)]
 }
 
-func isRequestBlocked(r *Request) bool {
-	dm := requestDomain(r)
+func isHostBlocked(host string) bool {
+	dm := host2Domain(host)
 	if alwaysDirectDs[dm] {
 		return false
 	}
@@ -112,12 +107,15 @@ func isRequestBlocked(r *Request) bool {
 	return blockedDs.has(dm)
 }
 
-func isRequestInChouDs(r *Request) bool {
-	dm := requestDomain(r)
-	return chouDs[dm]
+func isHostInChouDs(host string) bool {
+	return chouDs[host2Domain(host)]
 }
 
-func addBlockedDomain(dm string) bool {
+func addBlockedHost(host string) bool {
+	if hostIsIP(host) {
+		return false
+	}
+	dm := host2Domain(host)
 	// For chou domain, we should add it to the blocked list in order to use
 	// parent proxy, but don't write it back to auto-block file.
 	if inAlwaysDs(dm) {
@@ -135,14 +133,6 @@ func addBlockedDomain(dm string) bool {
 	return added
 }
 
-func addBlockedRequest(r *Request) bool {
-	host, _ := splitHostPort(r.URL.Host)
-	if hostIsIP(host) {
-		return false
-	}
-	return addBlockedDomain(host2Domain(host))
-}
-
 func delBlockedDomain(dm string) {
 	if blockedDs.has(dm) {
 		blockedDs.del(dm)
@@ -155,6 +145,16 @@ func addDirectDomain(dm string) {
 	if !config.updateDirect {
 		return
 	}
+}
+
+func addDirectHost(host string) {
+	if !config.updateDirect {
+		return
+	}
+	if hostIsIP(host) {
+		return
+	}
+	dm := host2Domain(host)
 	if inAlwaysDs(dm) || chouDs[dm] || dm == "localhost" {
 		return
 	}
@@ -165,14 +165,6 @@ func addDirectDomain(dm string) {
 	}
 	// Delete this domain from blocked domain set
 	delBlockedDomain(dm)
-}
-
-func addDirectRequest(r *Request) {
-	host, _ := splitHostPort(r.URL.Host)
-	if hostIsIP(host) {
-		return
-	}
-	addDirectDomain(host2Domain(host))
 }
 
 func delDirectDomain(dm string) {
@@ -297,6 +289,7 @@ var topLevelDomain = map[string]bool{
 }
 
 func host2Domain(host string) (domain string) {
+	host, _ = splitHostPort(host)
 	lastDot := strings.LastIndex(host, ".")
 	if lastDot == -1 {
 		return host // simple host name, we should not hanlde this
