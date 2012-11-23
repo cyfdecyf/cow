@@ -9,13 +9,18 @@ import (
 	"text/template"
 )
 
-var pacRawTmpl = `var direct = 'DIRECT';
+const pacDirect = `function FindProxyForURL(url, host) {
+	return 'DIRECT';
+};
+`
+
+const pacRawTmpl = `var direct = 'DIRECT';
 var httpProxy = 'PROXY {{.ProxyAddr}}; DIRECT';
 
 var directList = [
 "localhost",
 "0.1",
-"{{.DirectDomains}}"
+{{.DirectDomains}}
 ];
 
 var directAcc = {};
@@ -79,6 +84,12 @@ func genPAC() string {
 	} else {
 		ds = ds1 + "\",\n\"" + ds2
 	}
+	if ds == "" {
+		return pacDirect
+	} else {
+		ds = "\"" + ds + "\""
+	}
+
 	data := struct {
 		ProxyAddr     string
 		DirectDomains string
