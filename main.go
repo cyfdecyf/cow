@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"os"
+	"fmt"
 	"os/signal"
 	"runtime"
 	"syscall"
@@ -30,6 +31,12 @@ func main() {
 	// Parse flags after load config to allow override options in config
 	loadConfig()
 	flag.Parse()
+
+	if config.socksAddr == "" {
+		fmt.Println("Socks server address required")
+		os.Exit(1)
+	}
+
 	setSelfURL()
 
 	if printVer {
