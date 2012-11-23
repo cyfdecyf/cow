@@ -284,8 +284,9 @@ const (
 
 func (c *clientConn) handleBlockedRequest(r *Request, err error, errCode, msg string) error {
 	// Domain in chou domain set is likely to be blocked, should automatically
-	// restart request using parent proxy no matter if autoRetry is enabled.
-	if config.autoRetry || isHostInChouDs(r.URL.Host) {
+	// restart request using parent proxy.
+	// Reset is usually reliable in detecting blocked site, so retry for connection reset.
+	if errCode == errCodeReset || config.autoRetry || isHostInChouDs(r.URL.Host) {
 		if addBlockedHost(r.URL.Host) {
 			return errRetry
 		}
@@ -504,6 +505,7 @@ func (c *clientConn) createHandler(r *Request) (*Handler, error) {
 			}
 			// debug.Printf("type of err %v\n", reflect.TypeOf(err))
 			// GFW may cause dns lookup fail, may also cause connection time out
+			// TODO will connection also return reset error?
 			if _, ok := err.(*net.DNSError); ok {
 			} else if ne, ok := err.(*net.OpError); ok && ne.Timeout() {
 			} else {
