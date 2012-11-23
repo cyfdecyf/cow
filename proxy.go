@@ -160,20 +160,31 @@ func getHostFromQuery(query string) string {
 }
 
 func (c *clientConn) serveSelfURLBlocked(r *Request) (err error) {
-	// Adding blocked site has side effects, so should use POST in this regard.
-	// But client should not redirect for POST request, so I choose to use GET when
-	// submitting form.
 	query := r.URL.Path[9:] // "/blocked?" has 9 characters
+	return c.serveSelfURLAddHost(r, query, "blocked", addBlockedHost)
+}
+
+func (c *clientConn) serveSelfURLDirect(r *Request) (err error) {
+	query := r.URL.Path[8:] // "/direct?" has 9 characters
+	return c.serveSelfURLAddHost(r, query, "direct", addDirectHost)
+}
+
+type addHostFunc func(string) bool
+
+func (c *clientConn) serveSelfURLAddHost(r *Request, query, listType string, addHost addHostFunc) (err error) {
+	// Adding blocked or direct site has side effects, so should use POST in
+	// this regard. But client should not redirect for POST request, so I
+	// choose to use GET when submitting form.
 	host := getHostFromQuery(query)
 	if hostIsIP(host) {
 		// sendBlockedErrorPage will not put IP address in form, this should not happen.
-		// server side checking to be safe
-		errl.Println("Host address is IP in add blocked domain request, shouldn't happen")
-		sendErrorPage(c.buf.Writer, "500 internal error", "Blocked site is IP address",
+		// server side checking to be safe.
+		errl.Println("Host is IP address, shouldn't happen")
+		sendErrorPage(c.buf.Writer, "500 internal error", "Requsted host is IP address",
 			"COW can only record blocked site based on domain name.")
 		return errInternal
 	}
-	addBlockedHost(host)
+	addHost(host)
 
 	// As there's no reliable way to convert an encoded URL back (you don't
 	// know whether a %2F should be converted to slash or not, conside Google
@@ -185,7 +196,7 @@ func (c *clientConn) serveSelfURLBlocked(r *Request) (err error) {
 		return
 	}
 	sendErrorPage(c.buf.Writer, "404 not found", "No Referer header",
-		"Domain added to blocked list, but no referer header in request so can't redirect.")
+		"Domain added to "+listType+" list, but no referer header in request so can't redirect.")
 	return
 }
 
@@ -200,6 +211,9 @@ func (c *clientConn) serveSelfURL(r *Request) (err error) {
 	}
 	if strings.HasPrefix(r.URL.Path, "/blocked?") {
 		return c.serveSelfURLBlocked(r)
+	}
+	if strings.HasPrefix(r.URL.Path, "/direct?") {
+		return c.serveSelfURLDirect(r)
 	}
 
 end:
@@ -533,7 +547,7 @@ func (c *clientConn) createHandler(r *Request) (*Handler, error) {
 connDone:
 	if connFailed {
 		sendErrorPage(c.buf.Writer, "504 Connection failed", err.Error(),
-			genErrMsg(r, "Creating connection."))
+			genErrMsg(r, "Connection failed."))
 		return nil, errPageSent
 	}
 

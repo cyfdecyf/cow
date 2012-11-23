@@ -23,10 +23,16 @@ var errPageRawTmpl = `<!DOCTYPE html>
 `
 
 var blockedFormRawTmpl = `<p></p>
+		Refresh to retry or add <b>{{.Domain}}</b> to 
 		<form action="http://{{.ListenAddr}}/blocked" method="get">
 		<input type="hidden" name="host" value={{.Host}}>
-		<b>Refresh to retry</b> or
-		<input type="submit" name="add" value="Add {{.Domain}} to blocked sites">
+		<b>blocked sites</b>
+		<input type="submit" name="submit" value="blocked">
+		</form>
+		<form action="http://{{.ListenAddr}}/direct" method="get">
+		<input type="hidden" name="host" value={{.Host}}>
+		<b>direct accessible sites</b>
+		<input type="submit" name="submit" value="direct">
 		</form>
 `
 
@@ -111,6 +117,8 @@ func sendRedirectPage(w *bufio.Writer, location string) {
 }
 
 func sendBlockedErrorPage(w *bufio.Writer, codeReason, h1, msg string, r *Request) {
+	// If host is IP, we can't add it to blocked or direct domain list. Just
+	// return ordinary error page.
 	h, _ := splitHostPort(r.URL.Host)
 	if hostIsIP(h) {
 		sendErrorPage(w, codeReason, h1, msg)

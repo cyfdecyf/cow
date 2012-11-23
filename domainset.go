@@ -111,17 +111,16 @@ func isHostInChouDs(host string) bool {
 	return chouDs[host2Domain(host)]
 }
 
-func addBlockedHost(host string) bool {
+func addBlockedHost(host string) (added bool) {
 	if hostIsIP(host) {
-		return false
+		return
 	}
 	dm := host2Domain(host)
 	// For chou domain, we should add it to the blocked list in order to use
 	// parent proxy, but don't write it back to auto-block file.
 	if inAlwaysDs(dm) {
-		return false
+		return
 	}
-	added := false
 	if !blockedDs.has(dm) {
 		blockedDs.add(dm)
 		blockedDomainChanged = true
@@ -130,7 +129,7 @@ func addBlockedHost(host string) bool {
 	}
 	// Delete this domain from direct domain set
 	delDirectDomain(dm)
-	return added
+	return
 }
 
 func delBlockedDomain(dm string) {
@@ -147,11 +146,8 @@ func addDirectDomain(dm string) {
 	}
 }
 
-func addDirectHost(host string) {
-	if !config.updateDirect {
-		return
-	}
-	if hostIsIP(host) {
+func addDirectHost(host string) (added bool) {
+	if !config.updateDirect || hostIsIP(host) {
 		return
 	}
 	dm := host2Domain(host)
@@ -165,6 +161,7 @@ func addDirectHost(host string) {
 	}
 	// Delete this domain from blocked domain set
 	delBlockedDomain(dm)
+	return true
 }
 
 func delDirectDomain(dm string) {
