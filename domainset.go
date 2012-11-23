@@ -131,22 +131,23 @@ func addBlockedDomain(dm string) bool {
 	if inAlwaysDs(dm) {
 		return false
 	}
+	added := false
 	if !blockedDs.has(dm) {
 		blockedDs.add(dm)
 		blockedDomainChanged = true
 		debug.Printf("%v added to blocked list\n", dm)
-		return true
+		added = true
 	}
 	// Delete this domain from direct domain set
 	delDirectDomain(dm)
-	return false
+	return added
 }
 
 func delBlockedDomain(dm string) {
 	if blockedDs.has(dm) {
 		blockedDs.del(dm)
 		blockedDomainChanged = true
-		debug.Printf("%v deleted from blocked list\n", dm)
+		debug.Printf("%s deleted from blocked list\n", dm)
 	}
 }
 
@@ -162,6 +163,7 @@ func addDirectRequest(r *Request) {
 	if !directDs.has(dm) {
 		directDs.add(dm)
 		directDomainChanged = true
+		debug.Printf("%s added to direct list\n", dm)
 	}
 	// Delete this domain from blocked domain set
 	delBlockedDomain(dm)
