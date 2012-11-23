@@ -504,11 +504,20 @@ func (c *clientConn) createHandler(r *Request) (*Handler, error) {
 				goto connDone
 			}
 			// Try to create socks connection
-			if srvconn, err = createSocksConnection(r.URL.Host); err != nil {
+			var socksErr error
+			if srvconn, socksErr = createSocksConnection(r.URL.Host); socksErr != nil {
 				connFailed = true
 				goto connDone
 			}
-			addBlockedRequest(r)
+			// If socks connection succeeds, it's very like blocked
+			if config.autoRetry || isRequestInChouDs(r) {
+				addBlockedRequest(r)
+			} else {
+				srvconn.Close()
+				sendBlockedErrorPage(c.buf.Writer, "503 connection error", err.Error(),
+					genErrMsg(r, "Connection failed.")+genBlockedSiteMsg(r), r)
+				return nil, errPageSent
+			}
 		}
 	}
 
