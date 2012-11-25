@@ -107,6 +107,17 @@ func isHostBlocked(host string) bool {
 	return blockedDs.has(dm)
 }
 
+func isHostDirect(host string) bool {
+	dm := host2Domain(host)
+	if alwaysDirectDs[dm] {
+		return true
+	}
+	if alwaysBlockedDs[dm] {
+		return false
+	}
+	return directDs.has(dm)
+}
+
 func isHostInChouDs(host string) bool {
 	return chouDs[host2Domain(host)]
 }

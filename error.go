@@ -23,13 +23,15 @@ var errPageRawTmpl = `<!DOCTYPE html>
 `
 
 var blockedFormRawTmpl = `<p></p>
-		Refresh to retry or add <b>{{.Domain}}</b> to 
+		Add <b>{{.Domain}}</b> to 
 		<form action="http://{{.ListenAddr}}/blocked" method="get">
 		<input type="hidden" name="host" value={{.Host}}>
 		<b>blocked sites</b>
 		<input type="submit" name="submit" value="blocked">
 		</form>
-		<form action="http://{{.ListenAddr}}/direct" method="get">
+`
+
+var directFormRawTmpl = `<form action="http://{{.ListenAddr}}/direct" method="get">
 		<input type="hidden" name="host" value={{.Host}}>
 		<b>direct accessible sites</b>
 		<input type="submit" name="submit" value="direct">
@@ -44,7 +46,7 @@ var headRawTmpl = "HTTP/1.1 {{.CodeReason}}\r\n" +
 	"Content-Type: text/html\r\n" +
 	"Content-Length: {{.Length}}\r\n"
 
-var errPageTmpl, headTmpl, blockedFormTmpl *template.Template
+var errPageTmpl, headTmpl, blockedFormTmpl, directFormTmpl *template.Template
 
 func init() {
 	var err error
@@ -58,6 +60,10 @@ func init() {
 	}
 	if blockedFormTmpl, err = template.New("blockedForm").Parse(blockedFormRawTmpl); err != nil {
 		fmt.Println("Internal error on generating blocked form template")
+		os.Exit(1)
+	}
+	if directFormTmpl, err = template.New("directForm").Parse(directFormRawTmpl); err != nil {
+		fmt.Println("Internal error on generating direct form template")
 		os.Exit(1)
 	}
 }
@@ -117,10 +123,10 @@ func sendRedirectPage(w *bufio.Writer, location string) {
 }
 
 func sendBlockedErrorPage(w *bufio.Writer, codeReason, h1, msg string, r *Request) {
-	// If host is IP, we can't add it to blocked or direct domain list. Just
+	// If host is IP or in always DS, we can't add it to blocked or direct domain list. Just
 	// return ordinary error page.
 	h, _ := splitHostPort(r.URL.Host)
-	if hostIsIP(h) {
+	if hostIsIP(r.URL.Host) || inAlwaysDs(host2Domain(r.URL.Host)) {
 		sendErrorPage(w, codeReason, h1, msg)
 		return
 	}
@@ -138,6 +144,12 @@ func sendBlockedErrorPage(w *bufio.Writer, codeReason, h1, msg string, r *Reques
 	if err := blockedFormTmpl.Execute(buf, data); err != nil {
 		errl.Println("Error generating blocked form:", err)
 		return
+	}
+	if !isHostDirect(h) {
+		if err := directFormTmpl.Execute(buf, data); err != nil {
+			errl.Println("Error generating direct form:", err)
+			return
+		}
 	}
 	sendPageGeneric(w, codeReason, "[Error] "+h1, msg, buf.String(), "")
 }
