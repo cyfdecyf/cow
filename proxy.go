@@ -282,11 +282,10 @@ func genErrMsg(r *Request, what string) string {
 }
 
 func genBlockedSiteMsg(r *Request) string {
-	host, _ := splitHostPort(r.URL.Host)
-	if !hostIsIP(host) {
+	if !hostIsIP(r.URL.Host) {
 		return fmt.Sprintf(
-			"<p>Domain <strong>%s</strong> maybe blocked.</p>",
-			host2Domain(host))
+			"<p>Domain <strong>%s</strong> maybe blocked. Refresh to retry.</p>",
+			host2Domain(r.URL.Host))
 	}
 	return ""
 }
@@ -319,31 +318,31 @@ func (c *clientConn) handleServerReadError(h *Handler, r *Request, err error, ms
 		debug.Println("Read from server EOF")
 		return errRetry
 	}
-	if h.connType != directConn {
-		goto generalErr
-	}
-	errMsg = genErrMsg(r, msg)
-	if ne, ok := err.(*net.OpError); ok {
-		// GFW may connection reset here, may also make it time out Is it
-		// normal for connection to a site timeout? If so, it's better not add
-		// it to blocked site.
-		if ne.Err == syscall.ECONNRESET {
-			return c.handleBlockedRequest(r, err, errCodeReset, errMsg)
+	if h.mayBeFake() {
+		errMsg = genErrMsg(r, msg)
+		if ne, ok := err.(*net.OpError); ok {
+			// GFW may connection reset here, may also make it time out Is it
+			// normal for connection to a site timeout? If so, it's better not add
+			// it to blocked site.
+			if ne.Err == syscall.ECONNRESET {
+				return c.handleBlockedRequest(r, err, errCodeReset, errMsg)
+			}
+			if ne.Timeout() {
+				return c.handleBlockedRequest(r, err, errCodeTimeout, errMsg)
+			}
+			// fall through to send general error message
 		}
-		if ne.Timeout() {
-			return c.handleBlockedRequest(r, err, errCodeTimeout, errMsg)
-		}
-		// fall through to send general error message
 	}
-generalErr:
 	errl.Printf("Read from server unhandled error for %v %v\n", r, err)
 	sendErrorPage(c.buf.Writer, "502 read error", err.Error(), errMsg)
 	return errPageSent
 }
 
 func (c *clientConn) handleServerWriteError(r *Request, h *Handler, err error, msg string) error {
-	errMsg := genErrMsg(r, msg)
+	// This function is only called in doRequest, no response is sent to client.
+	// So if visiting blocked site, can always retry request.
 	if h.mayBeFake() {
+		errMsg := genErrMsg(r, msg)
 		if ne, ok := err.(*net.OpError); ok {
 			if ne.Err == syscall.ECONNRESET {
 				return c.handleBlockedRequest(r, err, errCodeReset, errMsg)
