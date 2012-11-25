@@ -513,7 +513,7 @@ func (c *clientConn) createHandler(r *Request) (*Handler, error) {
 	} else {
 		// In case of error on direction connection, try socks server
 		if srvconn, err = createDirectConnection(r.URL.Host); err != nil {
-			if hostInAlwaysDirectDs(r.URL.Host) {
+			if hostInAlwaysDirectDs(r.URL.Host) || hostIsIP(r.URL.Host) {
 				connFailed = true
 				goto connDone
 			}
