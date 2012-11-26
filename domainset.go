@@ -129,7 +129,7 @@ func addBlockedHost(host string) (added bool) {
 	dm := host2Domain(host)
 	// For chou domain, we should add it to the blocked list in order to use
 	// parent proxy, but don't write it back to auto-block file.
-	if inAlwaysDs(dm) {
+	if inAlwaysDs(dm) || dm == "localhost" {
 		return
 	}
 	if !blockedDs.has(dm) {

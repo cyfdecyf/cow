@@ -129,7 +129,7 @@ func (c *clientConn) close() {
 }
 
 func isSelfURL(h string) bool {
-	return h == "" || h == selfURL127 || h == selfURLLH
+	return h == "" || h == selfURLLH || h == selfURL127
 }
 
 // Close client connection if no new requests come in after 5 seconds.
