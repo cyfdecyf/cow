@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 )
 
 type domainSet map[string]bool
@@ -82,6 +83,14 @@ var alwaysBlockedDs = newDomainSet()
 var alwaysDirectDs = newDomainSet()
 var chouDs = newDomainSet()
 
+// Record when is the domain added to chou domain set
+type chouBlockTime struct {
+	sync.Mutex
+	time map[string]time.Time
+}
+
+var chou = chouBlockTime{time: map[string]time.Time{}}
+
 func inAlwaysDs(dm string) bool {
 	return alwaysBlockedDs[dm] || alwaysDirectDs[dm]
 }
@@ -96,6 +105,8 @@ func hostInAlwaysBlockedDs(host string) bool {
 	return alwaysBlockedDs[host2Domain(h)]
 }
 
+const blockTimeout = time.Minute
+
 func isHostBlocked(host string) bool {
 	dm := host2Domain(host)
 	if alwaysDirectDs[dm] {
@@ -103,6 +114,22 @@ func isHostBlocked(host string) bool {
 	}
 	if alwaysBlockedDs[dm] {
 		return true
+	}
+	if chouDs[dm] {
+		chou.Lock()
+		t, ok := chou.time[dm]
+		chou.Unlock()
+		if !ok {
+			return false
+		}
+		if time.Now().Sub(t) < blockTimeout {
+			return true
+		}
+		chou.Lock()
+		delete(chou.time, dm)
+		chou.Unlock()
+		debug.Printf("chou domain %s block time unset\n", dm)
+		return false
 	}
 	return blockedDs.has(dm)
 }
@@ -123,23 +150,27 @@ func isHostInChouDs(host string) bool {
 }
 
 func addBlockedHost(host string) (added bool) {
-	if hostIsIP(host) {
-		return
-	}
 	dm := host2Domain(host)
-	// For chou domain, we should add it to the blocked list in order to use
-	// parent proxy, but don't write it back to auto-block file.
-	if inAlwaysDs(dm) || dm == "localhost" {
+	if inAlwaysDs(dm) || hostIsIP(host) || dm == "localhost" {
 		return
 	}
-	if !blockedDs.has(dm) {
+	// Record blocked time for chou domain, this marks a chou domain as
+	// temporarily blocked
+	if chouDs[dm] {
+		now := time.Now()
+		chou.Lock()
+		chou.time[dm] = now
+		chou.Unlock()
+		added = true
+		debug.Printf("chou domain %s blocked at %v\n", dm, now)
+	} else if !blockedDs.has(dm) {
 		blockedDs.add(dm)
 		blockedDomainChanged = true
-		debug.Printf("%v added to blocked list\n", dm)
 		added = true
+		debug.Printf("%s added to blocked list\n", dm)
+		// Delete this domain from direct domain set
+		delDirectDomain(dm)
 	}
-	// Delete this domain from direct domain set
-	delDirectDomain(dm)
 	return
 }
 
@@ -158,11 +189,9 @@ func addDirectDomain(dm string) {
 }
 
 func addDirectHost(host string) (added bool) {
-	if !config.updateDirect || hostIsIP(host) {
-		return
-	}
 	dm := host2Domain(host)
-	if inAlwaysDs(dm) || chouDs[dm] || dm == "localhost" {
+	if !config.updateDirect || inAlwaysDs(dm) || chouDs[dm] ||
+		dm == "localhost" || hostIsIP(host) {
 		return
 	}
 	if !directDs.has(dm) {
@@ -321,6 +350,12 @@ func host2Domain(host string) (domain string) {
 	}
 	return host[dot2ndLast+1:]
 }
+
+// TODO reload domain list when receives SIGUSR1
+// one difficult here is that we may concurrently access maps which is not
+// safe.
+// Can we create a new domain set first, then change the reference of the original one?
+// Domain set reference changing should be atomic.
 
 func loadDomainSet() {
 	blockedDs.loadDomainList(config.blockedFile)
