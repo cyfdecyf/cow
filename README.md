@@ -21,7 +21,9 @@ Install [go](http://golang.org/doc/install), then run
 
 # Usage #
 
-Configuration file is located at `~/.cow/rc`. Here's an example with the most important options (all options are given default value, for a complete example, refer to `doc/sample-config/rc`):
+Configuration file is located at `~/.cow/rc`. `doc/sample-config` contains complete examples with comments, you can simply copy it to `~/.cow` and modify it according to your own settings.
+
+Here's an example with the most important options:
 
     # proxy listen address
     listen = 127.0.0.1:7777
@@ -49,7 +51,7 @@ After this, COW will be started when you login. It will also be restarted upon e
 
 Blocked and directly accessible web sites are specified using their domain names. **COW can't always reliably detect blocked or directly accessible web sites, so you may need to edit those domain list file manually.**
 
-- You can manually specify blocked and directly accessible domains. Just edit `~/.cow/blocked` and `~/.cow/direct`. **You can put sites that will be error identified as blocked or directly accessible into these files**.
+- You can manually specify blocked and directly accessible domains. Just edit `~/.cow/blocked` and `~/.cow/direct`. **You can put sites that will be incorrectly identified as blocked or directly accessible into these files**.
   - One line for each domain
   - You can use domains like `google.com.hk`
 - When update blocked/direct domains is enabled (default behavior), COW will update `~/.cow/auto-blocked` and `~/.cow/auto-direct` on exit
@@ -85,4 +87,4 @@ You can let COW retry HTTP request upon tiemout error by setting the `autoRetry`
 - Blocked site detection is not always reliable
 - Beta quality now
   - Stable enough for myself. I'm using COW as system wide proxy on OS X 10.8 everyday
-  - Issue reporting is welcomed
+  - **Issue reporting is welcomed**
