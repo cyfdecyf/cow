@@ -17,8 +17,6 @@ var (
 	homeDir    string
 	selfURL127 string // 127.0.0.1:listenAddr
 	selfURLLH  string // localhost:listenAddr
-
-	printVer bool
 )
 
 const (
@@ -42,6 +40,7 @@ var config struct {
 	updateDirect  bool
 	autoRetry     bool
 	logFile       string
+	printVer      bool
 
 	// These are for internal use
 	dir               string // directory containing config file and blocked site list
@@ -65,7 +64,6 @@ func init() {
 	}
 	homeDir = u.HomeDir
 
-	flag.BoolVar(&printVer, "version", false, "print version")
 	flag.StringVar(&config.listenAddr, "listen", "127.0.0.1:7777", "proxy server listen address")
 	flag.StringVar(&config.socksAddr, "socks", "127.0.0.1:1080", "socks proxy address")
 	flag.IntVar(&config.numProc, "core", 2, "number of cores to use")
@@ -74,6 +72,7 @@ func init() {
 	flag.BoolVar(&config.updateDirect, "updateDirect", true, "update direct site list")
 	flag.BoolVar(&config.autoRetry, "autoRetry", false, "automatically retry timeout requests using socks proxy")
 	flag.StringVar(&config.logFile, "logFile", "", "write output to file, empty means stdout")
+	flag.BoolVar(&config.printVer, "version", false, "print version")
 
 	config.dir = path.Join(homeDir, dotDir)
 	config.blockedFile = path.Join(config.dir, blockedFname)

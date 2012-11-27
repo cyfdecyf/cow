@@ -39,7 +39,7 @@ func main() {
 
 	setSelfURL()
 
-	if printVer {
+	if config.printVer {
 		printVersion()
 		os.Exit(0)
 	}
