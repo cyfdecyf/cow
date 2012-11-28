@@ -49,7 +49,7 @@ After this, COW will be started when you login. It will also be restarted upon e
 
 ## Blocked and directly accessible sites list ##
 
-Blocked and directly accessible web sites are specified using their domain names. **COW can't always reliably detect blocked or directly accessible web sites, so you may need to edit those domain list file manually.**
+Blocked and directly accessible web sites are specified using their domain names. **COW can't always reliably detect blocked or directly accessible web sites, so you may need to edit those domain list files manually.**
 
 - You can manually specify blocked and directly accessible domains. Just edit `~/.cow/blocked` and `~/.cow/direct`. **You can put sites that will be incorrectly identified as blocked or directly accessible into these files**.
   - One line for each domain

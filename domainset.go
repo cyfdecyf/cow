@@ -95,12 +95,12 @@ func inAlwaysDs(dm string) bool {
 	return alwaysBlockedDs[dm] || alwaysDirectDs[dm]
 }
 
-func hostInAlwaysDirectDs(host string) bool {
+func isHostAlwaysDirect(host string) bool {
 	h, _ := splitHostPort(host)
 	return alwaysDirectDs[host2Domain(h)]
 }
 
-func hostInAlwaysBlockedDs(host string) bool {
+func isHostAlwaysBlocked(host string) bool {
 	h, _ := splitHostPort(host)
 	return alwaysBlockedDs[host2Domain(h)]
 }
@@ -145,33 +145,32 @@ func isHostDirect(host string) bool {
 	return directDs.has(dm)
 }
 
-func isHostInChouDs(host string) bool {
+func isHostChouFeng(host string) bool {
 	return chouDs[host2Domain(host)]
 }
 
-func addBlockedHost(host string) (added bool) {
+// Return true if the host is taken as blocked later
+func addBlockedHost(host string) bool {
 	dm := host2Domain(host)
-	if inAlwaysDs(dm) || hostIsIP(host) || dm == "localhost" {
-		return
+	if isHostAlwaysDirect(host) || hostIsIP(host) || dm == "localhost" {
+		return false
 	}
-	// Record blocked time for chou domain, this marks a chou domain as
-	// temporarily blocked
 	if chouDs[dm] {
+		// Record blocked time for chou domain, this marks a chou domain as
+		// temporarily blocked
 		now := time.Now()
 		chou.Lock()
 		chou.time[dm] = now
 		chou.Unlock()
-		added = true
 		debug.Printf("chou domain %s blocked at %v\n", dm, now)
 	} else if !blockedDs.has(dm) {
 		blockedDs.add(dm)
 		blockedDomainChanged = true
-		added = true
 		debug.Printf("%s added to blocked list\n", dm)
 		// Delete this domain from direct domain set
 		delDirectDomain(dm)
 	}
-	return
+	return true
 }
 
 func delBlockedDomain(dm string) {

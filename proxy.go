@@ -299,7 +299,7 @@ func (c *clientConn) handleBlockedRequest(r *Request, err error, errCode, msg st
 	// Domain in chou domain set is likely to be blocked, should automatically
 	// restart request using parent proxy.
 	// Reset is usually reliable in detecting blocked site, so retry for connection reset.
-	if errCode == errCodeReset || config.autoRetry || isHostInChouDs(r.URL.Host) {
+	if errCode == errCodeReset || config.autoRetry || isHostChouFeng(r.URL.Host) {
 		if addBlockedHost(r.URL.Host) {
 			return errRetry
 		}
@@ -492,6 +492,24 @@ func createDirectConnection(host string) (conn, error) {
 	return conn{c, directConn}, nil
 }
 
+func isConnReset(err error) bool {
+	ne, ok := err.(*net.OpError)
+	if ok {
+		return ne.Err == syscall.ECONNRESET
+	}
+	return false
+}
+
+func maybeBlocked(err error) bool {
+	ne, ok := err.(*net.OpError)
+	if ok {
+		return ne.Timeout() || ne.Err == syscall.ECONNRESET
+	}
+	return false
+}
+
+const connFailedErrCode = "504 Connection failed"
+
 func (c *clientConn) createHandler(r *Request) (*Handler, error) {
 	var err error
 	var srvconn conn
@@ -500,7 +518,7 @@ func (c *clientConn) createHandler(r *Request) (*Handler, error) {
 	if isHostBlocked(r.URL.Host) {
 		// In case of connection error to socks server, fallback to direct connection
 		if srvconn, err = createSocksConnection(r.URL.Host); err != nil {
-			if hostInAlwaysBlockedDs(r.URL.Host) {
+			if isHostAlwaysBlocked(r.URL.Host) {
 				connFailed = true
 				goto connDone
 			}
@@ -512,15 +530,14 @@ func (c *clientConn) createHandler(r *Request) (*Handler, error) {
 	} else {
 		// In case of error on direction connection, try socks server
 		if srvconn, err = createDirectConnection(r.URL.Host); err != nil {
-			if hostInAlwaysDirectDs(r.URL.Host) || hostIsIP(r.URL.Host) {
+			if isHostAlwaysDirect(r.URL.Host) || hostIsIP(r.URL.Host) {
 				connFailed = true
 				goto connDone
 			}
 			// debug.Printf("type of err %v\n", reflect.TypeOf(err))
-			// GFW may cause dns lookup fail, may also cause connection time out
-			// TODO will connection also return reset error?
+			// GFW may cause dns lookup fail, may also cause connection time out or reset
 			if _, ok := err.(*net.DNSError); ok {
-			} else if ne, ok := err.(*net.OpError); ok && ne.Timeout() {
+			} else if maybeBlocked(err) {
 			} else {
 				connFailed = true
 				goto connDone
@@ -532,11 +549,11 @@ func (c *clientConn) createHandler(r *Request) (*Handler, error) {
 				goto connDone
 			}
 			// If socks connection succeeds, it's very likely blocked
-			if config.autoRetry || isHostInChouDs(r.URL.Host) {
+			if config.autoRetry || isHostChouFeng(r.URL.Host) || isConnReset(err) {
 				addBlockedHost(r.URL.Host)
 			} else {
 				srvconn.Close()
-				sendBlockedErrorPage(c.buf.Writer, "503 connection error", err.Error(),
+				sendBlockedErrorPage(c.buf.Writer, connFailedErrCode, err.Error(),
 					genErrMsg(r, "Connection failed.")+genBlockedSiteMsg(r), r)
 				return nil, errPageSent
 			}
@@ -545,7 +562,7 @@ func (c *clientConn) createHandler(r *Request) (*Handler, error) {
 
 connDone:
 	if connFailed {
-		sendErrorPage(c.buf.Writer, "504 Connection failed", err.Error(),
+		sendErrorPage(c.buf.Writer, connFailedErrCode, err.Error(),
 			genErrMsg(r, "Connection failed."))
 		return nil, errPageSent
 	}
@@ -605,7 +622,7 @@ func (h *Handler) mayBeFake() bool {
 	// forever on read. (e.g. twitter.com) If we have never received any
 	// response yet, then we should set a timeout for read/write.
 	return h.state == hsConnected && h.connType == directConn &&
-		!hostInAlwaysDirectDs(h.host)
+		!isHostAlwaysDirect(h.host)
 }
 
 // Apache 2.2 keep-alive timeout defaults to 5 seconds.
