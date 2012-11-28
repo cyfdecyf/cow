@@ -299,7 +299,7 @@ func (c *clientConn) handleBlockedRequest(r *Request, err error, errCode, msg st
 	// Domain in chou domain set is likely to be blocked, should automatically
 	// restart request using parent proxy.
 	// Reset is usually reliable in detecting blocked site, so retry for connection reset.
-	if errCode == errCodeReset || config.autoRetry || isHostInChouDs(r.URL.Host) {
+	if errCode == errCodeReset || config.autoRetry || isHostChouFeng(r.URL.Host) {
 		if addBlockedHost(r.URL.Host) {
 			return errRetry
 		}
@@ -500,7 +500,7 @@ func (c *clientConn) createHandler(r *Request) (*Handler, error) {
 	if isHostBlocked(r.URL.Host) {
 		// In case of connection error to socks server, fallback to direct connection
 		if srvconn, err = createSocksConnection(r.URL.Host); err != nil {
-			if hostInAlwaysBlockedDs(r.URL.Host) {
+			if isHostAlwaysBlocked(r.URL.Host) {
 				connFailed = true
 				goto connDone
 			}
@@ -512,7 +512,7 @@ func (c *clientConn) createHandler(r *Request) (*Handler, error) {
 	} else {
 		// In case of error on direction connection, try socks server
 		if srvconn, err = createDirectConnection(r.URL.Host); err != nil {
-			if hostInAlwaysDirectDs(r.URL.Host) || hostIsIP(r.URL.Host) {
+			if isHostAlwaysDirect(r.URL.Host) || hostIsIP(r.URL.Host) {
 				connFailed = true
 				goto connDone
 			}
@@ -532,7 +532,7 @@ func (c *clientConn) createHandler(r *Request) (*Handler, error) {
 				goto connDone
 			}
 			// If socks connection succeeds, it's very likely blocked
-			if config.autoRetry || isHostInChouDs(r.URL.Host) {
+			if config.autoRetry || isHostChouFeng(r.URL.Host) {
 				addBlockedHost(r.URL.Host)
 			} else {
 				srvconn.Close()
@@ -605,7 +605,7 @@ func (h *Handler) mayBeFake() bool {
 	// forever on read. (e.g. twitter.com) If we have never received any
 	// response yet, then we should set a timeout for read/write.
 	return h.state == hsConnected && h.connType == directConn &&
-		!hostInAlwaysDirectDs(h.host)
+		!isHostAlwaysDirect(h.host)
 }
 
 // Apache 2.2 keep-alive timeout defaults to 5 seconds.

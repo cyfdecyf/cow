@@ -95,12 +95,12 @@ func inAlwaysDs(dm string) bool {
 	return alwaysBlockedDs[dm] || alwaysDirectDs[dm]
 }
 
-func hostInAlwaysDirectDs(host string) bool {
+func isHostAlwaysDirect(host string) bool {
 	h, _ := splitHostPort(host)
 	return alwaysDirectDs[host2Domain(h)]
 }
 
-func hostInAlwaysBlockedDs(host string) bool {
+func isHostAlwaysBlocked(host string) bool {
 	h, _ := splitHostPort(host)
 	return alwaysBlockedDs[host2Domain(h)]
 }
@@ -145,14 +145,14 @@ func isHostDirect(host string) bool {
 	return directDs.has(dm)
 }
 
-func isHostInChouDs(host string) bool {
+func isHostChouFeng(host string) bool {
 	return chouDs[host2Domain(host)]
 }
 
 // Return true if the host is taken as blocked later
 func addBlockedHost(host string) bool {
 	dm := host2Domain(host)
-	if hostInAlwaysDirectDs(host) || hostIsIP(host) || dm == "localhost" {
+	if isHostAlwaysDirect(host) || hostIsIP(host) || dm == "localhost" {
 		return false
 	}
 	if chouDs[dm] {
