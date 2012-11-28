@@ -149,29 +149,28 @@ func isHostInChouDs(host string) bool {
 	return chouDs[host2Domain(host)]
 }
 
-func addBlockedHost(host string) (added bool) {
+// Return true if the host is taken as blocked later
+func addBlockedHost(host string) bool {
 	dm := host2Domain(host)
-	if inAlwaysDs(dm) || hostIsIP(host) || dm == "localhost" {
-		return
+	if hostInAlwaysDirectDs(host) || hostIsIP(host) || dm == "localhost" {
+		return false
 	}
-	// Record blocked time for chou domain, this marks a chou domain as
-	// temporarily blocked
 	if chouDs[dm] {
+		// Record blocked time for chou domain, this marks a chou domain as
+		// temporarily blocked
 		now := time.Now()
 		chou.Lock()
 		chou.time[dm] = now
 		chou.Unlock()
-		added = true
 		debug.Printf("chou domain %s blocked at %v\n", dm, now)
 	} else if !blockedDs.has(dm) {
 		blockedDs.add(dm)
 		blockedDomainChanged = true
-		added = true
 		debug.Printf("%s added to blocked list\n", dm)
 		// Delete this domain from direct domain set
 		delDirectDomain(dm)
 	}
-	return
+	return true
 }
 
 func delBlockedDomain(dm string) {
