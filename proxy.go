@@ -492,6 +492,24 @@ func createDirectConnection(host string) (conn, error) {
 	return conn{c, directConn}, nil
 }
 
+func isConnReset(err error) bool {
+	ne, ok := err.(*net.OpError)
+	if ok {
+		return ne.Err == syscall.ECONNRESET
+	}
+	return false
+}
+
+func maybeBlocked(err error) bool {
+	ne, ok := err.(*net.OpError)
+	if ok {
+		return ne.Timeout() || ne.Err == syscall.ECONNRESET
+	}
+	return false
+}
+
+const connFailedErrCode = "504 Connection failed"
+
 func (c *clientConn) createHandler(r *Request) (*Handler, error) {
 	var err error
 	var srvconn conn
@@ -517,10 +535,9 @@ func (c *clientConn) createHandler(r *Request) (*Handler, error) {
 				goto connDone
 			}
 			// debug.Printf("type of err %v\n", reflect.TypeOf(err))
-			// GFW may cause dns lookup fail, may also cause connection time out
-			// TODO will connection also return reset error?
+			// GFW may cause dns lookup fail, may also cause connection time out or reset
 			if _, ok := err.(*net.DNSError); ok {
-			} else if ne, ok := err.(*net.OpError); ok && ne.Timeout() {
+			} else if maybeBlocked(err) {
 			} else {
 				connFailed = true
 				goto connDone
@@ -532,11 +549,11 @@ func (c *clientConn) createHandler(r *Request) (*Handler, error) {
 				goto connDone
 			}
 			// If socks connection succeeds, it's very likely blocked
-			if config.autoRetry || isHostChouFeng(r.URL.Host) {
+			if config.autoRetry || isHostChouFeng(r.URL.Host) || isConnReset(err) {
 				addBlockedHost(r.URL.Host)
 			} else {
 				srvconn.Close()
-				sendBlockedErrorPage(c.buf.Writer, "503 connection error", err.Error(),
+				sendBlockedErrorPage(c.buf.Writer, connFailedErrCode, err.Error(),
 					genErrMsg(r, "Connection failed.")+genBlockedSiteMsg(r), r)
 				return nil, errPageSent
 			}
@@ -545,7 +562,7 @@ func (c *clientConn) createHandler(r *Request) (*Handler, error) {
 
 connDone:
 	if connFailed {
-		sendErrorPage(c.buf.Writer, "504 Connection failed", err.Error(),
+		sendErrorPage(c.buf.Writer, connFailedErrCode, err.Error(),
 			genErrMsg(r, "Connection failed."))
 		return nil, errPageSent
 	}
