@@ -292,7 +292,7 @@ func genBlockedSiteMsg(r *Request) string {
 }
 
 const (
-	errCodeReset   = "503 connection reset"
+	errCodeReset   = "502 connection reset"
 	errCodeTimeout = "504 time out reading response"
 )
 
@@ -704,8 +704,10 @@ func (h *Handler) doRequest(r *Request, c *clientConn) (err error) {
 	if r.contBuf != nil {
 		debug.Println("Send buffered request body")
 		if _, err = h.buf.Writer.Write(r.contBuf.Bytes()); err != nil {
-			// TODO avoid infinite retry. Maybe clear contBuf to mark request as retried
-			return c.handleServerWriteError(r, h, err, "Send retry request body")
+			sendErrorPage(h.buf.Writer, "502 send request error", err.Error(),
+				"Send retry request body")
+			r.contBuf = nil // let gc recycle memory earlier
+			return errPageSent
 		}
 	} else if r.Method == "POST" {
 		r.contBuf = new(bytes.Buffer)
@@ -725,6 +727,12 @@ func (h *Handler) doRequest(r *Request, c *clientConn) (err error) {
 		}
 	}
 	if err = h.buf.Writer.Flush(); err != nil {
+		if r.contBuf != nil {
+			sendErrorPage(h.buf.Writer, "502 send request error", err.Error(),
+				"Flush retry request")
+			r.contBuf = nil
+			return errPageSent
+		}
 		return c.handleServerWriteError(r, h, err, "Flushing request body")
 	}
 
