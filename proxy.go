@@ -602,9 +602,7 @@ func copyServer2Client(h *Handler, c *clientConn, cliStopped notification, r *Re
 				debug.Println("copyServer2Client blocked site detected, retry")
 				return errRetry
 			} else if isErrTimeout(err) {
-				// TODO close connection after several timeout to avoid
-				// opening too many connections. Either do this here or in
-				// copyClient2Server, or in both function?
+				// copyClient2Server will close the connection and notify cliStopped
 				continue
 			}
 			debug.Printf("copyServer2Client read data: %v\n", err)
@@ -645,9 +643,11 @@ func copyClient2Server(c *clientConn, h *Handler, srvStopped notification, r *Re
 			debug.Println("copyClient2Server set ReadDeadline:", err)
 		}
 		if n, err = c.buf.Read(buf); err != nil {
-			// TODO maybe should always close connection upon timeout to avoid
-			// too many open connections.
 			if isErrTimeout(err) {
+				// close connection upon timeout to avoid too many open connections.
+				if !h.maybeFake() {
+					return
+				}
 				continue
 			} else if err != io.EOF {
 				debug.Printf("copyClient2Server read data: %v\n", err)
