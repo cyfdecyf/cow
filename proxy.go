@@ -765,11 +765,11 @@ func copyWithBuf(w, contBuf io.Writer, r io.Reader, size int64, rMsg, wMsg strin
 		errl.Println(rMsg, err)
 		return
 	}
+	contBuf.Write(buf)
 	if _, err := w.Write(buf); err != nil {
 		errl.Println(wMsg, err)
 		return
 	}
-	contBuf.Write(buf)
 }
 
 // Send response body if header specifies chunked encoding
@@ -783,6 +783,9 @@ func sendBodyChunked(w, contBuf io.Writer, r *bufio.Reader) (err error) {
 			errl.Println("Reading chunk size:", err)
 			return
 		}
+		if contBuf != nil {
+			io.WriteString(contBuf, s+"\r\n")
+		}
 		// debug.Println("Chunk size line", s)
 		f := strings.SplitN(s, ";", 2)
 		var size int64
@@ -793,9 +796,6 @@ func sendBodyChunked(w, contBuf io.Writer, r *bufio.Reader) (err error) {
 		if _, err = io.WriteString(w, s+"\r\n"); err != nil {
 			errl.Println("Writing chunk size:", err)
 			return
-		}
-		if contBuf != nil {
-			io.WriteString(contBuf, s+"\r\n")
 		}
 
 		if size == 0 { // end of chunked data, ignore any trailers
@@ -814,12 +814,12 @@ func sendBodyChunked(w, contBuf io.Writer, r *bufio.Reader) (err error) {
 			errl.Println("Reading chunked data CRLF:", err)
 			return
 		}
+		if contBuf != nil {
+			io.WriteString(contBuf, "\r\n")
+		}
 		if _, err = io.WriteString(w, "\r\n"); err != nil {
 			errl.Println("Writing end line in sendBodyChunked:", err)
 			return
-		}
-		if contBuf != nil {
-			io.WriteString(contBuf, "\r\n")
 		}
 	}
 	return
@@ -844,6 +844,10 @@ func sendBodySplitIntoChunk(w, contBuf io.Writer, r *bufio.Reader) (err error) {
 		}
 
 		sizeStr := fmt.Sprintf("%x\r\n", n)
+		if contBuf != nil {
+			io.WriteString(contBuf, sizeStr)
+			contBuf.Write(buf[:n])
+		}
 		if _, err = io.WriteString(w, sizeStr); err != nil {
 			errl.Printf("Writing chunk size %v\n", err)
 			return
@@ -851,10 +855,6 @@ func sendBodySplitIntoChunk(w, contBuf io.Writer, r *bufio.Reader) (err error) {
 		if _, err = w.Write(buf[:n]); err != nil {
 			errl.Printf("Writing chunk %v\n", err)
 			return
-		}
-		if contBuf != nil {
-			io.WriteString(contBuf, sizeStr)
-			contBuf.Write(buf[:n])
 		}
 	}
 	return
