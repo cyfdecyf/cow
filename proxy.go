@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -427,7 +428,7 @@ func (c *clientConn) readResponse(h *Handler, r *Request) (err error) {
 	}
 
 	if rp.hasBody(r.Method) {
-		if err = sendBody(c.buf.Writer, h.buf.Reader, rp.Chunking, rp.ContLen); err != nil {
+		if err = sendBody(c.buf.Writer, nil, h.buf.Reader, rp.Chunking, rp.ContLen); err != nil {
 			// Non persistent connection will return nil upon successful response reading
 			if err == io.EOF {
 				// For persistent connection, EOF from server is error.
@@ -700,8 +701,15 @@ func (h *Handler) doRequest(r *Request, c *clientConn) (err error) {
 	}
 
 	// Send request body
-	if r.Method == "POST" {
-		if err = sendBody(h.buf.Writer, c.buf.Reader, r.Chunking, r.ContLen); err != nil {
+	if r.contBuf != nil {
+		debug.Println("Send buffered request body")
+		if _, err = h.buf.Writer.Write(r.contBuf.Bytes()); err != nil {
+			// TODO avoid infinite retry. Maybe clear contBuf to mark request as retried
+			return c.handleServerWriteError(r, h, err, "Send retry request body")
+		}
+	} else if r.Method == "POST" {
+		r.contBuf = new(bytes.Buffer)
+		if err = sendBody(h.buf.Writer, r.contBuf, c.buf.Reader, r.Chunking, r.ContLen); err != nil {
 			if err == io.EOF {
 				if r.KeepAlive {
 					errl.Println("Unexpected EOF reading request body from client", r)
@@ -715,16 +723,16 @@ func (h *Handler) doRequest(r *Request, c *clientConn) (err error) {
 			}
 			return
 		}
-		if err = h.buf.Writer.Flush(); err != nil {
-			return c.handleServerWriteError(r, h, err, "Flushing request body")
-		}
+	}
+	if err = h.buf.Writer.Flush(); err != nil {
+		return c.handleServerWriteError(r, h, err, "Flushing request body")
 	}
 
 	return c.readResponse(h, r)
 }
 
 // Send response body if header specifies content length
-func sendBodyWithContLen(w io.Writer, r *bufio.Reader, contLen int64) (err error) {
+func sendBodyWithContLen(w, contBuf io.Writer, r *bufio.Reader, contLen int64) (err error) {
 	// debug.Println("Sending body with content length", contLen)
 	if contLen == 0 {
 		return
@@ -732,15 +740,32 @@ func sendBodyWithContLen(w io.Writer, r *bufio.Reader, contLen int64) (err error
 	// CopyN will copy n bytes unless there's error of EOF. For EOF, it means
 	// the connection is closed, return will propagate till serv function and
 	// close client connection.
-	if _, err = io.CopyN(w, r, contLen); err != nil {
-		debug.Println("Sending response body to client", err)
-		return err
+	if contBuf == nil {
+		if _, err = io.CopyN(w, r, contLen); err != nil {
+			debug.Println("Send response body", err)
+			return err
+		}
+	} else {
+		copyWithBuf(w, contBuf, r, contLen, "Read response body:", "Write response body:")
 	}
 	return
 }
 
+func copyWithBuf(w, contBuf io.Writer, r io.Reader, size int64, rMsg, wMsg string) {
+	buf := make([]byte, size)
+	if _, err := r.Read(buf); err != nil {
+		errl.Println(rMsg, err)
+		return
+	}
+	if _, err := w.Write(buf); err != nil {
+		errl.Println(wMsg, err)
+		return
+	}
+	contBuf.Write(buf)
+}
+
 // Send response body if header specifies chunked encoding
-func sendBodyChunked(w io.Writer, r *bufio.Reader) (err error) {
+func sendBodyChunked(w, contBuf io.Writer, r *bufio.Reader) (err error) {
 	// debug.Println("Sending chunked body")
 	done := false
 	for !done {
@@ -761,15 +786,20 @@ func sendBodyChunked(w io.Writer, r *bufio.Reader) (err error) {
 			errl.Println("Writing chunk size:", err)
 			return
 		}
+		if contBuf != nil {
+			io.WriteString(contBuf, s+"\r\n")
+		}
 
 		if size == 0 { // end of chunked data, ignore any trailers
 			done = true
-		} else {
+		} else if contBuf == nil {
 			// Read chunk data and send to client
 			if _, err = io.CopyN(w, r, size); err != nil {
-				errl.Println("Reading chunked data from server:", err)
+				errl.Println("Copy chunked data:", err)
 				return
 			}
+		} else {
+			copyWithBuf(w, contBuf, r, size, "Read chunked data:", "Write chunked data:")
 		}
 
 		if err = readCheckCRLF(r); err != nil {
@@ -780,11 +810,14 @@ func sendBodyChunked(w io.Writer, r *bufio.Reader) (err error) {
 			errl.Println("Writing end line in sendBodyChunked:", err)
 			return
 		}
+		if contBuf != nil {
+			io.WriteString(contBuf, "\r\n")
+		}
 	}
 	return
 }
 
-func sendBodySplitIntoChunk(w io.Writer, r *bufio.Reader) (err error) {
+func sendBodySplitIntoChunk(w, contBuf io.Writer, r *bufio.Reader) (err error) {
 	buf := make([]byte, bufSize)
 	var n int
 	for {
@@ -792,6 +825,9 @@ func sendBodySplitIntoChunk(w io.Writer, r *bufio.Reader) (err error) {
 		// debug.Println("split into chunk n =", n, "err =", err)
 		if err != nil {
 			io.WriteString(w, "0\r\n\r\n")
+			if contBuf != nil {
+				io.WriteString(contBuf, "0\r\n\r\n")
+			}
 			// EOF is expected here as the server is closing connection.
 			if err == io.EOF {
 				err = nil
@@ -799,7 +835,8 @@ func sendBodySplitIntoChunk(w io.Writer, r *bufio.Reader) (err error) {
 			return
 		}
 
-		if _, err = io.WriteString(w, fmt.Sprintf("%x\r\n", n)); err != nil {
+		sizeStr := fmt.Sprintf("%x\r\n", n)
+		if _, err = io.WriteString(w, sizeStr); err != nil {
 			errl.Printf("Writing chunk size %v\n", err)
 			return
 		}
@@ -807,18 +844,22 @@ func sendBodySplitIntoChunk(w io.Writer, r *bufio.Reader) (err error) {
 			errl.Printf("Writing chunk %v\n", err)
 			return
 		}
+		if contBuf != nil {
+			io.WriteString(contBuf, sizeStr)
+			contBuf.Write(buf[:n])
+		}
 	}
 	return
 }
 
 // Send message body
-func sendBody(w io.Writer, r *bufio.Reader, chunk bool, contLen int64) (err error) {
+func sendBody(w, contBuf io.Writer, r *bufio.Reader, chunk bool, contLen int64) (err error) {
 	if chunk {
-		err = sendBodyChunked(w, r)
+		err = sendBodyChunked(w, contBuf, r)
 	} else if contLen >= 0 {
-		err = sendBodyWithContLen(w, r, contLen)
+		err = sendBodyWithContLen(w, contBuf, r, contLen)
 	} else {
-		err = sendBodySplitIntoChunk(w, r)
+		err = sendBodySplitIntoChunk(w, contBuf, r)
 	}
 	return
 }

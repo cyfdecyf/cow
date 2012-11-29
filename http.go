@@ -25,7 +25,8 @@ type Request struct {
 	Header
 	isConnect bool
 
-	raw bytes.Buffer
+	raw     bytes.Buffer
+	contBuf *bytes.Buffer // will be non nil when retrying request
 }
 
 func (r *Request) String() (s string) {
