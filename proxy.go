@@ -18,6 +18,7 @@ import (
 // What value is appropriate?
 const readTimeout = 15 * time.Second
 const dialTimeout = 10 * time.Second
+const sslLeastDuration = time.Second
 
 // Lots of the code here are learnt from the http package
 
@@ -629,6 +630,7 @@ func copyClient2Server(c *clientConn, h *Handler, srvStopped notification, r *Re
 			return
 		}
 	}
+	start := time.Now()
 	for {
 		if srvStopped.hasNotified() {
 			debug.Println("copyClient2Server server stopped")
@@ -649,10 +651,13 @@ func copyClient2Server(c *clientConn, h *Handler, srvStopped notification, r *Re
 					return
 				}
 				continue
-			} else if err != io.EOF {
-				debug.Printf("copyClient2Server read data: %v\n", err)
-				return
 			}
+			if config.detectSSLErr && (isErrConnReset(err) || err == io.EOF) &&
+				h.maybeSSLErr(start) {
+				info.Println("client connection closed very soon, taken as SSL error:", r)
+				addBlockedHost(r.URL.Host)
+			}
+			debug.Printf("copyClient2Server read data: %v\n", err)
 			return
 		}
 		// When retrying request, should use socks server. So maybeFake
@@ -683,6 +688,13 @@ func (h *Handler) maybeFake() bool {
 	// response yet, then we should set a timeout for read/write.
 	return h.state == hsConnected && h.connType == directConn &&
 		!isHostAlwaysDirect(h.host)
+}
+
+func (h *Handler) maybeSSLErr(cliStart time.Time) bool {
+	// If client closes connection very soon, maybe there's SSL error, maybe
+	// not (e.g. user stopped request).
+	// COW can't which is the this, so this detection is not reliable.
+	return h.state > hsConnected && time.Now().Sub(cliStart) < sslLeastDuration
 }
 
 // Apache 2.2 keep-alive timeout defaults to 5 seconds.
