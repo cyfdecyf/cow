@@ -20,5 +20,8 @@ updateDirect = true
 # Don't enable this under bad network condition
 autoRetry = false
 
+# detect SSL error based on how soon client closes connection, not reliable
+detectSSLErr = true
+
 # empty path means stdout, use /dev/null to disable output
 logFile = ~/.cow/log

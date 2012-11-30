@@ -49,19 +49,19 @@ After this, COW will be started when you login. It will also be restarted upon e
 
 ## Blocked and directly accessible sites list ##
 
-Blocked and directly accessible web sites are specified using their domain names. **COW can't always reliably detect blocked or directly accessible web sites, so you may need to edit those domain list files manually.**
+Blocked and directly accessible web sites are specified using their domain names. **COW can't always reliably detect blocked or directly accessible web sites, so you may need to edit these domain list files manually.**
 
 - You can manually specify blocked and directly accessible domains. Just edit `~/.cow/blocked` and `~/.cow/direct`. **You can put sites that will be incorrectly identified as blocked or directly accessible into these files**.
   - One line for each domain
   - You can use domains like `google.com.hk`
-- When update blocked/direct domains is enabled (default behavior), COW will update `~/.cow/auto-blocked` and `~/.cow/auto-direct` on exit
+- When `updateBlocked` and `updateDirect` option is enabled (default behavior), COW will update `~/.cow/auto-blocked` and `~/.cow/auto-direct` on exit
   - They will only contain domains which you visit
   - Generated PAC file will contain domains in both `direct` and `auto-direct`
-- **For domains which will be temporarily blocked, put them in `~/.cow/chou`**. (They will always go through COW. If you are Chinese, chou stands for 抽风)
+- **For domains which will be temporarily blocked, put them in `~/.cow/chou`**. (They will always go through COW, and COW will decide whether to use parent socks server. If you are Chinese, chou stands for 抽风)
   - `doc/sample-config/chou` contains several such sites
 - Domains appear in `blocked/direct/chou` will not be modified by COW, and will be automatically removed from `auto-blocked` and `auto-direct`
   - Domains appear in both `blocked` and `direct` are taken as blocked, COW will output an error message for such domains
-  - You'd better maintain consistency of `blocked/direct/chou`
+  - You'd better maintain consistency of `blocked/direct/chou` yourself
 
 # How does COW detect blocked sites
 
@@ -72,18 +72,20 @@ Upon the following error, one domain is considered to be blocked
 
 Server connection reset is usually reliable in detecting blocked sites. But timeout is not. **When network condition is bad, connecting to or reading from directly accessible sites may also timeout even if it's not blocked**. Because of this, COW treats connection reset and timeout differently:
 
-- For connection reset, COW will add the domain into blocked domain list and retry HTTP request if possible
-- For timeout error, COW will send back an error page. That page will let user decide whether the domain should be added to blocked list or direct list
-  - For HTTP CONNECT method, COW can't send back error page back to client, so it will also add the domain to blocked list in case of read timeout. This may incorrectly add directly accessible sites to blocked ones
+- For connection reset, COW will add the domain into blocked domain list and retry HTTP request if no response has been sent to client
+- For timeout error, COW will send back an error page. That page will let the user decide whether the domain should be added to blocked list or direct list
   - **If parts of a web page contains elements from a blocked sites, the browser may not display the error page.** In that case, user won't have the chance to add domain to blocked list. Enabling auto retry upon timeout would solve this problem
 
-You can let COW retry HTTP request upon timeout error by setting the `autoRetry` option to true. But don't enable this if you would use COW in a non-reliable network.
+**You can let COW retry HTTP request upon timeout error by setting the `autoRetry` option to true**. But don't enable this if you would use COW in a non-reliable network.
 
-## About SSL connection ##
+## Detecting blocked SSL connection ##
 
-Browsers send HTTP CONNECT to proxy to create SSL connection to the web server. As proxy only passes network traffic between client and server after the connection is created, it does not know what happens in the connection.
+Browsers send HTTP CONNECT method to proxy to create SSL connection to server. As a proxy only passes network traffic between the client and server after the connection is created, it does not know what happens in the connection.
 
-Upon server connection reset or timeout for HTTP CONNECT request, if the server has never sent any response to the client, COW will retry the request using socks server. But it can not detect other kinds of SSL error caused by blockage. In that case, COW can only close the connection to indicate the error to client.
+- Upon server connection reset or timeout for HTTP CONNECT request, if the server has never sent any response to the client, COW will retry the request using socks server
+- One unreliable mechanism used by COW to detect SSL error is based on the following observation: **upon SSL error, the client will close the connection immediately**. If COW notices such situation, it will consider the requested host as blocked. When the client retry the request later, COW will use socks server to create connection to the server
+
+Because COW can not send back error page for HTTP CONNECT method after connection is established, it can't let the user decide whether a domain should be added to blocked list. So when detected blocked site, COW will directly add it to blocked list regardless of the `autoRetry` option.
 
 # Limitations #
 
