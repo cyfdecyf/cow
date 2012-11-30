@@ -72,7 +72,7 @@ func init() {
 	flag.BoolVar(&config.updateBlocked, "updateBlocked", true, "update blocked site list")
 	flag.BoolVar(&config.updateDirect, "updateDirect", true, "update direct site list")
 	flag.BoolVar(&config.autoRetry, "autoRetry", false, "automatically retry timeout requests using socks proxy")
-	flag.BoolVar(&config.detectSSLErr, "detectSSLErr", false, "detect SSL error based on how soon client closes connection")
+	flag.BoolVar(&config.detectSSLErr, "detectSSLErr", true, "detect SSL error based on how soon client closes connection")
 	flag.StringVar(&config.logFile, "logFile", "", "write output to file, empty means stdout")
 	flag.BoolVar(&config.printVer, "version", false, "print version")
 
