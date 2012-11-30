@@ -599,7 +599,7 @@ func copyServer2Client(h *Handler, c *clientConn, cliStopped notification, r *Re
 		}
 		if n, err = h.buf.Read(buf); err != nil {
 			if h.maybeFake() && maybeBlocked(err) && addBlockedHost(r.URL.Host) {
-				debug.Println("copyServer2Client blocked site detected, retry")
+				debug.Printf("copyServer2Client blocked site %s detected, retry\n", r.URL.Host)
 				return errRetry
 			} else if isErrTimeout(err) {
 				// copyClient2Server will close the connection and notify cliStopped
@@ -623,7 +623,7 @@ func copyClient2Server(c *clientConn, h *Handler, srvStopped notification, r *Re
 	var timeout time.Time
 
 	if r.contBuf != nil {
-		debug.Println("copyClient2Server retry request")
+		debug.Println("copyClient2Server retry request:", r)
 		if _, err = h.Write(r.contBuf.Bytes()); err != nil {
 			debug.Println("copyClient2Server send to server error")
 			return
@@ -667,7 +667,7 @@ func copyClient2Server(c *clientConn, h *Handler, srvStopped notification, r *Re
 		// Read is using buffer, so write what have been read directly
 		if _, err = h.Write(buf[0:n]); err != nil {
 			if h.maybeFake() && isErrConnReset(err) && addBlockedHost(r.URL.Host) {
-				debug.Println("copyClient2Server blocked site detected, retry")
+				debug.Printf("copyClient2Server blocked site %d detected, retry\n", r.URL.Host)
 				return errRetry
 			}
 			debug.Printf("copyClient2Server write data: %v\n", err)
@@ -763,7 +763,7 @@ func (h *Handler) doRequest(r *Request, c *clientConn) (err error) {
 
 	// Send request body
 	if r.contBuf != nil {
-		debug.Println("Send buffered request body")
+		debug.Println("Send buffered request body:", r)
 		if _, err = h.buf.Write(r.contBuf.Bytes()); err != nil {
 			sendErrorPage(h.buf.Writer, "502 send request error", err.Error(),
 				"Send retry request body")
