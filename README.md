@@ -77,11 +77,18 @@ Server connection reset is usually reliable in detecting blocked sites. But time
   - For HTTP CONNECT method, COW can't send back error page back to client, so it will also add the domain to blocked list in case of read timeout. This may incorrectly add directly accessible sites to blocked ones
   - **If parts of a web page contains elements from a blocked sites, the browser may not display the error page.** In that case, user won't have the chance to add domain to blocked list. Enabling auto retry upon timeout would solve this problem
 
-You can let COW retry HTTP request upon tiemout error by setting the `autoRetry` option to true. But don't enable this if you would use COW in a non-reliable network.
+You can let COW retry HTTP request upon timeout error by setting the `autoRetry` option to true. But don't enable this if you would use COW in a non-reliable network.
+
+## About SSL connection ##
+
+Browsers send HTTP CONNECT to proxy to create SSL connection to the web server. As proxy only passes network traffic between client and server after the connection is created, it does not know what happens in the connection.
+
+Upon server connection reset or timeout for HTTP CONNECT request, if the server has never sent any response to the client, COW will retry the request using socks server. But it can not detect other kinds of SSL error caused by blockage. In that case, COW can only close the connection to indicate the error to client.
 
 # Limitations #
 
 - Designed to run on your own computer
+  - COW can serve multiple users, but no authentication is provided now
 - No caching, COW just passes traffic between clients and web servers
   - For web browsing, browsers have their own cache
 - Blocked site detection is not always reliable

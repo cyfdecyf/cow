@@ -763,7 +763,7 @@ func (h *Handler) doRequest(r *Request, c *clientConn) (err error) {
 
 	// Send request body
 	if r.contBuf != nil {
-		debug.Println("Send buffered request body:", r)
+		debug.Println("Retry request send buffered body:", r)
 		if _, err = h.buf.Write(r.contBuf.Bytes()); err != nil {
 			sendErrorPage(h.buf.Writer, "502 send request error", err.Error(),
 				"Send retry request body")
