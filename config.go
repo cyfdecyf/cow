@@ -39,6 +39,7 @@ var config struct {
 	updateBlocked bool
 	updateDirect  bool
 	autoRetry     bool
+	detectSSLErr  bool
 	logFile       string
 	printVer      bool
 
@@ -71,6 +72,7 @@ func init() {
 	flag.BoolVar(&config.updateBlocked, "updateBlocked", true, "update blocked site list")
 	flag.BoolVar(&config.updateDirect, "updateDirect", true, "update direct site list")
 	flag.BoolVar(&config.autoRetry, "autoRetry", false, "automatically retry timeout requests using socks proxy")
+	flag.BoolVar(&config.detectSSLErr, "detectSSLErr", false, "detect SSL error based on how soon client closes connection")
 	flag.StringVar(&config.logFile, "logFile", "", "write output to file, empty means stdout")
 	flag.BoolVar(&config.printVer, "version", false, "print version")
 
@@ -147,6 +149,10 @@ func (p configParser) ParseUpdateDirect(val string) {
 
 func (p configParser) ParseAutoRetry(val string) {
 	config.autoRetry = parseBool(val, "autoRetry")
+}
+
+func (p configParser) ParseDetectSSLErr(val string) {
+	config.detectSSLErr = parseBool(val, "detectSSLErr")
 }
 
 func (p configParser) ParseLogFile(val string) {
