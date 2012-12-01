@@ -41,7 +41,7 @@ func runSSH() {
 		if err := cmd.Run(); err != nil {
 			debug.Println("ssh:", err)
 		}
-		debug.Println("ssh exited, reconnect")
+		// debug.Println("ssh exited, reconnect")
 		time.Sleep(5 * time.Second)
 		alreadyRunPrinted = false
 	}

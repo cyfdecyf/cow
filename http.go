@@ -25,7 +25,8 @@ type Request struct {
 	Header
 	isConnect bool
 
-	raw bytes.Buffer
+	raw     bytes.Buffer
+	contBuf *bytes.Buffer // will be non nil when retrying request
 }
 
 func (r *Request) String() (s string) {
@@ -86,6 +87,7 @@ const (
 // For port, return empty string if no port specified.
 func splitHostPort(s string) (host, port string) {
 	// Common case should has no port, check the last char first
+	// Update: as port is always added, this is no longer common case in COW
 	if !IsDigit(s[len(s)-1]) {
 		return s, ""
 	}
@@ -121,7 +123,9 @@ func ParseRequestURI(rawurl string) (*URL, error) {
 	} else {
 		scheme = strings.ToLower(f[0])
 		if scheme != "http" && scheme != "https" {
-			return nil, errors.New(scheme + " protocol not supported")
+			msg := scheme + " protocol not supported"
+			errl.Println(msg)
+			return nil, errors.New(msg)
 		}
 		rest = f[1]
 	}
@@ -134,9 +138,16 @@ func ParseRequestURI(rawurl string) (*URL, error) {
 	} else {
 		path = "/" + f[1]
 	}
+	// Must add port in host so it can be used as key to find the correct
+	// server connection.
+	// e.g. google.com:80 and google.com:443 should use different connections.
 	_, port := splitHostPort(host)
 	if port == "" {
-		host += ":80"
+		if len(scheme) == 4 {
+			host += ":80"
+		} else {
+			host += ":443"
+		}
 	}
 
 	return &URL{Host: host, Path: path, Scheme: scheme}, nil

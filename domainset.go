@@ -2,7 +2,9 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"io"
+	"log"
 	"os"
 	"path"
 	"sort"
@@ -10,6 +12,9 @@ import (
 	"sync"
 	"time"
 )
+
+// Use direct connection after blocked for chouTimeout
+const chouTimeout = 2 * time.Minute
 
 type domainSet map[string]bool
 
@@ -105,8 +110,6 @@ func isHostAlwaysBlocked(host string) bool {
 	return alwaysBlockedDs[host2Domain(h)]
 }
 
-const blockTimeout = time.Minute
-
 func isHostBlocked(host string) bool {
 	dm := host2Domain(host)
 	if alwaysDirectDs[dm] {
@@ -122,7 +125,7 @@ func isHostBlocked(host string) bool {
 		if !ok {
 			return false
 		}
-		if time.Now().Sub(t) < blockTimeout {
+		if time.Now().Sub(t) < chouTimeout {
 			return true
 		}
 		chou.Lock()
@@ -211,20 +214,14 @@ func delDirectDomain(dm string) {
 }
 
 func writeBlockedDs() {
-	if !config.updateBlocked {
-		return
-	}
-	if !blockedDomainChanged {
+	if !config.updateBlocked || !blockedDomainChanged {
 		return
 	}
 	writeDomainList(config.blockedFile, blockedDs.toArray())
 }
 
 func writeDirectDs() {
-	if !config.updateDirect {
-		return
-	}
-	if !directDomainChanged {
+	if !config.updateDirect || !directDomainChanged {
 		return
 	}
 	writeDomainList(config.directFile, directDs.toArray())
@@ -296,7 +293,28 @@ func loadDomainList(fpath string) (lst []string, err error) {
 	return
 }
 
+func mkConfigDir() (err error) {
+	stat, err := os.Stat(config.dir)
+	if err == nil {
+		if stat.IsDir() {
+			return
+		}
+		log.Printf("%s is not directory, can't write domain list\n", config.dir)
+		return errors.New("config.dir is not directory")
+	}
+	if os.IsNotExist(err) {
+		err = os.Mkdir(config.dir, 0755)
+	}
+	if err != nil {
+		log.Printf("Config directory %s: %v\n", config.dir, err)
+	}
+	return
+}
+
 func writeDomainList(fpath string, lst []string) (err error) {
+	if err = mkConfigDir(); err != nil {
+		return
+	}
 	tmpPath := path.Join(config.dir, "tmp-domain")
 	f, err := os.Create(tmpPath)
 	if err != nil {
