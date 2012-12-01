@@ -4,6 +4,9 @@ cpu=`uname -m`
 case $cpu in
     "x86_64")
         ;;
+    "i386" | "i486" | "i686")
+        cpu="i386"
+        ;;
     *)
         echo "$cpu currently has no precompiled binary"
         ;;
