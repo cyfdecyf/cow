@@ -13,6 +13,9 @@ import (
 	"time"
 )
 
+// Use direct connection after blocked for chouTimeout
+const chouTimeout = 2 * time.Minute
+
 type domainSet map[string]bool
 
 // Basically a concurrent map. I don't want to use channels to implement
@@ -107,8 +110,6 @@ func isHostAlwaysBlocked(host string) bool {
 	return alwaysBlockedDs[host2Domain(h)]
 }
 
-const blockTimeout = time.Minute
-
 func isHostBlocked(host string) bool {
 	dm := host2Domain(host)
 	if alwaysDirectDs[dm] {
@@ -124,7 +125,7 @@ func isHostBlocked(host string) bool {
 		if !ok {
 			return false
 		}
-		if time.Now().Sub(t) < blockTimeout {
+		if time.Now().Sub(t) < chouTimeout {
 			return true
 		}
 		chou.Lock()
