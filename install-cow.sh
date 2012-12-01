@@ -71,7 +71,7 @@ chmod +x $tmpbin ||
     exit_on_fail "Can't chmod for $tmpbin"
 
 # Download sample config file if no configuration directory present
-doc_base="https://raw.github.com/cyfdecyf/cow/master/doc"
+doc_base="https://github.com/cyfdecyf/cow/raw/master/doc"
 config_dir="$HOME/.cow"
 if [ ! -e $config_dir ]; then
     sample_config_base="${doc_base}/sample-config"
@@ -88,9 +88,10 @@ fi
 if [ $start_on_login == "y" ]; then
     la_dir="$HOME/Library/LaunchAgents"
     plist="info.chenyufei.cow.plist"
+    plist_url="$doc_base/osx/$plist"
     mkdir -p $la_dir && exit_on_fail "Can't create directory $la_dir"
-    echo "Downloading $doc_base/$plist to $la_dir/$plist"
-    curl -s -L "$doc_base/$plist" | \
+    echo "Downloading $plist_url to $la_dir/$plist"
+    curl -s -L "$plist_url" | \
         sed -e "s,COWBINARY,$install_dir/cow," > $la_dir/$plist || \
         exit_on_fail "Download startup plist file to $la_dir failed"
 fi
