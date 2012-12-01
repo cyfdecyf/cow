@@ -7,8 +7,10 @@ socks = 127.0.0.1:1080
 # Nubmer of cores to use
 core = 2
 
-# ssh to the given server to start socks proxy
-#sshServer = gfw
+# ssh to the server to start socks proxy (requires public key authentication)
+# If option is not empty, COW will run the following command:
+# "ssh -n -N -D <port in socks option> <sshServer>"
+#sshServer = user@server
 
 # Update blocked domain list (~/.cow/auto-blocked)
 updateBlocked = true
