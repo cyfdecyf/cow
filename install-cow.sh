@@ -79,7 +79,7 @@ if [ ! -e $config_dir ]; then
     mkdir -p $config_dir || exit_on_fail "Can't create $config_dir directory"
     for f in rc blocked direct; do
         echo "Downloading $sample_config_base/$f to $config_dir/$f"
-        curl -s "$sample_config_base/$f" -o $config_dir/$f || \
+        curl -s -L "$sample_config_base/$f" -o $config_dir/$f || \
             exit_on_fail "Downloading sample config file $f failed"
     done
 fi
@@ -90,7 +90,7 @@ if [ $start_on_login == "y" ]; then
     plist="info.chenyufei.cow.plist"
     mkdir -p $la_dir && exit_on_fail "Can't create directory $la_dir"
     echo "Downloading $doc_base/$plist to $la_dir/$plist"
-    curl -s "$doc_base/$plist" | \
+    curl -s -L "$doc_base/$plist" | \
         sed -e "s,COWBINARY,$install_dir/cow," > $la_dir/$plist || \
         exit_on_fail "Download startup plist file to $la_dir failed"
 fi
