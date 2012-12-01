@@ -6,7 +6,7 @@
     <string>info.chenyufei.cow</string>
     <key>ProgramArguments</key>
     <array>
-	<string>/usr/local/mygo/bin/cow</string>
+	<string>COWBINARY</string>
     </array>
     <key>KeepAlive</key>
     <dict>
