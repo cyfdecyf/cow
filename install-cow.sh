@@ -31,7 +31,8 @@ exit_on_fail() {
 
 # Get installation directory from user
 echo -n "Install cow binary to which directory (absolute path): "
-read install_dir
+read install_dir </dev/tty
+echo
 if [ -z $install_dir ]; then
     echo "No installation directory given, assuming current directory"
     install_dir=`pwd`
@@ -45,7 +46,7 @@ fi
 if [ $os == "Darwin" ]; then
     while true; do
         echo -n "Start COW upon login? (If yes, download a plist file to ~/Library/LaunchAgents) [Y/n] "
-        read start_on_login
+        read start_on_login </dev/tty
         case $start_on_login in
         "Y" | "y" | "")
             start_on_login="y"
