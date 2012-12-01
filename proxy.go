@@ -840,7 +840,7 @@ func copyWithBuf(w, contBuf io.Writer, r io.Reader, size int64, rMsg, wMsg strin
 	}
 	contBuf.Write(buf)
 	if _, err := w.Write(buf); err != nil {
-		errl.Println(wMsg, err)
+		debug.Println(wMsg, err)
 		return
 	}
 }
@@ -867,7 +867,7 @@ func sendBodyChunked(w, contBuf io.Writer, r *bufio.Reader) (err error) {
 			return
 		}
 		if _, err = io.WriteString(w, s+"\r\n"); err != nil {
-			errl.Println("Writing chunk size:", err)
+			debug.Println("Writing chunk size in sendBodyChunked:", err)
 			return
 		}
 
@@ -876,7 +876,7 @@ func sendBodyChunked(w, contBuf io.Writer, r *bufio.Reader) (err error) {
 		} else if contBuf == nil {
 			// Read chunk data and send to client
 			if _, err = io.CopyN(w, r, size); err != nil {
-				errl.Println("Copy chunked data:", err)
+				debug.Println("Copy chunked data:", err)
 				return
 			}
 		} else {
@@ -884,14 +884,14 @@ func sendBodyChunked(w, contBuf io.Writer, r *bufio.Reader) (err error) {
 		}
 
 		if err = readCheckCRLF(r); err != nil {
-			errl.Println("Reading chunked data CRLF:", err)
+			debug.Println("Reading chunked data CRLF:", err)
 			return
 		}
 		if contBuf != nil {
 			io.WriteString(contBuf, "\r\n")
 		}
 		if _, err = io.WriteString(w, "\r\n"); err != nil {
-			errl.Println("Writing end line in sendBodyChunked:", err)
+			debug.Println("Writing end line in sendBodyChunked:", err)
 			return
 		}
 	}
@@ -922,11 +922,11 @@ func sendBodySplitIntoChunk(w, contBuf io.Writer, r *bufio.Reader) (err error) {
 			contBuf.Write(buf[:n])
 		}
 		if _, err = io.WriteString(w, sizeStr); err != nil {
-			errl.Printf("Writing chunk size %v\n", err)
+			debug.Printf("Writing chunk size %v\n", err)
 			return
 		}
 		if _, err = w.Write(buf[:n]); err != nil {
-			errl.Printf("Writing chunk %v\n", err)
+			debug.Printf("Writing chunk data%v\n", err)
 			return
 		}
 	}
