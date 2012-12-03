@@ -2,8 +2,8 @@ package main
 
 import (
 	"flag"
-	"os"
 	"fmt"
+	"os"
 	"os/signal"
 	"runtime"
 	"syscall"
@@ -42,6 +42,7 @@ func main() {
 	}
 
 	initLog()
+	loadDomainSet()
 	/*
 		if *cpuprofile != "" {
 			f, err := os.Create(*cpuprofile)
