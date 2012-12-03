@@ -8,7 +8,6 @@ import (
 	"io"
 	"net"
 	"os"
-	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -127,7 +126,6 @@ func (c *clientConn) close() {
 		debug.Printf("Client %v connection closed\n", c.RemoteAddr())
 	}
 	c = nil
-	runtime.GC()
 }
 
 func isSelfURL(h string) bool {
