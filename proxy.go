@@ -54,8 +54,6 @@ type Handler struct {
 	lastUse time.Time
 }
 
-var one = make([]byte, 1)
-
 func newHandler(c conn, host string) *Handler {
 	return &Handler{
 		conn: c,
