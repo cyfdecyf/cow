@@ -4,7 +4,6 @@ package main
 // https://groups.google.com/d/msg/golang-nuts/gU7oQGoCkmg/j3nNxuS2O_sJ
 
 import (
-	"bufio"
 	"flag"
 	"fmt"
 	"io"
@@ -26,7 +25,6 @@ var (
 	dbgRep responseLogging
 
 	logFile io.Writer
-	logBuf  *bufio.Writer // only set if output is not stdio
 
 	debugLog, errorLog, requestLog, responseLog *log.Logger
 )
@@ -57,8 +55,7 @@ func initLog() {
 			os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600); err != nil {
 			fmt.Printf("Can't open log file, logging to stdout: %v\n", err)
 		} else {
-			logBuf = bufio.NewWriter(f)
-			logFile = logBuf
+			logFile = f
 		}
 	}
 	log.SetOutput(logFile)

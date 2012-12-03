@@ -19,9 +19,6 @@ func sigHandler() {
 	for sig := range sigChan {
 		info.Printf("%v caught, exit\n", sig)
 		writeDomainSet()
-		if logBuf != nil {
-			logBuf.Flush()
-		}
 		break
 	}
 	os.Exit(0)
