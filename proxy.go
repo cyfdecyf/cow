@@ -654,7 +654,7 @@ func copyClient2Server(c *clientConn, h *Handler, srvStopped notification, r *Re
 			}
 			if config.detectSSLErr && (isErrConnReset(err) || err == io.EOF) &&
 				h.maybeSSLErr(start) {
-				info.Println("client connection closed very soon, taken as SSL error:", r)
+				debug.Println("client connection closed very soon, taken as SSL error:", r)
 				addBlockedHost(r.URL.Host)
 			}
 			debug.Printf("copyClient2Server read data: %v\n", err)
