@@ -642,10 +642,10 @@ func copyClient2Server(c *clientConn, h *Handler, srvStopped notification, r *Re
 		}
 		if n, err = c.buf.Read(buf); err != nil {
 			if isErrTimeout(err) {
-				// close connection upon timeout to avoid too many open connections.
-				if !h.maybeFake() {
-					return
-				}
+				// Applications like Twitter for Mac needs long connection for
+				// live stream. So should not close connection here. But this
+				// will have the risk that socks server will report too many
+				// open connections.
 				continue
 			}
 			if config.detectSSLErr && (isErrConnReset(err) || err == io.EOF) &&
