@@ -15,7 +15,7 @@ const pacDirect = `function FindProxyForURL(url, host) {
 `
 
 const pacRawTmpl = `var direct = 'DIRECT';
-var httpProxy = 'PROXY {{.ProxyAddr}}; DIRECT';
+var httpProxy = '{{.ProxyAddr}}';
 
 var directList = [
 "localhost",
@@ -71,6 +71,28 @@ func init() {
 	}
 }
 
+var proxyServerAddr string
+
+func initProxyServerAddr() {
+	listen, port := splitHostPort(config.listenAddr)
+	if listen == "0.0.0.0" {
+		addrs, err := hostIP()
+		if err != nil {
+			errl.Println("Either change listen address to specific IP, or correct your host network settings.")
+			os.Exit(1)
+		}
+
+		for _, ip := range addrs {
+			proxyServerAddr += fmt.Sprintf("PROXY %s:%s; ", ip, port)
+		}
+		proxyServerAddr += "DIRECT"
+		info.Printf("proxy listen address is %s, PAC will have proxy address: %s\n",
+			config.listenAddr, proxyServerAddr)
+	} else {
+		proxyServerAddr = config.listenAddr
+	}
+}
+
 func genPAC() string {
 	// domains in PAC file needs double quote
 	ds1 := strings.Join(alwaysDirectDs.toArray(), "\",\n\"")
@@ -93,7 +115,7 @@ func genPAC() string {
 		ProxyAddr     string
 		DirectDomains string
 	}{
-		config.listenAddr,
+		proxyServerAddr,
 		ds,
 	}
 

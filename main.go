@@ -28,6 +28,7 @@ func main() {
 	// Parse flags after load config to allow override options in config
 	loadConfig()
 	flag.Parse()
+	initProxyServerAddr()
 
 	if config.socksAddr == "" {
 		fmt.Println("Socks server address required")

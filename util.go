@@ -2,6 +2,8 @@ package main
 
 import (
 	"bufio"
+	"net"
+	"os"
 	"runtime"
 )
 
@@ -52,4 +54,20 @@ func (n notification) hasNotified() bool {
 
 func isWindows() bool {
 	return runtime.GOOS == "windows"
+}
+
+// Get host IP address
+func hostIP() (addrs []string, err error) {
+	name, err := os.Hostname()
+	if err != nil {
+		errl.Printf("Error get host name: %v\n", err)
+		return
+	}
+
+	addrs, err = net.LookupHost(name)
+	if err != nil {
+		errl.Printf("Error getting host IP address: %v\n", err)
+		return
+	}
+	return
 }
