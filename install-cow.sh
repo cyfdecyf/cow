@@ -1,5 +1,7 @@
 #!/bin/bash
 
+version=0.3.3
+
 cpu=`uname -m`
 case $cpu in
     "x86_64")
@@ -65,10 +67,9 @@ fi
 
 # Download COW binary
 tmpbin=/tmp/cow
-binary_base="https://github.com/downloads/cyfdecyf/cow"
-binary="cow-$binary-$cpu"
-echo "Downloading cow binary to $tmpbin"
-curl -L "$binary_base/$binary" -o $tmpbin || \
+binary_url="https://github.com/downloads/cyfdecyf/cow/cow-$binary-$cpu-$version"
+echo "Downloading cow binary $binary_url to $tmpbin"
+curl -L "$binary_url" -o $tmpbin || \
     exit_on_fail "Downloading cow binary failed"
 chmod +x $tmpbin ||
     exit_on_fail "Can't chmod for $tmpbin"
