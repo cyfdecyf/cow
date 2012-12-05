@@ -1,0 +1,6 @@
+0.3.3 (2012-12-05)
+
+    * Keep HTTP CONNECT connection open. Avoid problems for Application which
+    uses long connection.
+
+    * Fix crash when printing domain inconsistency message.
