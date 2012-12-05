@@ -8,7 +8,6 @@ import (
 	"io"
 	"net"
 	"os"
-	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -54,8 +53,6 @@ type Handler struct {
 	state   handlerState
 	lastUse time.Time
 }
-
-var one = make([]byte, 1)
 
 func newHandler(c conn, host string) *Handler {
 	return &Handler{
@@ -127,7 +124,6 @@ func (c *clientConn) close() {
 		debug.Printf("Client %v connection closed\n", c.RemoteAddr())
 	}
 	c = nil
-	runtime.GC()
 }
 
 func isSelfURL(h string) bool {
@@ -646,15 +642,15 @@ func copyClient2Server(c *clientConn, h *Handler, srvStopped notification, r *Re
 		}
 		if n, err = c.buf.Read(buf); err != nil {
 			if isErrTimeout(err) {
-				// close connection upon timeout to avoid too many open connections.
-				if !h.maybeFake() {
-					return
-				}
+				// Applications like Twitter for Mac needs long connection for
+				// live stream. So should not close connection here. But this
+				// will have the risk that socks server will report too many
+				// open connections.
 				continue
 			}
 			if config.detectSSLErr && (isErrConnReset(err) || err == io.EOF) &&
 				h.maybeSSLErr(start) {
-				info.Println("client connection closed very soon, taken as SSL error:", r)
+				debug.Println("client connection closed very soon, taken as SSL error:", r)
 				addBlockedHost(r.URL.Host)
 			}
 			debug.Printf("copyClient2Server read data: %v\n", err)
@@ -840,7 +836,7 @@ func copyWithBuf(w, contBuf io.Writer, r io.Reader, size int64, rMsg, wMsg strin
 	}
 	contBuf.Write(buf)
 	if _, err := w.Write(buf); err != nil {
-		errl.Println(wMsg, err)
+		debug.Println(wMsg, err)
 		return
 	}
 }
@@ -867,7 +863,7 @@ func sendBodyChunked(w, contBuf io.Writer, r *bufio.Reader) (err error) {
 			return
 		}
 		if _, err = io.WriteString(w, s+"\r\n"); err != nil {
-			errl.Println("Writing chunk size:", err)
+			debug.Println("Writing chunk size in sendBodyChunked:", err)
 			return
 		}
 
@@ -876,7 +872,7 @@ func sendBodyChunked(w, contBuf io.Writer, r *bufio.Reader) (err error) {
 		} else if contBuf == nil {
 			// Read chunk data and send to client
 			if _, err = io.CopyN(w, r, size); err != nil {
-				errl.Println("Copy chunked data:", err)
+				debug.Println("Copy chunked data:", err)
 				return
 			}
 		} else {
@@ -884,14 +880,14 @@ func sendBodyChunked(w, contBuf io.Writer, r *bufio.Reader) (err error) {
 		}
 
 		if err = readCheckCRLF(r); err != nil {
-			errl.Println("Reading chunked data CRLF:", err)
+			debug.Println("Reading chunked data CRLF:", err)
 			return
 		}
 		if contBuf != nil {
 			io.WriteString(contBuf, "\r\n")
 		}
 		if _, err = io.WriteString(w, "\r\n"); err != nil {
-			errl.Println("Writing end line in sendBodyChunked:", err)
+			debug.Println("Writing end line in sendBodyChunked:", err)
 			return
 		}
 	}
@@ -922,11 +918,11 @@ func sendBodySplitIntoChunk(w, contBuf io.Writer, r *bufio.Reader) (err error) {
 			contBuf.Write(buf[:n])
 		}
 		if _, err = io.WriteString(w, sizeStr); err != nil {
-			errl.Printf("Writing chunk size %v\n", err)
+			debug.Printf("Writing chunk size %v\n", err)
 			return
 		}
 		if _, err = w.Write(buf[:n]); err != nil {
-			errl.Printf("Writing chunk %v\n", err)
+			debug.Printf("Writing chunk data%v\n", err)
 			return
 		}
 	}

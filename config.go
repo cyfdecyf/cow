@@ -28,7 +28,7 @@ const (
 	chouFname          = "chou"
 	rcFname            = "rc"
 
-	version = "0.3.2"
+	version = "0.3.3"
 )
 
 var config struct {
@@ -159,7 +159,7 @@ func (p configParser) ParseLogFile(val string) {
 	config.logFile = val
 }
 
-func parseConfig() {
+func loadConfig() {
 	f, err := openFile(config.rcFile)
 	if f == nil || err != nil {
 		return
@@ -209,11 +209,6 @@ func parseConfig() {
 		args := []reflect.Value{reflect.ValueOf(val)}
 		method.Call(args)
 	}
-}
-
-func loadConfig() {
-	parseConfig()
-	loadDomainSet()
 }
 
 func setSelfURL() {

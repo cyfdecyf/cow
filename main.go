@@ -2,8 +2,8 @@ package main
 
 import (
 	"flag"
-	"os"
 	"fmt"
+	"os"
 	"os/signal"
 	"runtime"
 	"syscall"
@@ -19,9 +19,6 @@ func sigHandler() {
 	for sig := range sigChan {
 		info.Printf("%v caught, exit\n", sig)
 		writeDomainSet()
-		if logBuf != nil {
-			logBuf.Flush()
-		}
 		break
 	}
 	os.Exit(0)
@@ -45,6 +42,7 @@ func main() {
 	}
 
 	initLog()
+	loadDomainSet()
 	/*
 		if *cpuprofile != "" {
 			f, err := os.Create(*cpuprofile)
