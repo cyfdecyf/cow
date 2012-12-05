@@ -15,14 +15,15 @@ COW is a HTTP proxy that tries to **automatically identify blocked websites and 
 
 # Installation #
 
-## Pre-compiled binary (Recommended)
+## Pre-compiled binary
 
 The following pre-compiled binaries are provided for systems running on Intel processors:
 
 - 64-bit binary for OS X
 - 64-bit and 32-bit binaries for Linux
+- 32-bit binary for Windows
 
-Run the following command to install pre-compiled binary (curl is required, along with trust):
+On OS X or Linux, run the following command to install pre-compiled binary (curl is required, along with trust):
 
     curl -s -L https://github.com/cyfdecyf/cow/raw/master/install-cow.sh | bash
 
