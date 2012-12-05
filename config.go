@@ -83,6 +83,11 @@ func init() {
 	config.alwaysDirectFile = path.Join(config.dir, alwaysDirectFname)
 	config.chouFile = path.Join(config.dir, chouFname)
 	config.rcFile = path.Join(config.dir, rcFname)
+
+	// Make it easy to find config directory on windows
+	if isWindows() {
+		fmt.Println("Config directory:", config.dir)
+	}
 }
 
 // Tries to open a file, if file not exist, return both nil for os.File and

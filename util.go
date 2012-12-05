@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"runtime"
 )
 
 // Almost same with net/textproto/reader.go ReadLine
@@ -47,4 +48,8 @@ func (n notification) hasNotified() bool {
 		return false
 	}
 	return false
+}
+
+func isWindows() bool {
+	return runtime.GOOS == "windows"
 }

@@ -8,7 +8,6 @@ import (
 	"log"
 	"os"
 	"path"
-	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -331,7 +330,7 @@ func writeDomainList(fpath string, lst []string) (err error) {
 	f.Close()
 
 	// On windows, can't rename to a file which already exists.
-	if runtime.GOOS == "windows" {
+	if isWindows() {
 		if err = os.Remove(fpath); err != nil {
 			errl.Println("Can't remove domain list", fpath, "for update")
 		}
