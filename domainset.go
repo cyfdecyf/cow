@@ -351,6 +351,10 @@ var topLevelDomain = map[string]bool{
 
 func host2Domain(host string) (domain string) {
 	host, _ = splitHostPort(host)
+	// Remove trailing dot at the end of host name
+	if len(host) > 0 && host[len(host)-1] == '.' {
+		host = host[:len(host)-1]
+	}
 	lastDot := strings.LastIndex(host, ".")
 	if lastDot == -1 {
 		return host // simple host name, we should not hanlde this

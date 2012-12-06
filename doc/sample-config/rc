@@ -1,4 +1,5 @@
 # proxy listen address
+# 0.0.0.0 can be used if host IP address can be detected
 listen = 127.0.0.1:7777
 
 # parent socks proxy address
