@@ -4,7 +4,6 @@ import (
 	"errors"
 	"io"
 	"net"
-	"os"
 	"strconv"
 )
 
@@ -36,12 +35,18 @@ func createSocksConnection(hostFull string) (cn conn, err error) {
 		debug.Printf("Can't connect to socks server %v\n", err)
 		return
 	}
+	hasErr := false
+	defer func() {
+		if hasErr {
+			c.Close()
+		}
+	}()
 	// debug.Println("Connected to socks server")
 
 	var n int
 	if n, err = c.Write(socksMsgVerMethodSelection); n != 3 || err != nil {
 		errl.Printf("sending ver/method selection msg %v n = %v\n", err, n)
-		c.Close()
+		hasErr = true
 		return
 	}
 
@@ -50,13 +55,13 @@ func createSocksConnection(hostFull string) (cn conn, err error) {
 	_, err = c.Read(repBuf)
 	if err != nil {
 		errl.Printf("read ver/method selection error %v\n", err)
-		c.Close()
+		hasErr = true
 		return
 	}
 	if repBuf[0] != 5 || repBuf[1] != 0 {
 		errl.Printf("socks ver/method selection reply error ver %d method %d",
 			repBuf[0], repBuf[1])
-		c.Close()
+		hasErr = true
 		return
 	}
 	// debug.Println("Socks version selection done")
@@ -66,7 +71,8 @@ func createSocksConnection(hostFull string) (cn conn, err error) {
 	port, err := strconv.Atoi(portStr)
 	if err != nil {
 		errl.Printf("Should not happen, port error %v\n", port)
-		os.Exit(1)
+		hasErr = true
+		return
 	}
 
 	hostLen := len(host)
@@ -89,6 +95,7 @@ func createSocksConnection(hostFull string) (cn conn, err error) {
 
 	if n, err = c.Write(reqBuf); err != nil || n != bufLen {
 		errl.Printf("Send socks request err %v n %d\n", err, n)
+		hasErr = true
 		return
 	}
 
@@ -100,20 +107,24 @@ func createSocksConnection(hostFull string) (cn conn, err error) {
 		if err != io.EOF {
 			errl.Printf("Read socks reply err %v n %d\n", err, n)
 		}
+		hasErr = true
 		return conn{}, errors.New("Connection failed (by socks server). No such host?")
 	}
 	// debug.Printf("Socks reply length %d\n", n)
 
 	if replyBuf[0] != 5 {
 		errl.Printf("Socks reply connect %s VER %d not supported\n", hostFull, replyBuf[0])
+		hasErr = true
 		return conn{}, socksProtocolErr
 	}
 	if replyBuf[1] != 0 {
 		errl.Printf("Socks reply connect %s error %d\n", hostFull, socksError[replyBuf[1]])
+		hasErr = true
 		return conn{}, socksProtocolErr
 	}
 	if replyBuf[3] != 1 {
 		errl.Printf("Socks reply connect %s ATYP %d\n", hostFull, replyBuf[3])
+		hasErr = true
 		return conn{}, socksProtocolErr
 	}
 
