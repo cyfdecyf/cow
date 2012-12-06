@@ -89,7 +89,7 @@ func initProxyServerAddr() {
 		info.Printf("proxy listen address is %s, PAC will have proxy address: %s\n",
 			config.listenAddr, proxyServerAddr)
 	} else {
-		proxyServerAddr = config.listenAddr
+		proxyServerAddr = fmt.Sprintf("PROXY %s; DIRECT", config.listenAddr)
 	}
 }
 
