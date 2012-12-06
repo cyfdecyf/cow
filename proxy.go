@@ -46,6 +46,8 @@ type conn struct {
 	connType
 }
 
+var zeroConn = conn{}
+
 type Handler struct {
 	conn
 	buf     *bufio.ReadWriter
@@ -514,63 +516,58 @@ func maybeBlocked(err error) bool {
 
 const connFailedErrCode = "504 Connection failed"
 
-func (c *clientConn) createHandler(r *Request) (*Handler, error) {
-	var err error
-	var srvconn conn
-	connFailed := false
-
-	if isHostBlocked(r.URL.Host) {
+func (c *clientConn) createConnection(host string, r *Request) (srvconn conn, err error) {
+	if isHostBlocked(host) {
 		// In case of connection error to socks server, fallback to direct connection
-		if srvconn, err = createSocksConnection(r.URL.Host); err != nil {
-			if isHostAlwaysBlocked(r.URL.Host) {
-				connFailed = true
-				goto connDone
-			}
-			if srvconn, err = createDirectConnection(r.URL.Host); err != nil {
-				connFailed = true
-				goto connDone
-			}
+		if srvconn, err = createSocksConnection(host); err == nil {
+			return
+		}
+		if isHostAlwaysBlocked(host) {
+			goto fail
+		}
+		if srvconn, err = createDirectConnection(host); err == nil {
+			return
 		}
 	} else {
 		// In case of error on direction connection, try socks server
-		if srvconn, err = createDirectConnection(r.URL.Host); err != nil {
-			if isHostAlwaysDirect(r.URL.Host) || hostIsIP(r.URL.Host) {
-				connFailed = true
-				goto connDone
-			}
-			// debug.Printf("type of err %v\n", reflect.TypeOf(err))
-			// GFW may cause dns lookup fail, may also cause connection time out or reset
-			if _, ok := err.(*net.DNSError); ok {
-			} else if maybeBlocked(err) {
-			} else {
-				connFailed = true
-				goto connDone
-			}
+		if srvconn, err = createDirectConnection(host); err == nil {
+			return
+		}
+		if isHostAlwaysDirect(host) || hostIsIP(host) {
+			goto fail
+		}
+		// debug.Printf("type of err %v\n", reflect.TypeOf(err))
+		// GFW may cause dns lookup fail, may also cause connection time out or reset
+		if _, ok := err.(*net.DNSError); ok || maybeBlocked(err) {
 			// Try to create socks connection
 			var socksErr error
-			if srvconn, socksErr = createSocksConnection(r.URL.Host); socksErr != nil {
-				connFailed = true
-				goto connDone
-			}
-			// If socks connection succeeds, it's very likely blocked
-			if config.autoRetry || isHostChouFeng(r.URL.Host) || isErrConnReset(err) {
-				addBlockedHost(r.URL.Host)
-			} else {
+			if srvconn, socksErr = createSocksConnection(host); socksErr == nil {
+				// Connection reset is very likely caused by GFW, directly add
+				// to blocked list. Timeout error is not reliable detecting
+				// blocked site, ask the user unless autoRetry is enabled.
+				if config.autoRetry || isHostChouFeng(host) || isErrConnReset(err) {
+					addBlockedHost(host)
+					return srvconn, nil
+				}
 				srvconn.Close()
 				sendBlockedErrorPage(c.buf.Writer, connFailedErrCode, err.Error(),
 					genErrMsg(r, "Connection failed.")+genBlockedSiteMsg(r), r)
-				return nil, errPageSent
+				return zeroConn, errPageSent
 			}
 		}
 	}
 
-connDone:
-	if connFailed {
-		sendErrorPage(c.buf.Writer, connFailedErrCode, err.Error(),
-			genErrMsg(r, "Connection failed."))
-		return nil, errPageSent
-	}
+fail:
+	sendErrorPage(c.buf.Writer, connFailedErrCode, err.Error(),
+		genErrMsg(r, "Connection failed."))
+	return zeroConn, errPageSent
+}
 
+func (c *clientConn) createHandler(r *Request) (*Handler, error) {
+	srvconn, err := c.createConnection(r.URL.Host, r)
+	if err != nil {
+		return nil, err
+	}
 	h := newHandler(srvconn, r.URL.Host)
 	if r.isConnect {
 		// Don't put connection for CONNECT method for reuse
@@ -689,7 +686,7 @@ func (h *Handler) maybeFake() bool {
 func (h *Handler) maybeSSLErr(cliStart time.Time) bool {
 	// If client closes connection very soon, maybe there's SSL error, maybe
 	// not (e.g. user stopped request).
-	// COW can't which is the this, so this detection is not reliable.
+	// COW can't tell which is the case, so this detection is not reliable.
 	return h.state > hsConnected && time.Now().Sub(cliStart) < sslLeastDuration
 }
 

@@ -108,24 +108,24 @@ func createSocksConnection(hostFull string) (cn conn, err error) {
 			errl.Printf("Read socks reply err %v n %d\n", err, n)
 		}
 		hasErr = true
-		return conn{}, errors.New("Connection failed (by socks server). No such host?")
+		return zeroConn, errors.New("Connection failed (by socks server). No such host?")
 	}
 	// debug.Printf("Socks reply length %d\n", n)
 
 	if replyBuf[0] != 5 {
 		errl.Printf("Socks reply connect %s VER %d not supported\n", hostFull, replyBuf[0])
 		hasErr = true
-		return conn{}, socksProtocolErr
+		return zeroConn, socksProtocolErr
 	}
 	if replyBuf[1] != 0 {
 		errl.Printf("Socks reply connect %s error %d\n", hostFull, socksError[replyBuf[1]])
 		hasErr = true
-		return conn{}, socksProtocolErr
+		return zeroConn, socksProtocolErr
 	}
 	if replyBuf[3] != 1 {
 		errl.Printf("Socks reply connect %s ATYP %d\n", hostFull, replyBuf[3])
 		hasErr = true
-		return conn{}, socksProtocolErr
+		return zeroConn, socksProtocolErr
 	}
 
 	// Now the socket can be used to pass data.
