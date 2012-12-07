@@ -41,6 +41,7 @@ var config struct {
 	autoRetry     bool
 	detectSSLErr  bool
 	logFile       string
+	alwaysProxy   bool
 	printVer      bool
 
 	// For shadowsocks server
@@ -78,6 +79,7 @@ func init() {
 	flag.BoolVar(&config.autoRetry, "autoRetry", false, "automatically retry timeout requests using socks proxy")
 	flag.BoolVar(&config.detectSSLErr, "detectSSLErr", true, "detect SSL error based on how soon client closes connection")
 	flag.StringVar(&config.logFile, "logFile", "", "write output to file, empty means stdout")
+	flag.BoolVar(&config.alwaysProxy, "alwaysProxy", false, "always use parent proxy")
 	flag.BoolVar(&config.printVer, "version", false, "print version")
 
 	flag.StringVar(&config.shadowSocks, "shadowSocks", "", "shadowsocks server address")
@@ -182,6 +184,10 @@ func (p configParser) ParseDetectSSLErr(val string) {
 
 func (p configParser) ParseLogFile(val string) {
 	config.logFile = val
+}
+
+func (p configParser) ParseAlwaysProxy(val string) {
+	config.alwaysProxy = parseBool(val, "alwaysProxy")
 }
 
 func (p configParser) ParseShadowSocks(val string) {

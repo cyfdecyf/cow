@@ -534,6 +534,12 @@ func createParentProxyConnection(host string) (srvconn conn, err error) {
 }
 
 func (c *clientConn) createConnection(host string, r *Request) (srvconn conn, err error) {
+	if config.alwaysProxy {
+		if srvconn, err = createParentProxyConnection(host); err == nil {
+			return
+		}
+		goto fail
+	}
 	if isHostBlocked(host) && hasParentProxy {
 		// In case of connection error to socks server, fallback to direct connection
 		if srvconn, err = createParentProxyConnection(host); err == nil {
