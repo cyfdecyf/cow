@@ -73,9 +73,10 @@ type clientConn struct {
 }
 
 var (
-	errRetry    = errors.New("Retry")
-	errPageSent = errors.New("Error page has sent")
-	errInternal = errors.New("Internal error")
+	errRetry         = errors.New("Retry")
+	errPageSent      = errors.New("Error page has sent")
+	errInternal      = errors.New("Internal error")
+	errNoParentProxy = errors.New("No parent proxy")
 )
 
 func NewProxy(addr string) *Proxy {
@@ -517,10 +518,26 @@ func maybeBlocked(err error) bool {
 
 const connFailedErrCode = "504 Connection failed"
 
-func (c *clientConn) createConnection(host string, r *Request) (srvconn conn, err error) {
-	if isHostBlocked(host) && hasSocksServer {
-		// In case of connection error to socks server, fallback to direct connection
+func createParentProxyConnection(host string) (srvconn conn, err error) {
+	// Try shadowsocks server first
+	if hasShadowSocksServer {
+		if srvconn, err = createShadowSocksConnection(host); err == nil {
+			errl.Println("Created shadowsocks connection")
+			return
+		}
+	}
+	if hasSocksServer {
 		if srvconn, err = createSocksConnection(host); err == nil {
+			return
+		}
+	}
+	return zeroConn, errNoParentProxy
+}
+
+func (c *clientConn) createConnection(host string, r *Request) (srvconn conn, err error) {
+	if isHostBlocked(host) && hasParentProxy {
+		// In case of connection error to socks server, fallback to direct connection
+		if srvconn, err = createParentProxyConnection(host); err == nil {
 			return
 		}
 		if isHostAlwaysBlocked(host) {
@@ -534,7 +551,7 @@ func (c *clientConn) createConnection(host string, r *Request) (srvconn conn, er
 		if srvconn, err = createDirectConnection(host); err == nil {
 			return
 		}
-		if isHostAlwaysDirect(host) || hostIsIP(host) || !hasSocksServer {
+		if isHostAlwaysDirect(host) || hostIsIP(host) || !hasParentProxy {
 			goto fail
 		}
 		// debug.Printf("type of err %v\n", reflect.TypeOf(err))
@@ -542,7 +559,7 @@ func (c *clientConn) createConnection(host string, r *Request) (srvconn conn, er
 		if _, ok := err.(*net.DNSError); ok || maybeBlocked(err) {
 			// Try to create socks connection
 			var socksErr error
-			if srvconn, socksErr = createSocksConnection(host); socksErr == nil {
+			if srvconn, socksErr = createParentProxyConnection(host); socksErr == nil {
 				// Connection reset is very likely caused by GFW, directly add
 				// to blocked list. Timeout error is not reliable detecting
 				// blocked site, ask the user unless autoRetry is enabled.
