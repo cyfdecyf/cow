@@ -575,8 +575,11 @@ func (c *clientConn) createConnection(host string, r *Request) (srvconn conn, er
 	}
 
 fail:
-	sendErrorPage(c.buf.Writer, connFailedErrCode, err.Error(),
-		genErrMsg(r, "Connection failed."))
+	debug.Printf("Failed to connect to %s %s", host, r)
+	if r.Method != "CONNECT" {
+		sendErrorPage(c.buf.Writer, connFailedErrCode, err.Error(),
+			genErrMsg(r, "Connection failed."))
+	}
 	return zeroConn, errPageSent
 }
 
