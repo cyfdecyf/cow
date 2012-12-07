@@ -44,8 +44,8 @@ var config struct {
 	printVer      bool
 
 	// For shadowsocks server
-	shadowSocks   string
-	shadowPasswd  string
+	shadowSocks  string
+	shadowPasswd string
 
 	// These are for internal use
 	dir               string // directory containing config file and blocked site list
@@ -130,6 +130,10 @@ func (p configParser) ParseListen(val string) {
 }
 
 func (p configParser) ParseSocks(val string) {
+	if val == "" {
+		config.socksAddr = ""
+		return
+	}
 	_, port := splitHostPort(val)
 	if port == "" {
 		fmt.Println("socks server must have port specified")
@@ -139,6 +143,9 @@ func (p configParser) ParseSocks(val string) {
 }
 
 func (p configParser) ParseCore(val string) {
+	if val == "" {
+		return
+	}
 	var err error
 	config.numProc, err = strconv.Atoi(val)
 	if err != nil {
