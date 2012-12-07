@@ -129,13 +129,19 @@ func (p configParser) ParseListen(val string) {
 	config.listenAddr = val
 }
 
-func (p configParser) ParseSocks(val string) {
+func isServerAddrValid(val string) bool {
 	if val == "" {
-		config.socksAddr = ""
-		return
+		return true
 	}
 	_, port := splitHostPort(val)
 	if port == "" {
+		return false
+	}
+	return true
+}
+
+func (p configParser) ParseSocks(val string) {
+	if !isServerAddrValid(val) {
 		fmt.Println("socks server must have port specified")
 		os.Exit(1)
 	}
@@ -179,6 +185,10 @@ func (p configParser) ParseLogFile(val string) {
 }
 
 func (p configParser) ParseShadowSocks(val string) {
+	if !isServerAddrValid(val) {
+		fmt.Println("shadowsocks server must have port specified")
+		os.Exit(1)
+	}
 	config.shadowSocks = val
 }
 

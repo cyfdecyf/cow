@@ -29,8 +29,10 @@ func main() {
 	// Parse flags after load config to allow override options in config
 	loadConfig()
 	flag.Parse()
-	initSocksServer()
+	initLog()
+
 	initProxyServerAddr()
+	initSocksServer()
 	initShadowSocks()
 
 	if !hasSocksServer && !hasShadowSocksServer {
@@ -46,7 +48,6 @@ func main() {
 		os.Exit(0)
 	}
 
-	initLog()
 	loadDomainSet()
 	/*
 		if *cpuprofile != "" {

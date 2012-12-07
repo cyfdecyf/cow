@@ -15,7 +15,7 @@ func initShadowSocks() {
 	}
 	if (config.shadowSocks != "" && config.shadowPasswd == "") ||
 		(config.shadowSocks == "" && config.shadowPasswd != "") {
-		info.Println("Missing option, shadowSocks and shadowPasswd should be both given")
+		errl.Println("Missing option: shadowSocks and shadowPasswd should be both given")
 	}
 }
 

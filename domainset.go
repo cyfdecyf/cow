@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"errors"
-	"fmt"
 	"io"
 	"log"
 	"os"
@@ -253,7 +252,7 @@ func filterOutBlockedDsInDirectDs() {
 	}
 	for k, _ := range alwaysBlockedDs {
 		if alwaysDirectDs[k] {
-			fmt.Printf("%s in both always blocked and direct domain lists, taken as blocked.\n", k)
+			errl.Printf("%s in both always blocked and direct domain lists, taken as blocked.\n", k)
 			delete(alwaysDirectDs, k)
 		}
 	}
