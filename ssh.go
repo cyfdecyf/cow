@@ -19,6 +19,10 @@ func runSSH() {
 	if config.sshServer == "" {
 		return
 	}
+	if config.socksAddr == "" {
+		errl.Println("Missing option: ssh server given without socks address")
+		return
+	}
 
 	_, port := splitHostPort(config.socksAddr)
 	alreadyRunPrinted := false
