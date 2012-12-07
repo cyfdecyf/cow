@@ -5,17 +5,18 @@ import (
 	"github.com/cyfdecyf/shadowsocks-go/src/shadowsocks"
 )
 
+var hasShadowSocksServer = false
+
 func initShadowSocks() {
-	if config.shadowPasswd != "" {
-		if config.shadowSocks == "" {
-			goto confnotcomplete
-		}
+	if config.shadowSocks != "" && config.shadowPasswd != "" {
 		shadowsocks.InitTable(config.shadowPasswd)
-	} else if config.shadowSocks != "" {
-		goto confnotcomplete
+		hasShadowSocksServer = true
+		return
 	}
-confnotcomplete:
-	errl.Println("Missing option, shadowSocks and shadowPasswd should be both given")
+	if (config.shadowSocks != "" && config.shadowPasswd == "") ||
+		(config.shadowSocks == "" && config.shadowPasswd != "") {
+		errl.Println("Missing option, shadowSocks and shadowPasswd should be both given")
+	}
 }
 
 var noShadowSocksErr = errors.New("No shadowsocks configuration")
