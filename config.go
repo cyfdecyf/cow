@@ -43,6 +43,10 @@ var config struct {
 	logFile       string
 	printVer      bool
 
+	// For shadowsocks server
+	shadowSocks   string
+	shadowPasswd  string
+
 	// These are for internal use
 	dir               string // directory containing config file and blocked site list
 	blockedFile       string // contains blocked domains
@@ -75,6 +79,9 @@ func init() {
 	flag.BoolVar(&config.detectSSLErr, "detectSSLErr", true, "detect SSL error based on how soon client closes connection")
 	flag.StringVar(&config.logFile, "logFile", "", "write output to file, empty means stdout")
 	flag.BoolVar(&config.printVer, "version", false, "print version")
+
+	flag.StringVar(&config.shadowSocks, "shadowSocks", "", "shadowsocks server address")
+	flag.StringVar(&config.shadowPasswd, "shadowPasswd", "", "shadowsocks password")
 
 	config.dir = path.Join(homeDir, dotDir)
 	config.blockedFile = path.Join(config.dir, blockedFname)
@@ -162,6 +169,14 @@ func (p configParser) ParseDetectSSLErr(val string) {
 
 func (p configParser) ParseLogFile(val string) {
 	config.logFile = val
+}
+
+func (p configParser) ParseShadowSocks(val string) {
+	config.shadowSocks = val
+}
+
+func (p configParser) ParseShadowPasswd(val string) {
+	config.shadowPasswd = val
 }
 
 func loadConfig() {

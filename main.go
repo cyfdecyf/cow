@@ -29,6 +29,7 @@ func main() {
 	flag.Parse()
 	initSocksServer()
 	initProxyServerAddr()
+	initShadowSocks()
 
 	if !hasSocksServer {
 		info.Println("no socks server, can't handle blocked sites")

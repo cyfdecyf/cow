@@ -31,6 +31,7 @@ const (
 	nilConn connType = iota
 	directConn
 	socksConn
+	shadowSocksConn
 )
 
 type handlerState byte
