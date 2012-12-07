@@ -23,15 +23,20 @@ func sigHandler() {
 	os.Exit(0)
 }
 
+var hasParentProxy = false
+
 func main() {
 	// Parse flags after load config to allow override options in config
 	loadConfig()
 	flag.Parse()
 	initSocksServer()
 	initProxyServerAddr()
+	initShadowSocks()
 
-	if !hasSocksServer {
-		info.Println("no socks server, can't handle blocked sites")
+	if !hasSocksServer && !hasShadowSocksServer {
+		info.Println("no socks/shadowsocks server, can't handle blocked sites")
+	} else {
+		hasParentProxy = true
 	}
 
 	setSelfURL()
