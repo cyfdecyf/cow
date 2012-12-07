@@ -31,8 +31,7 @@ func main() {
 	initProxyServerAddr()
 
 	if config.socksAddr == "" {
-		fmt.Println("Socks server address required")
-		os.Exit(1)
+		info.Println("no socks server address, can't handle blocked sites")
 	}
 
 	setSelfURL()
