@@ -782,7 +782,7 @@ func (h *Handler) doRequest(r *Request, c *clientConn) (err error) {
 		// Need to delete the connection and reconnect in that case.
 		return c.handleServerWriteError(r, h, err, "Sending request header")
 	}
-	if h.buf.Writer.Flush() != nil {
+	if err = h.buf.Writer.Flush(); err != nil {
 		return c.handleServerWriteError(r, h, err, "Flushing request header")
 	}
 
