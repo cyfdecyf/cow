@@ -517,7 +517,7 @@ func maybeBlocked(err error) bool {
 const connFailedErrCode = "504 Connection failed"
 
 func (c *clientConn) createConnection(host string, r *Request) (srvconn conn, err error) {
-	if isHostBlocked(host) {
+	if isHostBlocked(host) && hasSocksServer {
 		// In case of connection error to socks server, fallback to direct connection
 		if srvconn, err = createSocksConnection(host); err == nil {
 			return
@@ -533,7 +533,7 @@ func (c *clientConn) createConnection(host string, r *Request) (srvconn conn, er
 		if srvconn, err = createDirectConnection(host); err == nil {
 			return
 		}
-		if isHostAlwaysDirect(host) || hostIsIP(host) {
+		if isHostAlwaysDirect(host) || hostIsIP(host) || !hasSocksServer {
 			goto fail
 		}
 		// debug.Printf("type of err %v\n", reflect.TypeOf(err))

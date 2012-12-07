@@ -29,6 +29,12 @@ var socksMsgVerMethodSelection = []byte{
 	0,   // no authorization required
 }
 
+var hasSocksServer = false
+
+func initSocksServer() {
+	hasSocksServer = (config.socksAddr != "")
+}
+
 func createSocksConnection(hostFull string) (cn conn, err error) {
 	c, err := net.Dial("tcp", config.socksAddr)
 	if err != nil {

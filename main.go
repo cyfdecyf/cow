@@ -2,7 +2,6 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"os"
 	"os/signal"
 	"runtime"
@@ -28,10 +27,11 @@ func main() {
 	// Parse flags after load config to allow override options in config
 	loadConfig()
 	flag.Parse()
+	initSocksServer()
 	initProxyServerAddr()
 
-	if config.socksAddr == "" {
-		info.Println("no socks server address, can't handle blocked sites")
+	if !hasSocksServer {
+		info.Println("no socks server, can't handle blocked sites")
 	}
 
 	setSelfURL()
