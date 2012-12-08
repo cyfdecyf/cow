@@ -49,6 +49,14 @@ type conn struct {
 
 var zeroConn = conn{}
 
+// For both client and server connection, there's only read buffer. If we
+// create write buffer for the connection and pass it to io.CopyN, there will
+// be unnecessary copies: from read buffer to tmp buffer, then call io.Write.
+//
+// As HTTP uses TCP connection and net.TCPConn implements ReadFrom, io.CopyN
+// can avoid unnecessary use the connection directly.
+// There maybe more call to write, but the avoided copy should benefit more.
+
 type Handler struct {
 	conn
 	buf     *bufio.Reader
@@ -66,8 +74,8 @@ func newHandler(c conn, host string) *Handler {
 }
 
 type clientConn struct {
+	net.Conn // connection to the proxy client
 	buf      *bufio.Reader
-	net.Conn                     // connection to the proxy client
 	handler  map[string]*Handler // request handler, host:port as key
 }
 
