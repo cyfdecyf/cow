@@ -725,7 +725,7 @@ func (h *Handler) setStateResponsReceived(host string) {
 	}
 }
 
-var connEstablished = []byte("HTTP/1.0 200 Connection established\r\nProxy-agent: cow-proxy/0.1\r\n\r\n")
+var connEstablished = []byte("HTTP/1.0 200 Connection established\r\nProxy-agent: cow-proxy\r\n\r\n")
 
 // Do HTTP CONNECT
 func (h *Handler) doConnect(r *Request, c *clientConn) (err error) {
