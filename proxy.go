@@ -51,7 +51,7 @@ var zeroConn = conn{}
 
 type Handler struct {
 	conn
-	buf     *bufio.ReadWriter
+	buf     *bufio.Reader
 	host    string
 	state   handlerState
 	lastUse time.Time
@@ -61,8 +61,7 @@ func newHandler(c conn, host string) *Handler {
 	return &Handler{
 		conn: c,
 		host: host,
-		buf: bufio.NewReadWriter(bufio.NewReaderSize(c, bufSize),
-			bufio.NewWriter(c)),
+		buf:  bufio.NewReaderSize(c, bufSize),
 	}
 }
 
@@ -402,7 +401,7 @@ func (c *clientConn) readResponse(h *Handler, r *Request) (err error) {
 	if h.maybeFake() && h.SetReadDeadline(time.Now().Add(readTimeout)) != nil {
 		debug.Println("SetReadDeadline BEFORE receiving the first response")
 	}
-	if rp, err = parseResponse(h.buf.Reader); err != nil {
+	if rp, err = parseResponse(h.buf); err != nil {
 		return c.handleServerReadError(h, r, err, "Parse response from server.")
 	}
 	// After have received the first reponses from the server, we consider
@@ -427,7 +426,7 @@ func (c *clientConn) readResponse(h *Handler, r *Request) (err error) {
 	}
 
 	if rp.hasBody(r.Method) {
-		if err = sendBody(c.buf.Writer, nil, h.buf.Reader, rp.Chunking, rp.ContLen); err != nil {
+		if err = sendBody(c.buf.Writer, nil, h.buf, rp.Chunking, rp.ContLen); err != nil {
 			// Non persistent connection will return nil upon successful response reading
 			if err == io.EOF {
 				// For persistent connection, EOF from server is error.
@@ -783,27 +782,24 @@ func (h *Handler) doConnect(r *Request, c *clientConn) (err error) {
 // Do HTTP request other that CONNECT
 func (h *Handler) doRequest(r *Request, c *clientConn) (err error) {
 	// Send request to the server
-	if _, err = h.buf.Write(r.raw.Bytes()); err != nil {
+	if _, err = h.Write(r.raw.Bytes()); err != nil {
 		// The srv connection maybe already closed.
 		// Need to delete the connection and reconnect in that case.
 		return c.handleServerWriteError(r, h, err, "Sending request header")
-	}
-	if err = h.buf.Writer.Flush(); err != nil {
-		return c.handleServerWriteError(r, h, err, "Flushing request header")
 	}
 
 	// Send request body
 	if r.contBuf != nil {
 		debug.Println("Retry request send buffered body:", r)
-		if _, err = h.buf.Write(r.contBuf.Bytes()); err != nil {
-			sendErrorPage(h.buf.Writer, "502 send request error", err.Error(),
+		if _, err = h.Write(r.contBuf.Bytes()); err != nil {
+			sendErrorPage(h, "502 send request error", err.Error(),
 				"Send retry request body")
 			r.contBuf = nil // let gc recycle memory earlier
 			return errPageSent
 		}
 	} else if r.Method == "POST" {
 		r.contBuf = new(bytes.Buffer)
-		if err = sendBody(h.buf.Writer, r.contBuf, c.buf.Reader, r.Chunking, r.ContLen); err != nil {
+		if err = sendBody(h, r.contBuf, c.buf.Reader, r.Chunking, r.ContLen); err != nil {
 			if err == io.EOF {
 				if r.KeepAlive {
 					errl.Println("Unexpected EOF reading request body from client", r)
@@ -817,15 +813,6 @@ func (h *Handler) doRequest(r *Request, c *clientConn) (err error) {
 			}
 			return
 		}
-	}
-	if err = h.buf.Writer.Flush(); err != nil {
-		if r.contBuf != nil {
-			sendErrorPage(h.buf.Writer, "502 send request error", err.Error(),
-				"Flush retry request")
-			r.contBuf = nil
-			return errPageSent
-		}
-		return c.handleServerWriteError(r, h, err, "Flushing request body")
 	}
 
 	return c.readResponse(h, r)
