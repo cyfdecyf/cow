@@ -66,7 +66,7 @@ func newHandler(c conn, host string) *Handler {
 }
 
 type clientConn struct {
-	buf      *bufio.ReadWriter
+	buf      *bufio.Reader
 	net.Conn                     // connection to the proxy client
 	handler  map[string]*Handler // request handler, host:port as key
 }
@@ -112,8 +112,7 @@ func newClientConn(rwc net.Conn) *clientConn {
 	c := &clientConn{
 		Conn:    rwc,
 		handler: map[string]*Handler{},
-		buf: bufio.NewReadWriter(bufio.NewReaderSize(rwc, bufSize),
-			bufio.NewWriter(rwc)),
+		buf:     bufio.NewReaderSize(rwc, bufSize),
 	}
 	return c
 }
@@ -141,7 +140,7 @@ func (c *clientConn) getRequest() (r *Request) {
 	if c.SetReadDeadline(time.Now().Add(clientConnTimeout)) != nil {
 		debug.Println("SetReadDeadline BEFORE receiving client request")
 	}
-	if r, err = parseRequest(c.buf.Reader); err != nil {
+	if r, err = parseRequest(c.buf); err != nil {
 		c.handleClientReadError(r, err, "parse client request")
 		return nil
 	}
@@ -181,7 +180,7 @@ func (c *clientConn) serveSelfURLAddHost(r *Request, query, listType string, add
 		// sendBlockedErrorPage will not put IP address in form, this should not happen.
 		// server side checking to be safe.
 		errl.Println("Host is IP address, shouldn't happen")
-		sendErrorPage(c.buf.Writer, "500 internal error", "Requsted host is IP address",
+		sendErrorPage(c, "500 internal error", "Requsted host is IP address",
 			"COW can only record blocked site based on domain name.")
 		return errInternal
 	}
@@ -193,10 +192,10 @@ func (c *clientConn) serveSelfURLAddHost(r *Request, query, listType string, add
 	// header to redirect the client back to the original web page.
 	if r.Referer != "" {
 		// debug.Println("Sending refirect page.")
-		sendRedirectPage(c.buf.Writer, r.Referer)
+		sendRedirectPage(c, r.Referer)
 		return
 	}
-	sendErrorPage(c.buf.Writer, "404 not found", "No Referer header",
+	sendErrorPage(c, "404 not found", "No Referer header",
 		"Domain added to "+listType+" list, but no referer header in request so can't redirect.")
 	return
 }
@@ -206,7 +205,7 @@ func (c *clientConn) serveSelfURL(r *Request) (err error) {
 		goto end
 	}
 	if r.URL.Path == "/pac" {
-		sendPAC(c.buf.Writer)
+		sendPAC(c)
 		// Send non nil error to close client connection.
 		return errPageSent
 	}
@@ -218,7 +217,7 @@ func (c *clientConn) serveSelfURL(r *Request) (err error) {
 	}
 
 end:
-	sendErrorPage(c.buf.Writer, "404 not found", "Page not found", "Handling request to proxy itself.")
+	sendErrorPage(c, "404 not found", "Page not found", "Handling request to proxy itself.")
 	return
 }
 
@@ -308,11 +307,11 @@ func (c *clientConn) handleBlockedRequest(r *Request, err error, errCode, msg st
 			return errRetry
 		}
 		msg += genBlockedSiteMsg(r)
-		sendErrorPage(c.buf.Writer, errCode, err.Error(), msg)
+		sendErrorPage(c, errCode, err.Error(), msg)
 		return errPageSent
 	}
 	// If autoRetry is not enabled, let the user decide whether add the domain to blocked list.
-	sendBlockedErrorPage(c.buf.Writer, errCode, err.Error(), msg, r)
+	sendBlockedErrorPage(c, errCode, err.Error(), msg, r)
 	return errPageSent
 }
 
@@ -338,7 +337,7 @@ func (c *clientConn) handleServerReadError(h *Handler, r *Request, err error, ms
 		}
 	}
 	errl.Printf("Read from server unhandled error for %v %v\n", r, err)
-	sendErrorPage(c.buf.Writer, "502 read error", err.Error(), errMsg)
+	sendErrorPage(c, "502 read error", err.Error(), errMsg)
 	return errPageSent
 }
 
@@ -353,7 +352,7 @@ func (c *clientConn) handleServerWriteError(r *Request, h *Handler, err error, m
 			}
 			// TODO What about broken PIPE?
 		}
-		sendErrorPage(c.buf.Writer, "502 write error", err.Error(), errMsg)
+		sendErrorPage(c, "502 write error", err.Error(), errMsg)
 		return errPageSent
 	}
 	return errRetry
@@ -412,12 +411,8 @@ func (c *clientConn) readResponse(h *Handler, r *Request) (err error) {
 	}
 	h.setStateResponsReceived(r.URL.Host)
 
-	if _, err = c.buf.WriteString(rp.raw.String()); err != nil {
+	if _, err = c.Write(rp.raw.Bytes()); err != nil {
 		return c.handleClientWriteError(r, err, "Write response header back to client")
-	}
-	// Flush response header to the client ASAP
-	if err = c.buf.Flush(); err != nil {
-		return c.handleClientWriteError(r, err, "Flushing response header to client")
 	}
 
 	// Wrap inside if to avoid function argument evaluation.
@@ -426,7 +421,7 @@ func (c *clientConn) readResponse(h *Handler, r *Request) (err error) {
 	}
 
 	if rp.hasBody(r.Method) {
-		if err = sendBody(c.buf.Writer, nil, h.buf, rp.Chunking, rp.ContLen); err != nil {
+		if err = sendBody(c, nil, h.buf, rp.Chunking, rp.ContLen); err != nil {
 			// Non persistent connection will return nil upon successful response reading
 			if err == io.EOF {
 				// For persistent connection, EOF from server is error.
@@ -441,10 +436,6 @@ func (c *clientConn) readResponse(h *Handler, r *Request) (err error) {
 				err = c.handleClientWriteError(r, err, "Write to client response body.")
 			} else {
 				err = c.handleServerReadError(h, r, err, "Read response body from server.")
-			}
-		} else {
-			if err = c.buf.Flush(); err != nil {
-				return c.handleClientWriteError(r, err, "Flushing response body to client")
 			}
 		}
 	}
@@ -572,7 +563,7 @@ func (c *clientConn) createConnection(host string, r *Request) (srvconn conn, er
 					return srvconn, nil
 				}
 				srvconn.Close()
-				sendBlockedErrorPage(c.buf.Writer, connFailedErrCode, err.Error(),
+				sendBlockedErrorPage(c, connFailedErrCode, err.Error(),
 					genErrMsg(r, "Connection failed.")+genBlockedSiteMsg(r), r)
 				return zeroConn, errPageSent
 			}
@@ -582,7 +573,7 @@ func (c *clientConn) createConnection(host string, r *Request) (srvconn conn, er
 fail:
 	debug.Printf("Failed to connect to %s %s", host, r)
 	if r.Method != "CONNECT" {
-		sendErrorPage(c.buf.Writer, connFailedErrCode, err.Error(),
+		sendErrorPage(c, connFailedErrCode, err.Error(),
 			genErrMsg(r, "Connection failed."))
 	}
 	return zeroConn, errPageSent
@@ -799,7 +790,7 @@ func (h *Handler) doRequest(r *Request, c *clientConn) (err error) {
 		}
 	} else if r.Method == "POST" {
 		r.contBuf = new(bytes.Buffer)
-		if err = sendBody(h, r.contBuf, c.buf.Reader, r.Chunking, r.ContLen); err != nil {
+		if err = sendBody(h, r.contBuf, c.buf, r.Chunking, r.ContLen); err != nil {
 			if err == io.EOF {
 				if r.KeepAlive {
 					errl.Println("Unexpected EOF reading request body from client", r)

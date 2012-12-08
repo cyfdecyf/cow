@@ -1,18 +1,15 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"text/template"
 )
 
-const pacDirect = `function FindProxyForURL(url, host) {
-	return 'DIRECT';
-};
-`
+var pacDirect = []byte("function FindProxyForURL(url, host) {return 'DIRECT'; };")
 
 const pacRawTmpl = `var direct = 'DIRECT';
 var httpProxy = '{{.ProxyAddr}}';
@@ -93,7 +90,7 @@ func initProxyServerAddr() {
 	}
 }
 
-func genPAC() string {
+func sendPAC(w io.Writer) {
 	// domains in PAC file needs double quote
 	ds1 := strings.Join(alwaysDirectDs.toArray(), "\",\n\"")
 	ds2 := strings.Join(directDs.toArray(), "\",\n\"")
@@ -126,14 +123,9 @@ func genPAC() string {
 		errl.Println("Error generating pac file:", err)
 		os.Exit(1)
 	}
-	pac := buf.String()
-	pacHeader := "HTTP/1.1 200 Okay\r\nServer: cow-proxy\r\nContent-Type: text/html\r\nConnection: close\r\n" +
-		fmt.Sprintf("Content-Length: %d\r\n\r\n", len(pac))
-	pac = pacHeader + pac
-	return pac
-}
-
-func sendPAC(w *bufio.Writer) {
-	w.WriteString(genPAC())
-	w.Flush()
+	header := new(bytes.Buffer)
+	header.WriteString("HTTP/1.1 200 Okay\r\nServer: cow-proxy\r\nContent-Type: text/html\r\nConnection: close\r\n")
+	header.WriteString(fmt.Sprintf("Content-Length: %d\r\n\r\n", buf.Len()))
+	w.Write(header.Bytes())
+	w.Write(buf.Bytes())
 }
