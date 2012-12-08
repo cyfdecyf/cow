@@ -823,46 +823,35 @@ func sendBodyWithContLen(w, contBuf io.Writer, r *bufio.Reader, contLen int64) (
 	if contLen == 0 {
 		return
 	}
-	// CopyN will copy n bytes unless there's error of EOF. For EOF, it means
-	// the connection is closed, return will propagate till serv function and
-	// close client connection.
-	if contBuf == nil {
-		if _, err = io.CopyN(w, r, contLen); err != nil {
-			debug.Println("Send response body", err)
-			return err
-		}
-	} else {
-		copyWithBuf(w, contBuf, r, contLen, "Read response body:", "Write response body:")
+	if err = copyWithBuf(w, contBuf, r, contLen); err != nil {
+		debug.Println("sendBodyWithContLen:", err)
 	}
 	return
 }
 
-func copyWithBuf(w, contBuf io.Writer, r io.Reader, size int64, rMsg, wMsg string) {
-	buf := make([]byte, size)
-	if _, err := r.Read(buf); err != nil {
-		errl.Println(rMsg, err)
-		return
+func copyWithBuf(w, contBuf io.Writer, r io.Reader, size int64) (err error) {
+	if contBuf == nil {
+		_, err = io.CopyN(w, r, size)
+	} else {
+		buf := make([]byte, size, size)
+		if _, err = r.Read(buf); err != nil {
+			return
+		}
+		contBuf.Write(buf)
+		_, err = w.Write(buf)
 	}
-	contBuf.Write(buf)
-	if _, err := w.Write(buf); err != nil {
-		debug.Println(wMsg, err)
-		return
-	}
+	return
 }
 
 // Send response body if header specifies chunked encoding
 func sendBodyChunked(w, contBuf io.Writer, r *bufio.Reader) (err error) {
 	// debug.Println("Sending chunked body")
-	done := false
-	for !done {
+	for {
 		var s string
 		// Read chunk size line, ignore chunk extension if any
 		if s, err = ReadLine(r); err != nil {
 			errl.Println("Reading chunk size:", err)
 			return
-		}
-		if contBuf != nil {
-			io.WriteString(contBuf, s+"\r\n")
 		}
 		// debug.Println("Chunk size line", s)
 		f := strings.SplitN(s, ";", 2)
@@ -871,32 +860,24 @@ func sendBodyChunked(w, contBuf io.Writer, r *bufio.Reader) (err error) {
 			errl.Println("Chunk size not valid:", err)
 			return
 		}
-		if _, err = io.WriteString(w, s+"\r\n"); err != nil {
+		sb := []byte(s + "\r\n")
+		if contBuf != nil {
+			contBuf.Write(sb)
+		}
+		// Write chunk size, not buffered
+		if _, err = w.Write(sb); err != nil {
 			debug.Println("Writing chunk size in sendBodyChunked:", err)
 			return
 		}
-
 		if size == 0 { // end of chunked data, ignore any trailers
-			done = true
-		} else if contBuf == nil {
-			// Read chunk data and send to client
-			if _, err = io.CopyN(w, r, size); err != nil {
-				debug.Println("Copy chunked data:", err)
-				return
-			}
-		} else {
-			copyWithBuf(w, contBuf, r, size, "Read chunked data:", "Write chunked data:")
-		}
-
-		if err = readCheckCRLF(r); err != nil {
-			debug.Println("Reading chunked data CRLF:", err)
 			return
 		}
-		if contBuf != nil {
-			io.WriteString(contBuf, "\r\n")
-		}
-		if _, err = io.WriteString(w, "\r\n"); err != nil {
-			debug.Println("Writing end line in sendBodyChunked:", err)
+		// If we assume correct data from read side, we can use size+2 to read
+		// chunked data and the followed CRLF. Though we should be strict on
+		// input data, almost all server on the internet implements chunked
+		// encoding correctly, this assumption should almost always hold.
+		if err = copyWithBuf(w, contBuf, r, size+2); err != nil {
+			debug.Println("sendBodyChunked:", err)
 			return
 		}
 	}
@@ -910,9 +891,10 @@ func sendBodySplitIntoChunk(w, contBuf io.Writer, r *bufio.Reader) (err error) {
 		n, err = r.Read(buf)
 		// debug.Println("split into chunk n =", n, "err =", err)
 		if err != nil {
-			io.WriteString(w, "0\r\n\r\n")
+			sb := []byte("0\r\n\r\n")
+			w.Write(sb)
 			if contBuf != nil {
-				io.WriteString(contBuf, "0\r\n\r\n")
+				contBuf.Write(sb)
 			}
 			// EOF is expected here as the server is closing connection.
 			if err == io.EOF {
@@ -921,12 +903,12 @@ func sendBodySplitIntoChunk(w, contBuf io.Writer, r *bufio.Reader) (err error) {
 			return
 		}
 
-		sizeStr := fmt.Sprintf("%x\r\n", n)
+		sb := []byte(fmt.Sprintf("%x\r\n", n))
 		if contBuf != nil {
-			io.WriteString(contBuf, sizeStr)
+			contBuf.Write(sb)
 			contBuf.Write(buf[:n])
 		}
-		if _, err = io.WriteString(w, sizeStr); err != nil {
+		if _, err = w.Write(sb); err != nil {
 			debug.Printf("Writing chunk size %v\n", err)
 			return
 		}
