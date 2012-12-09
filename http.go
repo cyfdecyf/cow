@@ -298,7 +298,7 @@ func readCheckCRLF(reader *bufio.Reader) error {
 		return err
 	}
 	if crlfBuf[0] != '\r' || crlfBuf[1] != '\n' {
-		return errors.New("Not CRLF")
+		return errChunkedEncode
 	}
 	return nil
 }

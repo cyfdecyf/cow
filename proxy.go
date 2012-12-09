@@ -84,6 +84,7 @@ var (
 	errPageSent      = errors.New("Error page has sent")
 	errInternal      = errors.New("Internal error")
 	errNoParentProxy = errors.New("No parent proxy")
+	errChunkedEncode = errors.New("Invalid chunked encoding")
 )
 
 func NewProxy(addr string) *Proxy {
@@ -875,7 +876,9 @@ func sendBodyChunked(w, contBuf io.Writer, r *bufio.Reader) (err error) {
 		// If we assume correct data from read side, we can use size+2 to read
 		// chunked data and the followed CRLF. Though we should be strict on
 		// input data, almost all server on the internet implements chunked
-		// encoding correctly, this assumption should almost always hold.
+		// encoding correctly, this assumption should almost always hold. In
+		// the rare case of wrong data, parsing the followed chunk size line
+		// may discover error and stop.
 		if err = copyWithBuf(w, contBuf, r, size+2); err != nil {
 			debug.Println("sendBodyChunked:", err)
 			return
@@ -884,6 +887,9 @@ func sendBodyChunked(w, contBuf io.Writer, r *bufio.Reader) (err error) {
 	return
 }
 
+var CRLFbytes = []byte("\r\n")
+var chunkEndbytes = []byte("0\r\n\r\n")
+
 func sendBodySplitIntoChunk(w, contBuf io.Writer, r *bufio.Reader) (err error) {
 	buf := make([]byte, bufSize)
 	var n int
@@ -891,15 +897,18 @@ func sendBodySplitIntoChunk(w, contBuf io.Writer, r *bufio.Reader) (err error) {
 		n, err = r.Read(buf)
 		// debug.Println("split into chunk n =", n, "err =", err)
 		if err != nil {
-			sb := []byte("0\r\n\r\n")
-			w.Write(sb)
-			if contBuf != nil {
-				contBuf.Write(sb)
-			}
-			// EOF is expected here as the server is closing connection.
 			if err == io.EOF {
-				err = nil
+				// EOF is expected here as the server is closing connection.
+				// debug.Println("end chunked encoding")
+				if contBuf != nil {
+					contBuf.Write(chunkEndbytes)
+				}
+				if _, err = w.Write(chunkEndbytes); err != nil {
+					debug.Println("Write chunk end 0")
+				}
+				return
 			}
+			debug.Println("Reading error in sendBodySplitIntoChunk", err)
 			return
 		}
 
@@ -912,8 +921,9 @@ func sendBodySplitIntoChunk(w, contBuf io.Writer, r *bufio.Reader) (err error) {
 			debug.Printf("Writing chunk size %v\n", err)
 			return
 		}
-		if _, err = w.Write(buf[:n]); err != nil {
-			debug.Printf("Writing chunk data%v\n", err)
+		buf = append(buf[:n], CRLFbytes...)
+		if _, err = w.Write(buf[:n+2]); err != nil {
+			debug.Println("Writing chunk data:", err)
 			return
 		}
 	}

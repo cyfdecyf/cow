@@ -341,6 +341,7 @@ func writeDomainList(fpath string, lst []string) (err error) {
 }
 
 var topLevelDomain = map[string]bool{
+	"ac":  true,
 	"co":  true,
 	"org": true,
 	"com": true,
