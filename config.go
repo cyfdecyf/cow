@@ -28,7 +28,7 @@ const (
 	chouFname          = "chou"
 	rcFname            = "rc"
 
-	version = "0.3.3"
+	version = "0.3.4"
 )
 
 var config struct {
