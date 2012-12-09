@@ -1,6 +1,6 @@
 #!/bin/bash
 
-version=0.3.3
+version=0.3.4
 
 cpu=`uname -m`
 case $cpu in
@@ -35,16 +35,20 @@ exit_on_fail() {
 }
 
 # Get installation directory from user
-echo -n "Install cow binary to which directory (absolute path): "
-read install_dir </dev/tty
-if [ -z $install_dir ]; then
-    echo "No installation directory given, assuming current directory"
-    install_dir=`pwd`
-fi
-if [ ! -d $install_dir ]; then
-    echo "Installation directory does not exists"
-    exit 1
-fi
+while true; do
+    echo -n "Install cow binary to which directory (absolute path, defaults to current dir): "
+    read install_dir </dev/tty
+    if [ -z $install_dir ]; then
+        echo "No installation directory given, assuming current directory"
+        install_dir=`pwd`
+        break
+    fi
+    if [ ! -d $install_dir ]; then
+        echo "Directory $install_dir does not exists"
+    else
+        break
+    fi
+done
 
 # Ask OS X user whehter to start COW upon login
 start_on_login="n"

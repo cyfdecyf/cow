@@ -1,32 +1,38 @@
 # COW (Climb Over the Wall) proxy  #
 
-COW is a HTTP proxy that tries to **automatically identify blocked websites and use a parent proxy when visiting those sites**. For directly accessible sites, COW will use direct access.
+COW is a HTTP proxy that tries to automatically identify blocked websites and use a parent proxy when visiting those sites. For non-blocked sites, COW will use direct access.
 
-# Features #
+If you are tired of switching proxy configuration or editing blocked site list, you can give COW a try.
+
+## Features ##
 
 - **Automatically identify blocked websites**
 - **Record which sites are blocked, which can be directly accessed**
   - Can also manually specify blocked and directly accessible sites
 - **Generate and serve PAC file**
-  - The PAC file tells the client to use direct connection for directly accessible sites
-  - Visiting those sites will not have performance overhead of using a proxy
-- Convert socks proxy to HTTP proxy
-  - Can start socks proxy server through ssh, requires public key authentication
+  - Contains domains that can be directly accessed
+- **Special handling for temporarily blocked site**
+  - Use parent proxy when blockage detected, try direct access after 2 minutes
+- **Convert socks proxy to HTTP proxy**
+  - Can start socks proxy server by ssh, requires public key authentication
+- **Support [shadowsocks](https://github.com/clowwindy/shadowsocks-nodejs/)**
+  - COW itself can act as shadowsocks client, but provides HTTP proxy
 
 # Installation #
 
-## Pre-compiled binary (Recommended)
+## Pre-compiled binary
 
 The following pre-compiled binaries are provided for systems running on Intel processors:
 
 - 64-bit binary for OS X
 - 64-bit and 32-bit binaries for Linux
+- 32-bit binary for Windows
 
-Run the following command to install pre-compiled binary (curl is required, along with trust):
+For OS X and Linux, run the following command to install pre-compiled binary (re-run to update)
 
     curl -s -L https://github.com/cyfdecyf/cow/raw/master/install-cow.sh | bash
 
-Rerun this command to update COW.
+Experimental windows binary is also provided, look at the [downloads page](https://github.com/cyfdecyf/cow/downloads).
 
 The install script will do the following:
 
@@ -38,11 +44,7 @@ The install script will do the following:
 
 ## From source ##
 
-Install [go](http://golang.org/doc/install), set `$GOPATH`. Then run
-
     go get github.com/cyfdecyf/cow
-
-Use `go get -u github.com/cyfdecyf/cow` to update COW.
 
 # Usage #
 
@@ -63,9 +65,10 @@ Here's an example with the most important options:
 
 To start cow, just execute `cow` on the command line.
 
-- The PAC file can be access at `http://<listen>/pac`
+- The PAC file can be accessed at `http://<listen>/pac`
   - For the above example: `http://127.0.0.1:7777/pac`
-- Command line options can override options in the configuration file. For more details, see the output of `cow -h`
+- Command line options can override options in the configuration file
+  - For more details, see the output of `cow -h`
 
 ## OS X: Start COW on login ##
 

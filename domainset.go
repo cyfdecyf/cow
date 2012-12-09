@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"errors"
-	"fmt"
 	"io"
 	"log"
 	"os"
@@ -97,18 +96,17 @@ type chouBlockTime struct {
 
 var chou = chouBlockTime{time: map[string]time.Time{}}
 
-func inAlwaysDs(dm string) bool {
+func isHostInAlwaysDs(host string) bool {
+	dm := host2Domain(host)
 	return alwaysBlockedDs[dm] || alwaysDirectDs[dm]
 }
 
 func isHostAlwaysDirect(host string) bool {
-	h, _ := splitHostPort(host)
-	return alwaysDirectDs[host2Domain(h)]
+	return alwaysDirectDs[host2Domain(host)]
 }
 
 func isHostAlwaysBlocked(host string) bool {
-	h, _ := splitHostPort(host)
-	return alwaysBlockedDs[host2Domain(h)]
+	return alwaysBlockedDs[host2Domain(host)]
 }
 
 func isHostBlocked(host string) bool {
@@ -193,7 +191,7 @@ func addDirectDomain(dm string) {
 
 func addDirectHost(host string) (added bool) {
 	dm := host2Domain(host)
-	if !config.updateDirect || inAlwaysDs(dm) || chouDs[dm] ||
+	if !config.updateDirect || isHostInAlwaysDs(host) || chouDs[dm] ||
 		dm == "localhost" || hostIsIP(host) {
 		return
 	}
@@ -253,7 +251,7 @@ func filterOutBlockedDsInDirectDs() {
 	}
 	for k, _ := range alwaysBlockedDs {
 		if alwaysDirectDs[k] {
-			fmt.Printf("%s in both always blocked and direct domain lists, taken as blocked.\n", k)
+			errl.Printf("%s in both always blocked and direct domain lists, taken as blocked.\n", k)
 			delete(alwaysDirectDs, k)
 		}
 	}
@@ -329,6 +327,12 @@ func writeDomainList(fpath string, lst []string) (err error) {
 	f.WriteString(all)
 	f.Close()
 
+	// On windows, can't rename to a file which already exists.
+	if isWindows() {
+		if err = os.Remove(fpath); err != nil {
+			errl.Println("Can't remove domain list", fpath, "for update")
+		}
+	}
 	if err = os.Rename(tmpPath, fpath); err != nil {
 		errl.Printf("Error moving tmp domain list file to %s: %v\n", fpath, err)
 	}
@@ -336,6 +340,7 @@ func writeDomainList(fpath string, lst []string) (err error) {
 }
 
 var topLevelDomain = map[string]bool{
+	"ac":  true,
 	"co":  true,
 	"org": true,
 	"com": true,
@@ -345,6 +350,7 @@ var topLevelDomain = map[string]bool{
 
 func host2Domain(host string) (domain string) {
 	host, _ = splitHostPort(host)
+	host = trimLastDot(host)
 	lastDot := strings.LastIndex(host, ".")
 	if lastDot == -1 {
 		return host // simple host name, we should not hanlde this

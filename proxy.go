@@ -31,13 +31,15 @@ const (
 	nilConn connType = iota
 	directConn
 	socksConn
+	shadowSocksConn
 )
 
 type handlerState byte
 
 const (
 	hsConnected handlerState = iota
-	hsResponsReceived
+	hsReceivingResponse
+	hsSendingReceivingResponse
 	hsStopped
 )
 
@@ -46,9 +48,20 @@ type conn struct {
 	connType
 }
 
+var zeroConn = conn{}
+var zeroTime = time.Time{}
+
+// For both client and server connection, there's only read buffer. If we
+// create write buffer for the connection and pass it to io.CopyN, there will
+// be unnecessary copies: from read buffer to tmp buffer, then call io.Write.
+//
+// As HTTP uses TCP connection and net.TCPConn implements ReadFrom, io.CopyN
+// can avoid unnecessary use the connection directly.
+// There maybe more call to write, but the avoided copy should benefit more.
+
 type Handler struct {
 	conn
-	buf     *bufio.ReadWriter
+	buf     *bufio.Reader
 	host    string
 	state   handlerState
 	lastUse time.Time
@@ -58,21 +71,23 @@ func newHandler(c conn, host string) *Handler {
 	return &Handler{
 		conn: c,
 		host: host,
-		buf: bufio.NewReadWriter(bufio.NewReaderSize(c, bufSize),
-			bufio.NewWriter(c)),
+		buf:  bufio.NewReaderSize(c, bufSize),
 	}
 }
 
 type clientConn struct {
-	buf      *bufio.ReadWriter
-	net.Conn                     // connection to the proxy client
+	net.Conn // connection to the proxy client
+	buf      *bufio.Reader
 	handler  map[string]*Handler // request handler, host:port as key
 }
 
 var (
-	errRetry    = errors.New("Retry")
-	errPageSent = errors.New("Error page has sent")
-	errInternal = errors.New("Internal error")
+	errRetry         = errors.New("Retry")
+	errPageSent      = errors.New("Error page has sent")
+	errShouldClose   = errors.New("Error can only be handled by close connection")
+	errInternal      = errors.New("Internal error")
+	errNoParentProxy = errors.New("No parent proxy")
+	errChunkedEncode = errors.New("Invalid chunked encoding")
 )
 
 func NewProxy(addr string) *Proxy {
@@ -109,8 +124,7 @@ func newClientConn(rwc net.Conn) *clientConn {
 	c := &clientConn{
 		Conn:    rwc,
 		handler: map[string]*Handler{},
-		buf: bufio.NewReadWriter(bufio.NewReaderSize(rwc, bufSize),
-			bufio.NewWriter(rwc)),
+		buf:     bufio.NewReaderSize(rwc, bufSize),
 	}
 	return c
 }
@@ -138,11 +152,11 @@ func (c *clientConn) getRequest() (r *Request) {
 	if c.SetReadDeadline(time.Now().Add(clientConnTimeout)) != nil {
 		debug.Println("SetReadDeadline BEFORE receiving client request")
 	}
-	if r, err = parseRequest(c.buf.Reader); err != nil {
+	if r, err = parseRequest(c.buf); err != nil {
 		c.handleClientReadError(r, err, "parse client request")
 		return nil
 	}
-	if c.SetReadDeadline(time.Time{}) != nil {
+	if c.SetReadDeadline(zeroTime) != nil {
 		debug.Println("Un-SetReadDeadline AFTER receiving client request")
 	}
 	return r
@@ -178,7 +192,7 @@ func (c *clientConn) serveSelfURLAddHost(r *Request, query, listType string, add
 		// sendBlockedErrorPage will not put IP address in form, this should not happen.
 		// server side checking to be safe.
 		errl.Println("Host is IP address, shouldn't happen")
-		sendErrorPage(c.buf.Writer, "500 internal error", "Requsted host is IP address",
+		sendErrorPage(c, "500 internal error", "Requsted host is IP address",
 			"COW can only record blocked site based on domain name.")
 		return errInternal
 	}
@@ -190,10 +204,10 @@ func (c *clientConn) serveSelfURLAddHost(r *Request, query, listType string, add
 	// header to redirect the client back to the original web page.
 	if r.Referer != "" {
 		// debug.Println("Sending refirect page.")
-		sendRedirectPage(c.buf.Writer, r.Referer)
+		sendRedirectPage(c, r.Referer)
 		return
 	}
-	sendErrorPage(c.buf.Writer, "404 not found", "No Referer header",
+	sendErrorPage(c, "404 not found", "No Referer header",
 		"Domain added to "+listType+" list, but no referer header in request so can't redirect.")
 	return
 }
@@ -203,7 +217,7 @@ func (c *clientConn) serveSelfURL(r *Request) (err error) {
 		goto end
 	}
 	if r.URL.Path == "/pac" {
-		sendPAC(c.buf.Writer)
+		sendPAC(c)
 		// Send non nil error to close client connection.
 		return errPageSent
 	}
@@ -215,7 +229,7 @@ func (c *clientConn) serveSelfURL(r *Request) (err error) {
 	}
 
 end:
-	sendErrorPage(c.buf.Writer, "404 not found", "Page not found", "Handling request to proxy itself.")
+	sendErrorPage(c, "404 not found", "Page not found", "Handling request to proxy itself.")
 	return
 }
 
@@ -251,7 +265,7 @@ func (c *clientConn) serve() {
 		}
 
 		if r.isConnect {
-			if h.doConnect(r, c) == errRetry {
+			if err = h.doConnect(r, c); err == errRetry {
 				goto retry
 			}
 			// Why return after doConnect:
@@ -285,7 +299,7 @@ func genErrMsg(r *Request, what string) string {
 func genBlockedSiteMsg(r *Request) string {
 	if !hostIsIP(r.URL.Host) {
 		return fmt.Sprintf(
-			"<p>Domain <strong>%s</strong> maybe blocked. Refresh to retry.</p>",
+			"<p>Domain <strong>%s</strong> maybe blocked.</p>",
 			host2Domain(r.URL.Host))
 	}
 	return ""
@@ -296,61 +310,73 @@ const (
 	errCodeTimeout = "504 time out reading response"
 )
 
-func (c *clientConn) handleBlockedRequest(r *Request, err error, errCode, msg string) error {
+func (c *clientConn) handleBlockedRequest(r *Request, h *Handler, err error, errCode, msg string) error {
 	// Domain in chou domain set is likely to be blocked, should automatically
 	// restart request using parent proxy.
 	// Reset is usually reliable in detecting blocked site, so retry for connection reset.
 	if errCode == errCodeReset || config.autoRetry || isHostChouFeng(r.URL.Host) {
+		debug.Printf("Blocked site %s detected for request %v error: %v\n", h.host, r, err)
 		if addBlockedHost(r.URL.Host) {
 			return errRetry
 		}
 		msg += genBlockedSiteMsg(r)
-		sendErrorPage(c.buf.Writer, errCode, err.Error(), msg)
+		if h.hasNotSendResponse() {
+			sendErrorPage(c, errCode, err.Error(), msg)
+			return errPageSent
+		}
+	}
+	if h.hasNotSendResponse() {
+		// If autoRetry is not enabled, let the user decide whether add the domain to blocked list.
+		sendBlockedErrorPage(c, errCode, err.Error(), msg, r)
 		return errPageSent
 	}
-	// If autoRetry is not enabled, let the user decide whether add the domain to blocked list.
-	sendBlockedErrorPage(c.buf.Writer, errCode, err.Error(), msg, r)
-	return errPageSent
+	errl.Println("blocked request with partial response sent to client:", err, r)
+	return errShouldClose
 }
 
 func (c *clientConn) handleServerReadError(h *Handler, r *Request, err error, msg string) error {
 	var errMsg string
 	if err == io.EOF {
-		debug.Println("Read from server EOF")
-		return errRetry
-	}
-	if h.maybeFake() {
-		errMsg = genErrMsg(r, msg)
-		if ne, ok := err.(*net.OpError); ok {
-			// GFW may connection reset here, may also make it time out Is it
-			// normal for connection to a site timeout? If so, it's better not add
-			// it to blocked site.
-			if ne.Err == syscall.ECONNRESET {
-				return c.handleBlockedRequest(r, err, errCodeReset, errMsg)
-			}
-			if ne.Timeout() {
-				return c.handleBlockedRequest(r, err, errCodeTimeout, errMsg)
-			}
-			// fall through to send general error message
+		if h.hasNotSendResponse() {
+			debug.Println("Read from server EOF, retry")
+			return errRetry
 		}
+		errl.Println("Read from server EOF, partial data sent to client")
+		return errShouldClose
 	}
-	errl.Printf("Read from server unhandled error for %v %v\n", r, err)
-	sendErrorPage(c.buf.Writer, "502 read error", err.Error(), errMsg)
-	return errPageSent
+	errMsg = genErrMsg(r, msg)
+	if h.maybeFake() || isErrConnReset(err) {
+		// GFW may connection reset when reading from  server, may also make
+		// it time out. But timeout is also normal if network condition is
+		// bad, so should treate timeout separately.
+		if isErrConnReset(err) {
+			return c.handleBlockedRequest(r, h, err, errCodeReset, errMsg)
+		}
+		if isErrTimeout(err) {
+			return c.handleBlockedRequest(r, h, err, errCodeTimeout, errMsg)
+		}
+		// fall through to send general error message
+	}
+	if h.hasNotSendResponse() {
+		sendErrorPage(c, "502 read error", err.Error(), errMsg)
+		return errPageSent
+	}
+	errl.Println("Unhandled server read error:", err, r)
+	return errShouldClose
 }
 
 func (c *clientConn) handleServerWriteError(r *Request, h *Handler, err error, msg string) error {
 	// This function is only called in doRequest, no response is sent to client.
 	// So if visiting blocked site, can always retry request.
-	if h.maybeFake() {
+	if h.maybeFake() || isErrConnReset(err) {
 		errMsg := genErrMsg(r, msg)
 		if ne, ok := err.(*net.OpError); ok {
 			if ne.Err == syscall.ECONNRESET {
-				return c.handleBlockedRequest(r, err, errCodeReset, errMsg)
+				return c.handleBlockedRequest(r, h, err, errCodeReset, errMsg)
 			}
 			// TODO What about broken PIPE?
 		}
-		sendErrorPage(c.buf.Writer, "502 write error", err.Error(), errMsg)
+		sendErrorPage(c, "502 write error", err.Error(), errMsg)
 		return errPageSent
 	}
 	return errRetry
@@ -360,13 +386,16 @@ func (c *clientConn) handleClientReadError(r *Request, err error, msg string) er
 	if err == io.EOF {
 		debug.Printf("%s client closed connection", msg)
 	} else if ne, ok := err.(*net.OpError); ok {
-		if ne.Err == syscall.ECONNRESET {
-			debug.Printf("%s connection reset", msg)
-		} else if ne.Timeout() {
-			debug.Printf("%s client read timeout, maybe has closed\n", msg)
+		if debug {
+			if ne.Err == syscall.ECONNRESET {
+				debug.Printf("%s connection reset", msg)
+			} else if ne.Timeout() {
+				debug.Printf("%s client read timeout, maybe has closed\n", msg)
+			}
 		}
 	} else {
-		errl.Printf("%s %v %v\n", msg, err, r)
+		// TODO is this possible?
+		errl.Printf("handleClientReadError: %s %v %v\n", msg, err, r)
 	}
 	return err
 }
@@ -374,13 +403,16 @@ func (c *clientConn) handleClientReadError(r *Request, err error, msg string) er
 func (c *clientConn) handleClientWriteError(r *Request, err error, msg string) error {
 	// Write to client error could be either broken pipe or connection reset
 	if ne, ok := err.(*net.OpError); ok {
-		if ne.Err == syscall.EPIPE {
-			debug.Printf("%s broken pipe %v\n", msg, r)
-		} else if ne.Err == syscall.ECONNRESET {
-			debug.Println("%s connection reset %v\n", msg, r)
+		if debug {
+			if ne.Err == syscall.EPIPE {
+				debug.Printf("%s broken pipe %v\n", msg, r)
+			} else if ne.Err == syscall.ECONNRESET {
+				debug.Println("%s connection reset %v\n", msg, r)
+			}
 		}
 	} else {
-		errl.Printf("%s %v %v\n", msg, err, r)
+		// TODO is this possible?
+		errl.Printf("handleClientWriteError: %s %v %v\n", msg, err, r)
 	}
 	return err
 }
@@ -395,27 +427,27 @@ func isErrOpWrite(err error) bool {
 func (c *clientConn) readResponse(h *Handler, r *Request) (err error) {
 	var rp *Response
 
-	if h.maybeFake() && h.SetReadDeadline(time.Now().Add(readTimeout)) != nil {
+	if h.maybeFake() && h.state == hsConnected && h.SetReadDeadline(time.Now().Add(readTimeout)) != nil {
 		debug.Println("SetReadDeadline BEFORE receiving the first response")
 	}
-	if rp, err = parseResponse(h.buf.Reader); err != nil {
+	if rp, err = parseResponse(h.buf); err != nil {
 		return c.handleServerReadError(h, r, err, "Parse response from server.")
 	}
 	// After have received the first reponses from the server, we consider
 	// ther server as real instead of fake one caused by wrong DNS reply. So
 	// don't time out later.
-	if h.maybeFake() && h.SetReadDeadline(time.Time{}) != nil {
+	if h.maybeFake() && h.state == hsConnected && h.SetReadDeadline(zeroTime) != nil {
 		debug.Println("Un-SetReadDeadline AFTER receiving the first response")
 	}
-	h.setStateResponsReceived(r.URL.Host)
+	h.setState(hsReceivingResponse)
+	if h.connType == directConn {
+		addDirectHost(h.host)
+	}
 
-	if _, err = c.buf.WriteString(rp.raw.String()); err != nil {
+	if _, err = c.Write(rp.raw.Bytes()); err != nil {
 		return c.handleClientWriteError(r, err, "Write response header back to client")
 	}
-	// Flush response header to the client ASAP
-	if err = c.buf.Flush(); err != nil {
-		return c.handleClientWriteError(r, err, "Flushing response header to client")
-	}
+	h.setState(hsSendingReceivingResponse)
 
 	// Wrap inside if to avoid function argument evaluation.
 	if dbgRep {
@@ -423,7 +455,7 @@ func (c *clientConn) readResponse(h *Handler, r *Request) (err error) {
 	}
 
 	if rp.hasBody(r.Method) {
-		if err = sendBody(c.buf.Writer, nil, h.buf.Reader, rp.Chunking, rp.ContLen); err != nil {
+		if err = sendBody(c, nil, h.buf, rp.Chunking, rp.ContLen); err != nil {
 			// Non persistent connection will return nil upon successful response reading
 			if err == io.EOF {
 				// For persistent connection, EOF from server is error.
@@ -438,10 +470,6 @@ func (c *clientConn) readResponse(h *Handler, r *Request) (err error) {
 				err = c.handleClientWriteError(r, err, "Write to client response body.")
 			} else {
 				err = c.handleServerReadError(h, r, err, "Read response body from server.")
-			}
-		} else {
-			if err = c.buf.Flush(); err != nil {
-				return c.handleClientWriteError(r, err, "Flushing response body to client")
 			}
 		}
 	}
@@ -514,63 +542,82 @@ func maybeBlocked(err error) bool {
 
 const connFailedErrCode = "504 Connection failed"
 
-func (c *clientConn) createHandler(r *Request) (*Handler, error) {
-	var err error
-	var srvconn conn
-	connFailed := false
+func createParentProxyConnection(host string) (srvconn conn, err error) {
+	// Try shadowsocks server first
+	if hasShadowSocksServer {
+		if srvconn, err = createShadowSocksConnection(host); err == nil {
+			return
+		}
+	}
+	if hasSocksServer {
+		if srvconn, err = createSocksConnection(host); err == nil {
+			return
+		}
+	}
+	return zeroConn, errNoParentProxy
+}
 
-	if isHostBlocked(r.URL.Host) {
+func (c *clientConn) createConnection(host string, r *Request) (srvconn conn, err error) {
+	if config.alwaysProxy {
+		if srvconn, err = createParentProxyConnection(host); err == nil {
+			return
+		}
+		goto fail
+	}
+	if isHostBlocked(host) && hasParentProxy {
 		// In case of connection error to socks server, fallback to direct connection
-		if srvconn, err = createSocksConnection(r.URL.Host); err != nil {
-			if isHostAlwaysBlocked(r.URL.Host) {
-				connFailed = true
-				goto connDone
-			}
-			if srvconn, err = createDirectConnection(r.URL.Host); err != nil {
-				connFailed = true
-				goto connDone
-			}
+		if srvconn, err = createParentProxyConnection(host); err == nil {
+			return
+		}
+		if isHostAlwaysBlocked(host) {
+			goto fail
+		}
+		if srvconn, err = createDirectConnection(host); err == nil {
+			return
 		}
 	} else {
 		// In case of error on direction connection, try socks server
-		if srvconn, err = createDirectConnection(r.URL.Host); err != nil {
-			if isHostAlwaysDirect(r.URL.Host) || hostIsIP(r.URL.Host) {
-				connFailed = true
-				goto connDone
-			}
-			// debug.Printf("type of err %v\n", reflect.TypeOf(err))
-			// GFW may cause dns lookup fail, may also cause connection time out or reset
-			if _, ok := err.(*net.DNSError); ok {
-			} else if maybeBlocked(err) {
-			} else {
-				connFailed = true
-				goto connDone
-			}
+		if srvconn, err = createDirectConnection(host); err == nil {
+			return
+		}
+		if isHostAlwaysDirect(host) || hostIsIP(host) || !hasParentProxy {
+			goto fail
+		}
+		// debug.Printf("type of err %v\n", reflect.TypeOf(err))
+		// GFW may cause dns lookup fail, may also cause connection time out or reset
+		if _, ok := err.(*net.DNSError); ok || maybeBlocked(err) {
 			// Try to create socks connection
 			var socksErr error
-			if srvconn, socksErr = createSocksConnection(r.URL.Host); socksErr != nil {
-				connFailed = true
-				goto connDone
-			}
-			// If socks connection succeeds, it's very likely blocked
-			if config.autoRetry || isHostChouFeng(r.URL.Host) || isErrConnReset(err) {
-				addBlockedHost(r.URL.Host)
-			} else {
+			if srvconn, socksErr = createParentProxyConnection(host); socksErr == nil {
+				// Connection reset is very likely caused by GFW, directly add
+				// to blocked list. Timeout error is not reliable detecting
+				// blocked site, ask the user unless autoRetry is enabled.
+				if config.autoRetry || isHostChouFeng(host) || isErrConnReset(err) {
+					addBlockedHost(host)
+					return srvconn, nil
+				}
 				srvconn.Close()
-				sendBlockedErrorPage(c.buf.Writer, connFailedErrCode, err.Error(),
+				sendBlockedErrorPage(c, connFailedErrCode, err.Error(),
 					genErrMsg(r, "Connection failed.")+genBlockedSiteMsg(r), r)
-				return nil, errPageSent
+				return zeroConn, errPageSent
 			}
 		}
 	}
 
-connDone:
-	if connFailed {
-		sendErrorPage(c.buf.Writer, connFailedErrCode, err.Error(),
+fail:
+	debug.Printf("Failed to connect to %s %s", host, r)
+	if r.Method != "CONNECT" {
+		sendErrorPage(c, connFailedErrCode, err.Error(),
 			genErrMsg(r, "Connection failed."))
-		return nil, errPageSent
 	}
+	return zeroConn, errPageSent
+}
 
+func (c *clientConn) createHandler(r *Request) (*Handler, error) {
+	srvconn, err := c.createConnection(r.URL.Host, r)
+	if err != nil {
+		return nil, err
+	}
 	h := newHandler(srvconn, r.URL.Host)
 	if r.isConnect {
 		// Don't put connection for CONNECT method for reuse
@@ -609,7 +656,10 @@ func copyServer2Client(h *Handler, c *clientConn, cliStopped notification, r *Re
 			debug.Printf("copyServer2Client write data: %v\n", err)
 			return
 		}
-		h.setStateResponsReceived(r.URL.Host)
+		h.setState(hsReceivingResponse)
+		if h.connType == directConn {
+			addDirectHost(h.host)
+		}
 	}
 	return
 }
@@ -632,8 +682,8 @@ func copyClient2Server(c *clientConn, h *Handler, srvStopped notification, r *Re
 			debug.Println("copyClient2Server server stopped")
 			return
 		}
-		if h.maybeFake() {
-			timeout = time.Now().Add(3 * time.Second)
+		if h.maybeFake() && h.state == hsConnected {
+			timeout = time.Now().Add(2 * time.Second)
 		} else {
 			timeout = time.Now().Add(readTimeout)
 		}
@@ -648,8 +698,7 @@ func copyClient2Server(c *clientConn, h *Handler, srvStopped notification, r *Re
 				// open connections.
 				continue
 			}
-			if config.detectSSLErr && (isErrConnReset(err) || err == io.EOF) &&
-				h.maybeSSLErr(start) {
+			if config.detectSSLErr && (isErrConnReset(err) || err == io.EOF) && h.maybeSSLErr(start) {
 				debug.Println("client connection closed very soon, taken as SSL error:", r)
 				addBlockedHost(r.URL.Host)
 			}
@@ -680,16 +729,18 @@ func copyClient2Server(c *clientConn, h *Handler, srvStopped notification, r *Re
 
 func (h *Handler) maybeFake() bool {
 	// GFW may return wrong DNS record, which we can connect to but block
-	// forever on read. (e.g. twitter.com) If we have never received any
-	// response yet, then we should set a timeout for read/write.
-	return h.state == hsConnected && h.connType == directConn &&
-		!isHostAlwaysDirect(h.host)
+	// forever on read. (e.g. twitter.com)
+	return h.connType == directConn && !isHostAlwaysDirect(h.host)
+}
+
+func (h *Handler) hasNotSendResponse() bool {
+	return h.state < hsSendingReceivingResponse
 }
 
 func (h *Handler) maybeSSLErr(cliStart time.Time) bool {
 	// If client closes connection very soon, maybe there's SSL error, maybe
 	// not (e.g. user stopped request).
-	// COW can't which is the this, so this detection is not reliable.
+	// COW can't tell which is the case, so this detection is not reliable.
 	return h.state > hsConnected && time.Now().Sub(cliStart) < sslLeastDuration
 }
 
@@ -703,16 +754,13 @@ func (h *Handler) mayBeClosed() bool {
 	return time.Now().Sub(h.lastUse) > serverConnTimeout
 }
 
-func (h *Handler) setStateResponsReceived(host string) {
-	if h.state == hsConnected {
-		h.state = hsResponsReceived
-		if h.connType == directConn {
-			addDirectHost(host)
-		}
+func (h *Handler) setState(newState handlerState) {
+	if h.state+1 == newState {
+		h.state = newState
 	}
 }
 
-var connEstablished = []byte("HTTP/1.0 200 Connection established\r\nProxy-agent: cow-proxy/0.1\r\n\r\n")
+var connEstablished = []byte("HTTP/1.0 200 Connection established\r\nProxy-agent: cow-proxy\r\n\r\n")
 
 // Do HTTP CONNECT
 func (h *Handler) doConnect(r *Request, c *clientConn) (err error) {
@@ -760,27 +808,24 @@ func (h *Handler) doConnect(r *Request, c *clientConn) (err error) {
 // Do HTTP request other that CONNECT
 func (h *Handler) doRequest(r *Request, c *clientConn) (err error) {
 	// Send request to the server
-	if _, err = h.buf.Write(r.raw.Bytes()); err != nil {
+	if _, err = h.Write(r.raw.Bytes()); err != nil {
 		// The srv connection maybe already closed.
 		// Need to delete the connection and reconnect in that case.
 		return c.handleServerWriteError(r, h, err, "Sending request header")
-	}
-	if h.buf.Writer.Flush() != nil {
-		return c.handleServerWriteError(r, h, err, "Flushing request header")
 	}
 
 	// Send request body
 	if r.contBuf != nil {
 		debug.Println("Retry request send buffered body:", r)
-		if _, err = h.buf.Write(r.contBuf.Bytes()); err != nil {
-			sendErrorPage(h.buf.Writer, "502 send request error", err.Error(),
+		if _, err = h.Write(r.contBuf.Bytes()); err != nil {
+			sendErrorPage(h, "502 send request error", err.Error(),
 				"Send retry request body")
 			r.contBuf = nil // let gc recycle memory earlier
 			return errPageSent
 		}
 	} else if r.Method == "POST" {
 		r.contBuf = new(bytes.Buffer)
-		if err = sendBody(h.buf.Writer, r.contBuf, c.buf.Reader, r.Chunking, r.ContLen); err != nil {
+		if err = sendBody(h, r.contBuf, c.buf, r.Chunking, r.ContLen); err != nil {
 			if err == io.EOF {
 				if r.KeepAlive {
 					errl.Println("Unexpected EOF reading request body from client", r)
@@ -795,15 +840,6 @@ func (h *Handler) doRequest(r *Request, c *clientConn) (err error) {
 			return
 		}
 	}
-	if err = h.buf.Writer.Flush(); err != nil {
-		if r.contBuf != nil {
-			sendErrorPage(h.buf.Writer, "502 send request error", err.Error(),
-				"Flush retry request")
-			r.contBuf = nil
-			return errPageSent
-		}
-		return c.handleServerWriteError(r, h, err, "Flushing request body")
-	}
 
 	return c.readResponse(h, r)
 }
@@ -814,46 +850,35 @@ func sendBodyWithContLen(w, contBuf io.Writer, r *bufio.Reader, contLen int64) (
 	if contLen == 0 {
 		return
 	}
-	// CopyN will copy n bytes unless there's error of EOF. For EOF, it means
-	// the connection is closed, return will propagate till serv function and
-	// close client connection.
-	if contBuf == nil {
-		if _, err = io.CopyN(w, r, contLen); err != nil {
-			debug.Println("Send response body", err)
-			return err
-		}
-	} else {
-		copyWithBuf(w, contBuf, r, contLen, "Read response body:", "Write response body:")
+	if err = copyWithBuf(w, contBuf, r, contLen); err != nil {
+		debug.Println("sendBodyWithContLen:", err)
 	}
 	return
 }
 
-func copyWithBuf(w, contBuf io.Writer, r io.Reader, size int64, rMsg, wMsg string) {
-	buf := make([]byte, size)
-	if _, err := r.Read(buf); err != nil {
-		errl.Println(rMsg, err)
-		return
+func copyWithBuf(w, contBuf io.Writer, r io.Reader, size int64) (err error) {
+	if contBuf == nil {
+		_, err = io.CopyN(w, r, size)
+	} else {
+		buf := make([]byte, size, size)
+		if _, err = r.Read(buf); err != nil {
+			return
+		}
+		contBuf.Write(buf)
+		_, err = w.Write(buf)
 	}
-	contBuf.Write(buf)
-	if _, err := w.Write(buf); err != nil {
-		debug.Println(wMsg, err)
-		return
-	}
+	return
 }
 
 // Send response body if header specifies chunked encoding
 func sendBodyChunked(w, contBuf io.Writer, r *bufio.Reader) (err error) {
 	// debug.Println("Sending chunked body")
-	done := false
-	for !done {
+	for {
 		var s string
 		// Read chunk size line, ignore chunk extension if any
 		if s, err = ReadLine(r); err != nil {
 			errl.Println("Reading chunk size:", err)
 			return
-		}
-		if contBuf != nil {
-			io.WriteString(contBuf, s+"\r\n")
 		}
 		// debug.Println("Chunk size line", s)
 		f := strings.SplitN(s, ";", 2)
@@ -862,37 +887,34 @@ func sendBodyChunked(w, contBuf io.Writer, r *bufio.Reader) (err error) {
 			errl.Println("Chunk size not valid:", err)
 			return
 		}
-		if _, err = io.WriteString(w, s+"\r\n"); err != nil {
+		sb := []byte(s + "\r\n")
+		if contBuf != nil {
+			contBuf.Write(sb)
+		}
+		// Write chunk size, not buffered
+		if _, err = w.Write(sb); err != nil {
 			debug.Println("Writing chunk size in sendBodyChunked:", err)
 			return
 		}
-
 		if size == 0 { // end of chunked data, ignore any trailers
-			done = true
-		} else if contBuf == nil {
-			// Read chunk data and send to client
-			if _, err = io.CopyN(w, r, size); err != nil {
-				debug.Println("Copy chunked data:", err)
-				return
-			}
-		} else {
-			copyWithBuf(w, contBuf, r, size, "Read chunked data:", "Write chunked data:")
-		}
-
-		if err = readCheckCRLF(r); err != nil {
-			debug.Println("Reading chunked data CRLF:", err)
 			return
 		}
-		if contBuf != nil {
-			io.WriteString(contBuf, "\r\n")
-		}
-		if _, err = io.WriteString(w, "\r\n"); err != nil {
-			debug.Println("Writing end line in sendBodyChunked:", err)
+		// If we assume correct data from read side, we can use size+2 to read
+		// chunked data and the followed CRLF. Though we should be strict on
+		// input data, almost all server on the internet implements chunked
+		// encoding correctly, this assumption should almost always hold. In
+		// the rare case of wrong data, parsing the followed chunk size line
+		// may discover error and stop.
+		if err = copyWithBuf(w, contBuf, r, size+2); err != nil {
+			debug.Println("sendBodyChunked:", err)
 			return
 		}
 	}
 	return
 }
+
+var CRLFbytes = []byte("\r\n")
+var chunkEndbytes = []byte("0\r\n\r\n")
 
 func sendBodySplitIntoChunk(w, contBuf io.Writer, r *bufio.Reader) (err error) {
 	buf := make([]byte, bufSize)
@@ -901,28 +923,33 @@ func sendBodySplitIntoChunk(w, contBuf io.Writer, r *bufio.Reader) (err error) {
 		n, err = r.Read(buf)
 		// debug.Println("split into chunk n =", n, "err =", err)
 		if err != nil {
-			io.WriteString(w, "0\r\n\r\n")
-			if contBuf != nil {
-				io.WriteString(contBuf, "0\r\n\r\n")
-			}
-			// EOF is expected here as the server is closing connection.
 			if err == io.EOF {
-				err = nil
+				// EOF is expected here as the server is closing connection.
+				// debug.Println("end chunked encoding")
+				if contBuf != nil {
+					contBuf.Write(chunkEndbytes)
+				}
+				if _, err = w.Write(chunkEndbytes); err != nil {
+					debug.Println("Write chunk end 0")
+				}
+				return
 			}
+			debug.Println("Reading error in sendBodySplitIntoChunk", err)
 			return
 		}
 
-		sizeStr := fmt.Sprintf("%x\r\n", n)
+		sb := []byte(fmt.Sprintf("%x\r\n", n))
 		if contBuf != nil {
-			io.WriteString(contBuf, sizeStr)
+			contBuf.Write(sb)
 			contBuf.Write(buf[:n])
 		}
-		if _, err = io.WriteString(w, sizeStr); err != nil {
+		if _, err = w.Write(sb); err != nil {
 			debug.Printf("Writing chunk size %v\n", err)
 			return
 		}
-		if _, err = w.Write(buf[:n]); err != nil {
-			debug.Printf("Writing chunk data%v\n", err)
+		buf = append(buf[:n], CRLFbytes...)
+		if _, err = w.Write(buf[:n+2]); err != nil {
+			debug.Println("Writing chunk data:", err)
 			return
 		}
 	}

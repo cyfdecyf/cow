@@ -2,7 +2,6 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"os"
 	"os/signal"
 	"runtime"
@@ -24,14 +23,22 @@ func sigHandler() {
 	os.Exit(0)
 }
 
+var hasParentProxy = false
+
 func main() {
 	// Parse flags after load config to allow override options in config
 	loadConfig()
 	flag.Parse()
+	initLog()
 
-	if config.socksAddr == "" {
-		fmt.Println("Socks server address required")
-		os.Exit(1)
+	initProxyServerAddr()
+	initSocksServer()
+	initShadowSocks()
+
+	if !hasSocksServer && !hasShadowSocksServer {
+		info.Println("no socks/shadowsocks server, can't handle blocked sites")
+	} else {
+		hasParentProxy = true
 	}
 
 	setSelfURL()
@@ -41,7 +48,6 @@ func main() {
 		os.Exit(0)
 	}
 
-	initLog()
 	loadDomainSet()
 	/*
 		if *cpuprofile != "" {

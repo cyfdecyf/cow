@@ -1,16 +1,23 @@
 # proxy listen address
+# 0.0.0.0 can be used if host IP address can be detected
 listen = 127.0.0.1:7777
 
-# parent socks proxy address
+# parent socks proxy address, COW will use this to access blocked sites
 socks = 127.0.0.1:1080
+# ssh to the server to start socks proxy (requires public key authentication)
+# If option is not empty, COW will run the following command:
+#     ssh -n -N -D <port in socks option> -p <port in sshServer> <sshServer>
+# port in sshServer is optional, defaults to 22
+# for other ssh options, please specify them in ~/.ssh/config
+#sshServer = user@server[:port]
+
+# shadowsocks server address
+shadowsocks = 1.1.1.1:8838
+# shadowsocks password
+shadowPasswd = barfoo!
 
 # Nubmer of cores to use
 core = 2
-
-# ssh to the server to start socks proxy (requires public key authentication)
-# If option is not empty, COW will run the following command:
-# "ssh -n -N -D <port in socks option> <sshServer>"
-#sshServer = user@server
 
 # Update blocked domain list (~/.cow/auto-blocked)
 updateBlocked = true
@@ -27,3 +34,6 @@ detectSSLErr = true
 
 # empty path means stdout, use /dev/null to disable output
 logFile = ~/.cow/log
+
+# always use parent proxy
+alwaysProxy = false

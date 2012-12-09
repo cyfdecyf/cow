@@ -28,7 +28,7 @@ const (
 	chouFname          = "chou"
 	rcFname            = "rc"
 
-	version = "0.3.3"
+	version = "0.3.4"
 )
 
 var config struct {
@@ -41,7 +41,12 @@ var config struct {
 	autoRetry     bool
 	detectSSLErr  bool
 	logFile       string
+	alwaysProxy   bool
 	printVer      bool
+
+	// For shadowsocks server
+	shadowSocks  string
+	shadowPasswd string
 
 	// These are for internal use
 	dir               string // directory containing config file and blocked site list
@@ -74,7 +79,11 @@ func init() {
 	flag.BoolVar(&config.autoRetry, "autoRetry", false, "automatically retry timeout requests using socks proxy")
 	flag.BoolVar(&config.detectSSLErr, "detectSSLErr", true, "detect SSL error based on how soon client closes connection")
 	flag.StringVar(&config.logFile, "logFile", "", "write output to file, empty means stdout")
+	flag.BoolVar(&config.alwaysProxy, "alwaysProxy", false, "always use parent proxy")
 	flag.BoolVar(&config.printVer, "version", false, "print version")
+
+	flag.StringVar(&config.shadowSocks, "shadowSocks", "", "shadowsocks server address")
+	flag.StringVar(&config.shadowPasswd, "shadowPasswd", "", "shadowsocks password")
 
 	config.dir = path.Join(homeDir, dotDir)
 	config.blockedFile = path.Join(config.dir, blockedFname)
@@ -83,6 +92,11 @@ func init() {
 	config.alwaysDirectFile = path.Join(config.dir, alwaysDirectFname)
 	config.chouFile = path.Join(config.dir, chouFname)
 	config.rcFile = path.Join(config.dir, rcFname)
+
+	// Make it easy to find config directory on windows
+	if isWindows() {
+		fmt.Println("Config directory:", config.dir)
+	}
 }
 
 // Tries to open a file, if file not exist, return both nil for os.File and
@@ -117,9 +131,19 @@ func (p configParser) ParseListen(val string) {
 	config.listenAddr = val
 }
 
-func (p configParser) ParseSocks(val string) {
+func isServerAddrValid(val string) bool {
+	if val == "" {
+		return true
+	}
 	_, port := splitHostPort(val)
 	if port == "" {
+		return false
+	}
+	return true
+}
+
+func (p configParser) ParseSocks(val string) {
+	if !isServerAddrValid(val) {
 		fmt.Println("socks server must have port specified")
 		os.Exit(1)
 	}
@@ -127,6 +151,9 @@ func (p configParser) ParseSocks(val string) {
 }
 
 func (p configParser) ParseCore(val string) {
+	if val == "" {
+		return
+	}
 	var err error
 	config.numProc, err = strconv.Atoi(val)
 	if err != nil {
@@ -157,6 +184,22 @@ func (p configParser) ParseDetectSSLErr(val string) {
 
 func (p configParser) ParseLogFile(val string) {
 	config.logFile = val
+}
+
+func (p configParser) ParseAlwaysProxy(val string) {
+	config.alwaysProxy = parseBool(val, "alwaysProxy")
+}
+
+func (p configParser) ParseShadowSocks(val string) {
+	if !isServerAddrValid(val) {
+		fmt.Println("shadowsocks server must have port specified")
+		os.Exit(1)
+	}
+	config.shadowSocks = val
+}
+
+func (p configParser) ParseShadowPasswd(val string) {
+	config.shadowPasswd = val
 }
 
 func loadConfig() {

@@ -1,21 +1,15 @@
 package main
 
 import (
-	"bufio"
-	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"text/template"
 )
 
-const pacDirect = `function FindProxyForURL(url, host) {
-	return 'DIRECT';
-};
-`
-
 const pacRawTmpl = `var direct = 'DIRECT';
-var httpProxy = 'PROXY {{.ProxyAddr}}; DIRECT';
+var httpProxy = '{{.ProxyAddr}}';
 
 var directList = [
 "localhost",
@@ -71,7 +65,34 @@ func init() {
 	}
 }
 
-func genPAC() string {
+var proxyServerAddr string
+
+func initProxyServerAddr() {
+	listen, port := splitHostPort(config.listenAddr)
+	if listen == "0.0.0.0" {
+		addrs, err := hostIP()
+		if err != nil {
+			errl.Println("Either change listen address to specific IP, or correct your host network settings.")
+			os.Exit(1)
+		}
+
+		for _, ip := range addrs {
+			proxyServerAddr += fmt.Sprintf("PROXY %s:%s; ", ip, port)
+		}
+		proxyServerAddr += "DIRECT"
+		info.Printf("proxy listen address is %s, PAC will have proxy address: %s\n",
+			config.listenAddr, proxyServerAddr)
+	} else {
+		proxyServerAddr = fmt.Sprintf("PROXY %s; DIRECT", config.listenAddr)
+	}
+}
+
+// No need for content-length as we are closing connection
+var pacHeader = []byte("HTTP/1.1 200 OK\r\nServer: cow-proxy\r\n" +
+	"Content-Type: application/x-ns-proxy-autoconfig\r\nConnection: close\r\n\r\n")
+var pacDirect = []byte("function FindProxyForURL(url, host) { return 'DIRECT'; };")
+
+func sendPAC(w io.Writer) {
 	// domains in PAC file needs double quote
 	ds1 := strings.Join(alwaysDirectDs.toArray(), "\",\n\"")
 	ds2 := strings.Join(directDs.toArray(), "\",\n\"")
@@ -84,34 +105,27 @@ func genPAC() string {
 		ds = ds1 + "\",\n\"" + ds2
 	}
 	if ds == "" {
-		return pacDirect
-	} else {
-		ds = ",\n\"" + ds + "\""
+		// Empty direct domain list
+		w.Write(pacHeader)
+		w.Write(pacDirect)
+		return
 	}
 
 	data := struct {
 		ProxyAddr     string
 		DirectDomains string
 	}{
-		config.listenAddr,
-		ds,
+		proxyServerAddr,
+		",\n\"" + ds + "\"",
 	}
 
+	if _, err := w.Write(pacHeader); err != nil {
+		debug.Println("Error writing pac header")
+		return
+	}
 	// debug.Println("direct:", data.DirectDomains)
-
-	buf := new(bytes.Buffer)
-	if err := pacTmpl.Execute(buf, data); err != nil {
+	if err := pacTmpl.Execute(w, data); err != nil {
 		errl.Println("Error generating pac file:", err)
-		os.Exit(1)
+		return
 	}
-	pac := buf.String()
-	pacHeader := "HTTP/1.1 200 Okay\r\nServer: cow-proxy\r\nContent-Type: text/html\r\nConnection: close\r\n" +
-		fmt.Sprintf("Content-Length: %d\r\n\r\n", len(pac))
-	pac = pacHeader + pac
-	return pac
-}
-
-func sendPAC(w *bufio.Writer) {
-	w.WriteString(genPAC())
-	w.Flush()
 }

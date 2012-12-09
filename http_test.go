@@ -33,7 +33,7 @@ func TestParseRequestURI(t *testing.T) {
 		{"https://google.com:80", &URL{"google.com:80", "/", "http"}},
 		{"http://google.com:80/", &URL{"google.com:80", "/", "http"}},
 		{"http://google.com:80/ncr", &URL{"google.com:80", "/ncr", "http"}},
-		{"https://google.com/ncr/tree", &URL{"google.com:80", "/ncr/tree", "http"}},
+		{"https://google.com/ncr/tree", &URL{"google.com:443", "/ncr/tree", "http"}},
 		{"google.com:80/", &URL{"google.com:80", "/", "http"}},
 		{"google.com:80", &URL{"google.com:80", "/", "http"}},
 		{"google.com", &URL{"google.com:80", "/", "http"}},
