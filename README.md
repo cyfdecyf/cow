@@ -2,6 +2,8 @@
 
 COW is a HTTP proxy that tries to automatically identify blocked websites and use a parent proxy when visiting those sites. For non-blocked sites, COW will use direct access.
 
+If you are tired of switching proxy configuration or editing blocked site list, you can give COW a try.
+
 ## Features ##
 
 - **Automatically identify blocked websites**
@@ -9,8 +11,12 @@ COW is a HTTP proxy that tries to automatically identify blocked websites and us
   - Can also manually specify blocked and directly accessible sites
 - **Generate and serve PAC file**
   - Contains domains that can be directly accessed
+- **Special handling for temporarily blocked site**
+  - Use parent proxy when blockage detected, try direct access after 2 minutes
 - **Convert socks proxy to HTTP proxy**
   - Can start socks proxy server by ssh, requires public key authentication
+- **Support [shadowsocks](https://github.com/clowwindy/shadowsocks-nodejs/)**
+  - COW itself can act as shadowsocks client, but provides HTTP proxy
 
 # Installation #
 
