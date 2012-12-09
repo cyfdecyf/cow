@@ -96,18 +96,17 @@ type chouBlockTime struct {
 
 var chou = chouBlockTime{time: map[string]time.Time{}}
 
-func inAlwaysDs(dm string) bool {
+func isHostInAlwaysDs(host string) bool {
+	dm := host2Domain(host)
 	return alwaysBlockedDs[dm] || alwaysDirectDs[dm]
 }
 
 func isHostAlwaysDirect(host string) bool {
-	h, _ := splitHostPort(host)
-	return alwaysDirectDs[host2Domain(h)]
+	return alwaysDirectDs[host2Domain(host)]
 }
 
 func isHostAlwaysBlocked(host string) bool {
-	h, _ := splitHostPort(host)
-	return alwaysBlockedDs[host2Domain(h)]
+	return alwaysBlockedDs[host2Domain(host)]
 }
 
 func isHostBlocked(host string) bool {
@@ -192,7 +191,7 @@ func addDirectDomain(dm string) {
 
 func addDirectHost(host string) (added bool) {
 	dm := host2Domain(host)
-	if !config.updateDirect || inAlwaysDs(dm) || chouDs[dm] ||
+	if !config.updateDirect || isHostInAlwaysDs(host) || chouDs[dm] ||
 		dm == "localhost" || hostIsIP(host) {
 		return
 	}

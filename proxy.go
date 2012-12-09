@@ -38,7 +38,8 @@ type handlerState byte
 
 const (
 	hsConnected handlerState = iota
-	hsResponsReceived
+	hsReceivingResponse
+	hsSendingReceivingResponse
 	hsStopped
 )
 
@@ -48,6 +49,7 @@ type conn struct {
 }
 
 var zeroConn = conn{}
+var zeroTime = time.Time{}
 
 // For both client and server connection, there's only read buffer. If we
 // create write buffer for the connection and pass it to io.CopyN, there will
@@ -82,6 +84,7 @@ type clientConn struct {
 var (
 	errRetry         = errors.New("Retry")
 	errPageSent      = errors.New("Error page has sent")
+	errShouldClose   = errors.New("Error can only be handled by close connection")
 	errInternal      = errors.New("Internal error")
 	errNoParentProxy = errors.New("No parent proxy")
 	errChunkedEncode = errors.New("Invalid chunked encoding")
@@ -153,7 +156,7 @@ func (c *clientConn) getRequest() (r *Request) {
 		c.handleClientReadError(r, err, "parse client request")
 		return nil
 	}
-	if c.SetReadDeadline(time.Time{}) != nil {
+	if c.SetReadDeadline(zeroTime) != nil {
 		debug.Println("Un-SetReadDeadline AFTER receiving client request")
 	}
 	return r
@@ -262,7 +265,7 @@ func (c *clientConn) serve() {
 		}
 
 		if r.isConnect {
-			if h.doConnect(r, c) == errRetry {
+			if err = h.doConnect(r, c); err == errRetry {
 				goto retry
 			}
 			// Why return after doConnect:
@@ -296,7 +299,7 @@ func genErrMsg(r *Request, what string) string {
 func genBlockedSiteMsg(r *Request) string {
 	if !hostIsIP(r.URL.Host) {
 		return fmt.Sprintf(
-			"<p>Domain <strong>%s</strong> maybe blocked. Refresh to retry.</p>",
+			"<p>Domain <strong>%s</strong> maybe blocked.</p>",
 			host2Domain(r.URL.Host))
 	}
 	return ""
@@ -307,57 +310,69 @@ const (
 	errCodeTimeout = "504 time out reading response"
 )
 
-func (c *clientConn) handleBlockedRequest(r *Request, err error, errCode, msg string) error {
+func (c *clientConn) handleBlockedRequest(r *Request, h *Handler, err error, errCode, msg string) error {
 	// Domain in chou domain set is likely to be blocked, should automatically
 	// restart request using parent proxy.
 	// Reset is usually reliable in detecting blocked site, so retry for connection reset.
 	if errCode == errCodeReset || config.autoRetry || isHostChouFeng(r.URL.Host) {
+		debug.Printf("Blocked site %s detected for request %v error: %v\n", h.host, r, err)
 		if addBlockedHost(r.URL.Host) {
 			return errRetry
 		}
 		msg += genBlockedSiteMsg(r)
-		sendErrorPage(c, errCode, err.Error(), msg)
+		if h.hasNotSendResponse() {
+			sendErrorPage(c, errCode, err.Error(), msg)
+			return errPageSent
+		}
+	}
+	if h.hasNotSendResponse() {
+		// If autoRetry is not enabled, let the user decide whether add the domain to blocked list.
+		sendBlockedErrorPage(c, errCode, err.Error(), msg, r)
 		return errPageSent
 	}
-	// If autoRetry is not enabled, let the user decide whether add the domain to blocked list.
-	sendBlockedErrorPage(c, errCode, err.Error(), msg, r)
-	return errPageSent
+	errl.Println("blocked request with partial response sent to client:", err, r)
+	return errShouldClose
 }
 
 func (c *clientConn) handleServerReadError(h *Handler, r *Request, err error, msg string) error {
 	var errMsg string
 	if err == io.EOF {
-		debug.Println("Read from server EOF")
-		return errRetry
-	}
-	if h.maybeFake() {
-		errMsg = genErrMsg(r, msg)
-		if ne, ok := err.(*net.OpError); ok {
-			// GFW may connection reset here, may also make it time out Is it
-			// normal for connection to a site timeout? If so, it's better not add
-			// it to blocked site.
-			if ne.Err == syscall.ECONNRESET {
-				return c.handleBlockedRequest(r, err, errCodeReset, errMsg)
-			}
-			if ne.Timeout() {
-				return c.handleBlockedRequest(r, err, errCodeTimeout, errMsg)
-			}
-			// fall through to send general error message
+		if h.hasNotSendResponse() {
+			debug.Println("Read from server EOF, retry")
+			return errRetry
 		}
+		errl.Println("Read from server EOF, partial data sent to client")
+		return errShouldClose
 	}
-	errl.Printf("Read from server unhandled error for %v %v\n", r, err)
-	sendErrorPage(c, "502 read error", err.Error(), errMsg)
-	return errPageSent
+	errMsg = genErrMsg(r, msg)
+	if h.maybeFake() || isErrConnReset(err) {
+		// GFW may connection reset when reading from  server, may also make
+		// it time out. But timeout is also normal if network condition is
+		// bad, so should treate timeout separately.
+		if isErrConnReset(err) {
+			return c.handleBlockedRequest(r, h, err, errCodeReset, errMsg)
+		}
+		if isErrTimeout(err) {
+			return c.handleBlockedRequest(r, h, err, errCodeTimeout, errMsg)
+		}
+		// fall through to send general error message
+	}
+	if h.hasNotSendResponse() {
+		sendErrorPage(c, "502 read error", err.Error(), errMsg)
+		return errPageSent
+	}
+	errl.Println("Unhandled server read error:", err, r)
+	return errShouldClose
 }
 
 func (c *clientConn) handleServerWriteError(r *Request, h *Handler, err error, msg string) error {
 	// This function is only called in doRequest, no response is sent to client.
 	// So if visiting blocked site, can always retry request.
-	if h.maybeFake() {
+	if h.maybeFake() || isErrConnReset(err) {
 		errMsg := genErrMsg(r, msg)
 		if ne, ok := err.(*net.OpError); ok {
 			if ne.Err == syscall.ECONNRESET {
-				return c.handleBlockedRequest(r, err, errCodeReset, errMsg)
+				return c.handleBlockedRequest(r, h, err, errCodeReset, errMsg)
 			}
 			// TODO What about broken PIPE?
 		}
@@ -371,13 +386,16 @@ func (c *clientConn) handleClientReadError(r *Request, err error, msg string) er
 	if err == io.EOF {
 		debug.Printf("%s client closed connection", msg)
 	} else if ne, ok := err.(*net.OpError); ok {
-		if ne.Err == syscall.ECONNRESET {
-			debug.Printf("%s connection reset", msg)
-		} else if ne.Timeout() {
-			debug.Printf("%s client read timeout, maybe has closed\n", msg)
+		if debug {
+			if ne.Err == syscall.ECONNRESET {
+				debug.Printf("%s connection reset", msg)
+			} else if ne.Timeout() {
+				debug.Printf("%s client read timeout, maybe has closed\n", msg)
+			}
 		}
 	} else {
-		errl.Printf("%s %v %v\n", msg, err, r)
+		// TODO is this possible?
+		errl.Printf("handleClientReadError: %s %v %v\n", msg, err, r)
 	}
 	return err
 }
@@ -385,13 +403,16 @@ func (c *clientConn) handleClientReadError(r *Request, err error, msg string) er
 func (c *clientConn) handleClientWriteError(r *Request, err error, msg string) error {
 	// Write to client error could be either broken pipe or connection reset
 	if ne, ok := err.(*net.OpError); ok {
-		if ne.Err == syscall.EPIPE {
-			debug.Printf("%s broken pipe %v\n", msg, r)
-		} else if ne.Err == syscall.ECONNRESET {
-			debug.Println("%s connection reset %v\n", msg, r)
+		if debug {
+			if ne.Err == syscall.EPIPE {
+				debug.Printf("%s broken pipe %v\n", msg, r)
+			} else if ne.Err == syscall.ECONNRESET {
+				debug.Println("%s connection reset %v\n", msg, r)
+			}
 		}
 	} else {
-		errl.Printf("%s %v %v\n", msg, err, r)
+		// TODO is this possible?
+		errl.Printf("handleClientWriteError: %s %v %v\n", msg, err, r)
 	}
 	return err
 }
@@ -406,7 +427,7 @@ func isErrOpWrite(err error) bool {
 func (c *clientConn) readResponse(h *Handler, r *Request) (err error) {
 	var rp *Response
 
-	if h.maybeFake() && h.SetReadDeadline(time.Now().Add(readTimeout)) != nil {
+	if h.maybeFake() && h.state == hsConnected && h.SetReadDeadline(time.Now().Add(readTimeout)) != nil {
 		debug.Println("SetReadDeadline BEFORE receiving the first response")
 	}
 	if rp, err = parseResponse(h.buf); err != nil {
@@ -415,14 +436,18 @@ func (c *clientConn) readResponse(h *Handler, r *Request) (err error) {
 	// After have received the first reponses from the server, we consider
 	// ther server as real instead of fake one caused by wrong DNS reply. So
 	// don't time out later.
-	if h.maybeFake() && h.SetReadDeadline(time.Time{}) != nil {
+	if h.maybeFake() && h.state == hsConnected && h.SetReadDeadline(zeroTime) != nil {
 		debug.Println("Un-SetReadDeadline AFTER receiving the first response")
 	}
-	h.setStateResponsReceived(r.URL.Host)
+	h.setState(hsReceivingResponse)
+	if h.connType == directConn {
+		addDirectHost(h.host)
+	}
 
 	if _, err = c.Write(rp.raw.Bytes()); err != nil {
 		return c.handleClientWriteError(r, err, "Write response header back to client")
 	}
+	h.setState(hsSendingReceivingResponse)
 
 	// Wrap inside if to avoid function argument evaluation.
 	if dbgRep {
@@ -631,7 +656,10 @@ func copyServer2Client(h *Handler, c *clientConn, cliStopped notification, r *Re
 			debug.Printf("copyServer2Client write data: %v\n", err)
 			return
 		}
-		h.setStateResponsReceived(r.URL.Host)
+		h.setState(hsReceivingResponse)
+		if h.connType == directConn {
+			addDirectHost(h.host)
+		}
 	}
 	return
 }
@@ -654,8 +682,8 @@ func copyClient2Server(c *clientConn, h *Handler, srvStopped notification, r *Re
 			debug.Println("copyClient2Server server stopped")
 			return
 		}
-		if h.maybeFake() {
-			timeout = time.Now().Add(3 * time.Second)
+		if h.maybeFake() && h.state == hsConnected {
+			timeout = time.Now().Add(2 * time.Second)
 		} else {
 			timeout = time.Now().Add(readTimeout)
 		}
@@ -670,8 +698,7 @@ func copyClient2Server(c *clientConn, h *Handler, srvStopped notification, r *Re
 				// open connections.
 				continue
 			}
-			if config.detectSSLErr && (isErrConnReset(err) || err == io.EOF) &&
-				h.maybeSSLErr(start) {
+			if config.detectSSLErr && (isErrConnReset(err) || err == io.EOF) && h.maybeSSLErr(start) {
 				debug.Println("client connection closed very soon, taken as SSL error:", r)
 				addBlockedHost(r.URL.Host)
 			}
@@ -702,10 +729,12 @@ func copyClient2Server(c *clientConn, h *Handler, srvStopped notification, r *Re
 
 func (h *Handler) maybeFake() bool {
 	// GFW may return wrong DNS record, which we can connect to but block
-	// forever on read. (e.g. twitter.com) If we have never received any
-	// response yet, then we should set a timeout for read/write.
-	return h.state == hsConnected && h.connType == directConn &&
-		!isHostAlwaysDirect(h.host)
+	// forever on read. (e.g. twitter.com)
+	return h.connType == directConn && !isHostAlwaysDirect(h.host)
+}
+
+func (h *Handler) hasNotSendResponse() bool {
+	return h.state < hsSendingReceivingResponse
 }
 
 func (h *Handler) maybeSSLErr(cliStart time.Time) bool {
@@ -725,12 +754,9 @@ func (h *Handler) mayBeClosed() bool {
 	return time.Now().Sub(h.lastUse) > serverConnTimeout
 }
 
-func (h *Handler) setStateResponsReceived(host string) {
-	if h.state == hsConnected {
-		h.state = hsResponsReceived
-		if h.connType == directConn {
-			addDirectHost(host)
-		}
+func (h *Handler) setState(newState handlerState) {
+	if h.state+1 == newState {
+		h.state = newState
 	}
 }
 

@@ -23,7 +23,7 @@ var errPageRawTmpl = `<!DOCTYPE html>
 `
 
 var blockedFormRawTmpl = `<p></p>
-		Add <b>{{.Domain}}</b> to 
+		<b>Refresh to retry</b> or add <b>{{.Domain}}</b> to
 		<form action="http://{{.ListenAddr}}/blocked" method="get">
 		<input type="hidden" name="host" value={{.Host}}>
 		<b>blocked sites</b>
@@ -126,7 +126,7 @@ func sendBlockedErrorPage(w io.Writer, codeReason, h1, msg string, r *Request) {
 	// If host is IP or in always DS, we can't add it to blocked or direct domain list. Just
 	// return ordinary error page.
 	h, _ := splitHostPort(r.URL.Host)
-	if hostIsIP(r.URL.Host) || inAlwaysDs(host2Domain(r.URL.Host)) {
+	if hostIsIP(r.URL.Host) || isHostInAlwaysDs(h) {
 		sendErrorPage(w, codeReason, h1, msg)
 		return
 	}
