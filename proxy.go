@@ -17,9 +17,10 @@ import (
 // What value is appropriate?
 const readTimeout = 15 * time.Second
 const dialTimeout = 10 * time.Second
+const clientConnTimeout = 15 * time.Second
 const sslLeastDuration = time.Second
 
-// Lots of the code here are learnt from the http package
+// Some code are learnt from the http package
 
 type Proxy struct {
 	addr string // listen address
@@ -142,9 +143,6 @@ func (c *clientConn) close() {
 func isSelfURL(h string) bool {
 	return h == "" || h == selfURLLH || h == selfURL127
 }
-
-// Close client connection if no new requests come in after 5 seconds.
-const clientConnTimeout = 5 * time.Second
 
 func (c *clientConn) getRequest() (r *Request) {
 	var err error
