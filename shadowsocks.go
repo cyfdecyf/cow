@@ -2,7 +2,7 @@ package main
 
 import (
 	"errors"
-	"github.com/cyfdecyf/shadowsocks-go/src/shadowsocks"
+	"github.com/shadowsocks/shadowsocks-go/shadowsocks"
 )
 
 var hasShadowSocksServer = false
