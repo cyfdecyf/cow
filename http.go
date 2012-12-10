@@ -17,6 +17,15 @@ type Header struct {
 	Referer   string
 }
 
+type rqState byte
+
+const (
+	rsCreated  rqState = iota
+	rsSent             // request has been sent to server
+	rsRecvBody         // response header received, receiving response body
+	rsDone
+)
+
 type Request struct {
 	Method string
 	URL    *URL
@@ -27,6 +36,7 @@ type Request struct {
 
 	raw     bytes.Buffer
 	contBuf *bytes.Buffer // will be non nil when retrying request
+	state   rqState
 }
 
 func (r *Request) String() (s string) {
@@ -289,6 +299,10 @@ func parseRequest(reader *bufio.Reader) (r *Request, err error) {
 func (r *Request) genRequestLine() {
 	r.raw.WriteString(r.Method + " " + r.URL.Path)
 	r.raw.WriteString(" HTTP/1.1\r\nConnection: Keep-Alive\r\n")
+}
+
+func (r *Request) responseNotSent() bool {
+	return r.state <= rsSent
 }
 
 var crlfBuf = make([]byte, 2)

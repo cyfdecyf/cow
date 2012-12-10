@@ -38,8 +38,7 @@ type handlerState byte
 
 const (
 	hsConnected handlerState = iota
-	hsReceivingResponse
-	hsSendingReceivingResponse
+	hsSendRecvResponse
 	hsStopped
 )
 
@@ -310,22 +309,22 @@ const (
 	errCodeTimeout = "504 time out reading response"
 )
 
-func (c *clientConn) handleBlockedRequest(r *Request, h *Handler, err error, errCode, msg string) error {
+func (c *clientConn) handleBlockedRequest(r *Request, err error, errCode, msg string) error {
 	// Domain in chou domain set is likely to be blocked, should automatically
 	// restart request using parent proxy.
 	// Reset is usually reliable in detecting blocked site, so retry for connection reset.
 	if errCode == errCodeReset || config.autoRetry || isHostChouFeng(r.URL.Host) {
-		debug.Printf("Blocked site %s detected for request %v error: %v\n", h.host, r, err)
+		debug.Printf("Blocked site %s detected for request %v error: %v\n", r.URL.Host, r, err)
 		if addBlockedHost(r.URL.Host) {
 			return errRetry
 		}
 		msg += genBlockedSiteMsg(r)
-		if h.hasNotSendResponse() {
+		if r.responseNotSent() {
 			sendErrorPage(c, errCode, err.Error(), msg)
 			return errPageSent
 		}
 	}
-	if h.hasNotSendResponse() {
+	if r.responseNotSent() {
 		// If autoRetry is not enabled, let the user decide whether add the domain to blocked list.
 		sendBlockedErrorPage(c, errCode, err.Error(), msg, r)
 		return errPageSent
@@ -334,10 +333,10 @@ func (c *clientConn) handleBlockedRequest(r *Request, h *Handler, err error, err
 	return errShouldClose
 }
 
-func (c *clientConn) handleServerReadError(h *Handler, r *Request, err error, msg string) error {
+func (c *clientConn) handleServerReadError(r *Request, h *Handler, err error, msg string) error {
 	var errMsg string
 	if err == io.EOF {
-		if h.hasNotSendResponse() {
+		if r.responseNotSent() {
 			debug.Println("Read from server EOF, retry")
 			return errRetry
 		}
@@ -350,14 +349,14 @@ func (c *clientConn) handleServerReadError(h *Handler, r *Request, err error, ms
 		// it time out. But timeout is also normal if network condition is
 		// bad, so should treate timeout separately.
 		if isErrConnReset(err) {
-			return c.handleBlockedRequest(r, h, err, errCodeReset, errMsg)
+			return c.handleBlockedRequest(r, err, errCodeReset, errMsg)
 		}
 		if isErrTimeout(err) {
-			return c.handleBlockedRequest(r, h, err, errCodeTimeout, errMsg)
+			return c.handleBlockedRequest(r, err, errCodeTimeout, errMsg)
 		}
 		// fall through to send general error message
 	}
-	if h.hasNotSendResponse() {
+	if r.responseNotSent() {
 		sendErrorPage(c, "502 read error", err.Error(), errMsg)
 		return errPageSent
 	}
@@ -372,7 +371,7 @@ func (c *clientConn) handleServerWriteError(r *Request, h *Handler, err error, m
 		errMsg := genErrMsg(r, msg)
 		if ne, ok := err.(*net.OpError); ok {
 			if ne.Err == syscall.ECONNRESET {
-				return c.handleBlockedRequest(r, h, err, errCodeReset, errMsg)
+				return c.handleBlockedRequest(r, err, errCodeReset, errMsg)
 			}
 			// TODO What about broken PIPE?
 		}
@@ -427,27 +426,28 @@ func isErrOpWrite(err error) bool {
 func (c *clientConn) readResponse(h *Handler, r *Request) (err error) {
 	var rp *Response
 
-	if h.maybeFake() && h.state == hsConnected && h.SetReadDeadline(time.Now().Add(readTimeout)) != nil {
+	if h.state == hsConnected && h.maybeFake() && h.SetReadDeadline(time.Now().Add(readTimeout)) != nil {
 		debug.Println("SetReadDeadline BEFORE receiving the first response")
 	}
 	if rp, err = parseResponse(h.buf); err != nil {
-		return c.handleServerReadError(h, r, err, "Parse response from server.")
+		return c.handleServerReadError(r, h, err, "Parse response from server.")
 	}
 	// After have received the first reponses from the server, we consider
 	// ther server as real instead of fake one caused by wrong DNS reply. So
 	// don't time out later.
-	if h.maybeFake() && h.state == hsConnected && h.SetReadDeadline(zeroTime) != nil {
+	if h.state == hsConnected && h.maybeFake() && h.SetReadDeadline(zeroTime) != nil {
 		debug.Println("Un-SetReadDeadline AFTER receiving the first response")
 	}
-	h.setState(hsReceivingResponse)
-	if h.connType == directConn {
-		addDirectHost(h.host)
+	if h.state == hsConnected {
+		if h.connType == directConn {
+			addDirectHost(h.host)
+		}
+		h.state = hsSendRecvResponse
 	}
 
 	if _, err = c.Write(rp.raw.Bytes()); err != nil {
 		return c.handleClientWriteError(r, err, "Write response header back to client")
 	}
-	h.setState(hsSendingReceivingResponse)
 
 	// Wrap inside if to avoid function argument evaluation.
 	if dbgRep {
@@ -455,6 +455,7 @@ func (c *clientConn) readResponse(h *Handler, r *Request) (err error) {
 	}
 
 	if rp.hasBody(r.Method) {
+		r.state = rsRecvBody
 		if err = sendBody(c, nil, h.buf, rp.Chunking, rp.ContLen); err != nil {
 			// Non persistent connection will return nil upon successful response reading
 			if err == io.EOF {
@@ -469,10 +470,11 @@ func (c *clientConn) readResponse(h *Handler, r *Request) (err error) {
 			} else if isErrOpWrite(err) {
 				err = c.handleClientWriteError(r, err, "Write to client response body.")
 			} else {
-				err = c.handleServerReadError(h, r, err, "Read response body from server.")
+				err = c.handleServerReadError(r, h, err, "Read response body from server.")
 			}
 		}
 	}
+	r.state = rsDone
 	/*
 		if debug {
 			debug.Printf("[Finished] %v request %s %s\n", c.RemoteAddr(), r.Method, r.URL)
@@ -656,9 +658,13 @@ func copyServer2Client(h *Handler, c *clientConn, cliStopped notification, r *Re
 			debug.Printf("copyServer2Client write data: %v\n", err)
 			return
 		}
-		h.setState(hsReceivingResponse)
-		if h.connType == directConn {
-			addDirectHost(h.host)
+		// set state to rsRecvBody to indicate the request has partial response sent to client
+		r.state = rsRecvBody
+		if h.state == hsConnected {
+			if h.connType == directConn {
+				addDirectHost(h.host)
+			}
+			h.state = hsSendRecvResponse
 		}
 	}
 	return
@@ -733,10 +739,6 @@ func (h *Handler) maybeFake() bool {
 	return h.connType == directConn && !isHostAlwaysDirect(h.host)
 }
 
-func (h *Handler) hasNotSendResponse() bool {
-	return h.state < hsSendingReceivingResponse
-}
-
 func (h *Handler) maybeSSLErr(cliStart time.Time) bool {
 	// If client closes connection very soon, maybe there's SSL error, maybe
 	// not (e.g. user stopped request).
@@ -754,16 +756,11 @@ func (h *Handler) mayBeClosed() bool {
 	return time.Now().Sub(h.lastUse) > serverConnTimeout
 }
 
-func (h *Handler) setState(newState handlerState) {
-	if h.state+1 == newState {
-		h.state = newState
-	}
-}
-
 var connEstablished = []byte("HTTP/1.0 200 Connection established\r\nProxy-agent: cow-proxy\r\n\r\n")
 
 // Do HTTP CONNECT
 func (h *Handler) doConnect(r *Request, c *clientConn) (err error) {
+	r.state = rsCreated
 	defer h.Close()
 	if debug {
 		debug.Printf("%v 200 Connection established to %s\n", c.RemoteAddr(), r.URL.Host)
@@ -807,6 +804,7 @@ func (h *Handler) doConnect(r *Request, c *clientConn) (err error) {
 
 // Do HTTP request other that CONNECT
 func (h *Handler) doRequest(r *Request, c *clientConn) (err error) {
+	r.state = rsCreated
 	// Send request to the server
 	if _, err = h.Write(r.raw.Bytes()); err != nil {
 		// The srv connection maybe already closed.
@@ -840,7 +838,7 @@ func (h *Handler) doRequest(r *Request, c *clientConn) (err error) {
 			return
 		}
 	}
-
+	r.state = rsSent
 	return c.readResponse(h, r)
 }
 
