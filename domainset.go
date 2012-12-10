@@ -183,12 +183,6 @@ func delBlockedDomain(dm string) {
 	}
 }
 
-func addDirectDomain(dm string) {
-	if !config.updateDirect {
-		return
-	}
-}
-
 func addDirectHost(host string) (added bool) {
 	dm := host2Domain(host)
 	if !config.updateDirect || isHostInAlwaysDs(host) || chouDs[dm] ||
