@@ -87,7 +87,9 @@ var (
 	errShouldClose   = errors.New("Error can only be handled by close connection")
 	errInternal      = errors.New("Internal error")
 	errNoParentProxy = errors.New("No parent proxy")
+
 	errChunkedEncode = errors.New("Invalid chunked encoding")
+	errMalformHeader = errors.New("Malformed HTTP header")
 )
 
 func NewProxy(addr string) *Proxy {
@@ -427,7 +429,7 @@ func (c *clientConn) readResponse(h *Handler, r *Request) (err error) {
 	if h.state == hsConnected && h.maybeFake() && h.SetReadDeadline(time.Now().Add(readTimeout)) != nil {
 		debug.Println("SetReadDeadline BEFORE receiving the first response")
 	}
-	if rp, err = parseResponse(h.buf); err != nil {
+	if rp, err = parseResponse(h.buf, r); err != nil {
 		return c.handleServerReadError(r, h, err, "Parse response from server.")
 	}
 	// After have received the first reponses from the server, we consider

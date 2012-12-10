@@ -166,10 +166,7 @@ func ParseRequestURI(rawurl string) (*URL, error) {
 func splitHeader(s string) (name, val string, err error) {
 	var f []string
 	if f = strings.SplitN(strings.ToLower(s), ":", 2); len(f) != 2 {
-		// TODO Fix this when encounter such web servers
-		err = errors.New("Multi-line header not supported")
-		errl.Println(err)
-		return "", "", err
+		return "", "", errMalformHeader
 	}
 	return f[0], f[1], nil
 }
@@ -206,7 +203,7 @@ var headerParser = map[string]HeaderParserFunc{
 }
 
 // Only add headers that are of interest for a proxy into request's header map.
-func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, addHeader string) (err error) {
+func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, addHeader string, url *URL) (err error) {
 	// Read request header and body
 	var s, name, val string
 	for {
@@ -221,21 +218,27 @@ func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, addHeader 
 			}
 
 			raw.WriteString(addHeader)
-			raw.WriteString("\r\n")
+			raw.Write(CRLFbytes)
 			return
 		}
-		if name, val, err = splitHeader(s); err != nil {
-			return
-		}
-		if parseFunc, ok := headerParser[name]; ok {
-			parseFunc(h, val)
-			if name == headerConnection || name == headerProxyConnection {
-				// Don't pass connection header to server or client
-				continue
+		if s[0] == ' ' || s[0] == '\t' {
+			// TODO multiple line header, should append to last line value if
+			// it's of interest to proxy
+			errl.Println("Encounter multi-line header:", url)
+		} else {
+			if name, val, err = splitHeader(s); err != nil {
+				return
+			}
+			if parseFunc, ok := headerParser[name]; ok {
+				parseFunc(h, val)
+				if name == headerConnection || name == headerProxyConnection {
+					// Don't pass connection header to server or client
+					continue
+				}
 			}
 		}
 		raw.WriteString(s)
-		raw.WriteString("\r\n")
+		raw.Write(CRLFbytes)
 		// debug.Printf("len %d %s", len(s), s)
 	}
 	return
@@ -289,7 +292,7 @@ func parseRequest(reader *bufio.Reader) (r *Request, err error) {
 	r.genRequestLine()
 
 	// Read request header
-	if err = r.parseHeader(reader, &r.raw, ""); err != nil {
+	if err = r.parseHeader(reader, &r.raw, "", r.URL); err != nil {
 		errl.Printf("Parsing request header: %v\n", err)
 		return nil, err
 	}
@@ -329,7 +332,7 @@ func (rp *Response) hasBody(method string) bool {
 var malformedHTTPResponseErr = errors.New("malformed HTTP response")
 
 // Parse response status and headers.
-func parseResponse(reader *bufio.Reader) (rp *Response, err error) {
+func parseResponse(reader *bufio.Reader, r *Request) (rp *Response, err error) {
 	rp = new(Response)
 	rp.ContLen = -1
 
@@ -338,19 +341,19 @@ START:
 	if s, err = ReadLine(reader); err != nil {
 		if err != io.EOF {
 			// err maybe timeout caused by explicity setting deadline
-			debug.Printf("Reading Response status line: %v\n", err)
+			debug.Printf("Reading Response status line: %v %v\n", err, r)
 		}
 		return nil, err
 	}
 	var f []string
 	if f = strings.SplitN(s, " ", 3); len(f) < 2 {
-		errl.Println("malformed HTTP response status line:", s)
+		errl.Printf("Malformed HTTP response status line: %s %v\n", s, r)
 		return nil, malformedHTTPResponseErr
 	}
 	// Handle 1xx response
 	if f[1] == "100" {
 		if err = readCheckCRLF(reader); err != nil {
-			errl.Printf("Reading CRLF after 1xx response: %v\n", err)
+			errl.Printf("Reading CRLF after 1xx response: %v %v\n", err, r)
 			return nil, err
 		}
 		goto START
@@ -363,8 +366,8 @@ START:
 	rp.raw.WriteString(s)
 	rp.raw.WriteString("\r\n")
 
-	if err = rp.parseHeader(reader, &rp.raw, "Connection: Keep-Alive\r\n"); err != nil {
-		errl.Println("Reading response header:", err)
+	if err = rp.parseHeader(reader, &rp.raw, "Connection: Keep-Alive\r\n", r.URL); err != nil {
+		errl.Printf("Reading response header: %v %v\n", err, r)
 		return nil, err
 	}
 
