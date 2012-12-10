@@ -59,6 +59,7 @@ var zeroTime = time.Time{}
 // can avoid unnecessary use the connection directly.
 // There maybe more call to write, but the avoided copy should benefit more.
 
+// TODO rename this to serverConn
 type Handler struct {
 	conn
 	buf     *bufio.Reader
@@ -148,16 +149,13 @@ func isSelfURL(h string) bool {
 
 func (c *clientConn) getRequest() (r *Request) {
 	var err error
-	if c.SetReadDeadline(time.Now().Add(clientConnTimeout)) != nil {
-		debug.Println("SetReadDeadline BEFORE receiving client request")
-	}
+
+	setConnReadTimeout(c, clientConnTimeout, "BEFORE receiving client request")
 	if r, err = parseRequest(c.buf); err != nil {
 		c.handleClientReadError(r, err, "parse client request")
 		return nil
 	}
-	if c.SetReadDeadline(zeroTime) != nil {
-		debug.Println("Un-SetReadDeadline AFTER receiving client request")
-	}
+	unsetConnReadTimeout(c, "AFTER receiving client request")
 	return r
 }
 
@@ -426,8 +424,8 @@ func isErrOpWrite(err error) bool {
 func (c *clientConn) readResponse(h *Handler, r *Request) (err error) {
 	var rp *Response
 
-	if h.state == hsConnected && h.maybeFake() && h.SetReadDeadline(time.Now().Add(readTimeout)) != nil {
-		debug.Println("SetReadDeadline BEFORE receiving the first response")
+	if h.state == hsConnected && h.maybeFake() {
+		setConnReadTimeout(h, readTimeout, "BEFORE receiving the first response")
 	}
 	if rp, err = parseResponse(h.buf, r); err != nil {
 		return c.handleServerReadError(r, h, err, "Parse response from server.")
@@ -435,8 +433,8 @@ func (c *clientConn) readResponse(h *Handler, r *Request) (err error) {
 	// After have received the first reponses from the server, we consider
 	// ther server as real instead of fake one caused by wrong DNS reply. So
 	// don't time out later.
-	if h.state == hsConnected && h.maybeFake() && h.SetReadDeadline(zeroTime) != nil {
-		debug.Println("Un-SetReadDeadline AFTER receiving the first response")
+	if h.state == hsConnected && h.maybeFake() {
+		unsetConnReadTimeout(h, "AFTER receiving the first response")
 	}
 	if h.state == hsConnected {
 		if h.connType == directConn {
@@ -631,6 +629,18 @@ func (c *clientConn) createHandler(r *Request) (*Handler, error) {
 	return h, nil
 }
 
+func setConnReadTimeout(cn net.Conn, d time.Duration, msg string) {
+	if cn.SetReadDeadline(time.Now().Add(d)) != nil {
+		errl.Println("Set readtimeout:", msg)
+	}
+}
+
+func unsetConnReadTimeout(cn net.Conn, msg string) {
+	if cn.SetReadDeadline(zeroTime) != nil {
+		errl.Println("Unset readtimeout:", msg)
+	}
+}
+
 func copyServer2Client(h *Handler, c *clientConn, cliStopped notification, r *Request) (err error) {
 	buf := make([]byte, bufSize)
 	var n int
@@ -640,9 +650,7 @@ func copyServer2Client(h *Handler, c *clientConn, cliStopped notification, r *Re
 			debug.Println("copyServer2Client client has stopped")
 			return
 		}
-		if err = h.SetReadDeadline(time.Now().Add(readTimeout)); err != nil {
-			debug.Println("copyServer2Client set ReadDeadline:", err)
-		}
+		setConnReadTimeout(h, readTimeout, "copyServer2Client")
 		if n, err = h.buf.Read(buf); err != nil {
 			if h.maybeFake() && maybeBlocked(err) && addBlockedHost(r.URL.Host) {
 				debug.Printf("copyServer2Client blocked site %s detected, retry\n", r.URL.Host)
@@ -673,7 +681,7 @@ func copyServer2Client(h *Handler, c *clientConn, cliStopped notification, r *Re
 func copyClient2Server(c *clientConn, h *Handler, srvStopped notification, r *Request) (err error) {
 	buf := make([]byte, bufSize)
 	var n int
-	var timeout time.Time
+	var timeout time.Duration
 
 	if r.contBuf != nil {
 		debug.Println("copyClient2Server retry request:", r)
@@ -689,13 +697,11 @@ func copyClient2Server(c *clientConn, h *Handler, srvStopped notification, r *Re
 			return
 		}
 		if h.maybeFake() && h.state == hsConnected {
-			timeout = time.Now().Add(2 * time.Second)
+			timeout = 2 * time.Second
 		} else {
-			timeout = time.Now().Add(readTimeout)
+			timeout = readTimeout
 		}
-		if err = c.SetReadDeadline(timeout); err != nil {
-			debug.Println("copyClient2Server set ReadDeadline:", err)
-		}
+		setConnReadTimeout(c, timeout, "copyClient2Server")
 		if n, err = c.buf.Read(buf); err != nil {
 			if isErrTimeout(err) {
 				// Applications like Twitter for Mac needs long connection for
