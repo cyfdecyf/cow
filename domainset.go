@@ -185,8 +185,7 @@ func delBlockedDomain(dm string) {
 
 func addDirectHost(host string) (added bool) {
 	dm := host2Domain(host)
-	if !config.updateDirect || isHostInAlwaysDs(host) || chouDs[dm] ||
-		dm == "localhost" || hostIsIP(host) {
+	if isHostInAlwaysDs(host) || chouDs[dm] || dm == "localhost" || hostIsIP(host) {
 		return
 	}
 	if !directDs.has(dm) {
