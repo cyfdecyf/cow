@@ -330,7 +330,7 @@ func (c *clientConn) handleBlockedRequest(r *Request, h *Handler, err error, err
 		sendBlockedErrorPage(c, errCode, err.Error(), msg, r)
 		return errPageSent
 	}
-	errl.Println("blocked request with partial response sent to client:", err, r)
+	errl.Printf("%s blocked request with partial response sent to client: %v %v\n", msg, err, r)
 	return errShouldClose
 }
 
@@ -338,10 +338,10 @@ func (c *clientConn) handleServerReadError(h *Handler, r *Request, err error, ms
 	var errMsg string
 	if err == io.EOF {
 		if h.hasNotSendResponse() {
-			debug.Println("Read from server EOF, retry")
+			debug.Printf("%s read EOF, retry %v\n", msg, r)
 			return errRetry
 		}
-		errl.Println("Read from server EOF, partial data sent to client")
+		errl.Printf("%s read EOF with partial data sent to client %v\n", msg, r)
 		return errShouldClose
 	}
 	errMsg = genErrMsg(r, msg)
