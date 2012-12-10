@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -124,8 +125,11 @@ func sendPAC(w io.Writer) {
 		return
 	}
 	// debug.Println("direct:", data.DirectDomains)
-	if err := pacTmpl.Execute(w, data); err != nil {
+	buf := new(bytes.Buffer)
+	if err := pacTmpl.Execute(buf, data); err != nil {
 		errl.Println("Error generating pac file:", err)
-		return
+	}
+	if _, err := w.Write(buf.Bytes()); err != nil {
+		debug.Println("Error writing pac content:", err)
 	}
 }
