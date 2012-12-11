@@ -924,7 +924,10 @@ func sendBodyChunked(w, contBuf io.Writer, r *bufio.Reader) (err error) {
 var CRLFbytes = []byte("\r\n")
 var chunkEndbytes = []byte("0\r\n\r\n")
 
-func sendBodySplitIntoChunk(w, contBuf io.Writer, r *bufio.Reader) (err error) {
+// Client can't use closed connection to indicate end of request, so must
+// content length or use chunked encoding. Thus contBuf is not necessary for
+// sendBodySplitIntoChunk.
+func sendBodySplitIntoChunk(w io.Writer, r *bufio.Reader) (err error) {
 	buf := make([]byte, bufSize)
 	var n int
 	for {
@@ -934,9 +937,6 @@ func sendBodySplitIntoChunk(w, contBuf io.Writer, r *bufio.Reader) (err error) {
 			if err == io.EOF {
 				// EOF is expected here as the server is closing connection.
 				// debug.Println("end chunked encoding")
-				if contBuf != nil {
-					contBuf.Write(chunkEndbytes)
-				}
 				if _, err = w.Write(chunkEndbytes); err != nil {
 					debug.Println("Write chunk end 0")
 				}
@@ -949,10 +949,6 @@ func sendBodySplitIntoChunk(w, contBuf io.Writer, r *bufio.Reader) (err error) {
 		sb := []byte(fmt.Sprintf("%x\r\n", n))
 		buf = append(buf[:n], CRLFbytes...)
 		n += 2
-		if contBuf != nil {
-			contBuf.Write(sb)
-			contBuf.Write(buf[:n])
-		}
 		if _, err = w.Write(sb); err != nil {
 			debug.Printf("Writing chunk size %v\n", err)
 			return
@@ -972,7 +968,10 @@ func sendBody(w, contBuf io.Writer, r *bufio.Reader, chunk bool, contLen int64) 
 	} else if contLen >= 0 {
 		err = sendBodyWithContLen(w, contBuf, r, contLen)
 	} else {
-		err = sendBodySplitIntoChunk(w, contBuf, r)
+		if contBuf != nil {
+			errl.Println("Should not happen! Client request with body but no length specified.")
+		}
+		err = sendBodySplitIntoChunk(w, r)
 	}
 	return
 }
