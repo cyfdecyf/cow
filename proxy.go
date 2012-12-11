@@ -947,6 +947,8 @@ func sendBodySplitIntoChunk(w, contBuf io.Writer, r *bufio.Reader) (err error) {
 		}
 
 		sb := []byte(fmt.Sprintf("%x\r\n", n))
+		buf = append(buf[:n], CRLFbytes...)
+		n += 2
 		if contBuf != nil {
 			contBuf.Write(sb)
 			contBuf.Write(buf[:n])
@@ -955,8 +957,7 @@ func sendBodySplitIntoChunk(w, contBuf io.Writer, r *bufio.Reader) (err error) {
 			debug.Printf("Writing chunk size %v\n", err)
 			return
 		}
-		buf = append(buf[:n], CRLFbytes...)
-		if _, err = w.Write(buf[:n+2]); err != nil {
+		if _, err = w.Write(buf[:n]); err != nil {
 			debug.Println("Writing chunk data:", err)
 			return
 		}
