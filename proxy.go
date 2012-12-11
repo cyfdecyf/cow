@@ -901,6 +901,10 @@ func sendBodyChunked(w, contBuf io.Writer, r *bufio.Reader) (err error) {
 			return
 		}
 		if size == 0 { // end of chunked data, ignore any trailers
+			// Send final blank line to client
+			if err = copyWithBuf(w, contBuf, r, 2); err != nil {
+				debug.Println("sendBodyChunked send ending CRLF:", err)
+			}
 			return
 		}
 		// If we assume correct data from read side, we can use size+2 to read
@@ -910,7 +914,7 @@ func sendBodyChunked(w, contBuf io.Writer, r *bufio.Reader) (err error) {
 		// the rare case of wrong data, parsing the followed chunk size line
 		// may discover error and stop.
 		if err = copyWithBuf(w, contBuf, r, size+2); err != nil {
-			debug.Println("sendBodyChunked:", err)
+			debug.Println("sendBodyChunked copying chunk data:", err)
 			return
 		}
 	}
