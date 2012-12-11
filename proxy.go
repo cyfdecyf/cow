@@ -29,18 +29,18 @@ type Proxy struct {
 type connType byte
 
 const (
-	nilConn connType = iota
-	directConn
-	socksConn
-	shadowSocksConn
+	ctNilConn connType = iota
+	ctDirectConn
+	ctSocksConn
+	ctShadowctSocksConn
 )
 
 type serverConnState byte
 
 const (
-	hsConnected serverConnState = iota
-	hsSendRecvResponse
-	hsStopped
+	svConnected serverConnState = iota
+	svSendRecvResponse
+	svStopped
 )
 
 type conn struct {
@@ -423,7 +423,7 @@ func isErrOpWrite(err error) bool {
 func (c *clientConn) readResponse(sv *serverConn, r *Request) (err error) {
 	var rp *Response
 
-	if sv.state == hsConnected && sv.maybeFake() {
+	if sv.state == svConnected && sv.maybeFake() {
 		setConnReadTimeout(sv, readTimeout, "BEFORE receiving the first response")
 	}
 	if rp, err = parseResponse(sv.buf, r); err != nil {
@@ -432,14 +432,14 @@ func (c *clientConn) readResponse(sv *serverConn, r *Request) (err error) {
 	// After have received the first reponses from the server, we consider
 	// ther server as real instead of fake one caused by wrong DNS reply. So
 	// don't time out later.
-	if sv.state == hsConnected && sv.maybeFake() {
+	if sv.state == svConnected && sv.maybeFake() {
 		unsetConnReadTimeout(sv, "AFTER receiving the first response")
 	}
-	if sv.state == hsConnected {
-		if sv.connType == directConn {
+	if sv.state == svConnected {
+		if sv.connType == ctDirectConn {
 			addDirectHost(sv.host)
 		}
-		sv.state = hsSendRecvResponse
+		sv.state = svSendRecvResponse
 	}
 
 	if _, err = c.Write(rp.raw.Bytes()); err != nil {
@@ -504,15 +504,15 @@ func (c *clientConn) removeServerConn(sv *serverConn) {
 	delete(c.serverConn, sv.host)
 }
 
-func createDirectConnection(host string) (conn, error) {
+func createctDirectConnection(host string) (conn, error) {
 	c, err := net.DialTimeout("tcp", host, dialTimeout)
 	if err != nil {
 		// Time out is very likely to be caused by GFW
 		debug.Printf("Connecting to: %s %v\n", host, err)
-		return conn{nil, nilConn}, err
+		return conn{nil, ctNilConn}, err
 	}
 	// debug.Println("Connected to", host)
-	return conn{c, directConn}, nil
+	return conn{c, ctDirectConn}, nil
 }
 
 func isErrConnReset(err error) bool {
@@ -544,12 +544,12 @@ const connFailedErrCode = "504 Connection failed"
 func createParentProxyConnection(host string) (srvconn conn, err error) {
 	// Try shadowsocks server first
 	if hasShadowSocksServer {
-		if srvconn, err = createShadowSocksConnection(host); err == nil {
+		if srvconn, err = createctShadowctSocksConnection(host); err == nil {
 			return
 		}
 	}
 	if hasSocksServer {
-		if srvconn, err = createSocksConnection(host); err == nil {
+		if srvconn, err = createctSocksConnection(host); err == nil {
 			return
 		}
 	}
@@ -571,12 +571,12 @@ func (c *clientConn) createConnection(host string, r *Request) (srvconn conn, er
 		if isHostAlwaysBlocked(host) {
 			goto fail
 		}
-		if srvconn, err = createDirectConnection(host); err == nil {
+		if srvconn, err = createctDirectConnection(host); err == nil {
 			return
 		}
 	} else {
 		// In case of error on direction connection, try socks server
-		if srvconn, err = createDirectConnection(host); err == nil {
+		if srvconn, err = createctDirectConnection(host); err == nil {
 			return
 		}
 		if isHostAlwaysDirect(host) || hostIsIP(host) || !hasParentProxy {
@@ -667,11 +667,11 @@ func copyServer2Client(sv *serverConn, c *clientConn, cliStopped notification, r
 		}
 		// set state to rsRecvBody to indicate the request has partial response sent to client
 		r.state = rsRecvBody
-		if sv.state == hsConnected {
-			if sv.connType == directConn {
+		if sv.state == svConnected {
+			if sv.connType == ctDirectConn {
 				addDirectHost(sv.host)
 			}
-			sv.state = hsSendRecvResponse
+			sv.state = svSendRecvResponse
 		}
 	}
 	return
@@ -695,7 +695,7 @@ func copyClient2Server(c *clientConn, sv *serverConn, srvStopped notification, r
 			debug.Println("copyClient2Server server stopped")
 			return
 		}
-		if sv.maybeFake() && sv.state == hsConnected {
+		if sv.maybeFake() && sv.state == svConnected {
 			timeout = 2 * time.Second
 		} else {
 			timeout = readTimeout
@@ -741,21 +741,21 @@ func copyClient2Server(c *clientConn, sv *serverConn, srvStopped notification, r
 func (sv *serverConn) maybeFake() bool {
 	// GFW may return wrong DNS record, which we can connect to but block
 	// forever on read. (e.g. twitter.com)
-	return sv.connType == directConn && !isHostAlwaysDirect(sv.host)
+	return sv.connType == ctDirectConn && !isHostAlwaysDirect(sv.host)
 }
 
 func (sv *serverConn) maybeSSLErr(cliStart time.Time) bool {
 	// If client closes connection very soon, maybe there's SSL error, maybe
 	// not (e.g. user stopped request).
 	// COW can't tell which is the case, so this detection is not reliable.
-	return sv.state > hsConnected && time.Now().Sub(cliStart) < sslLeastDuration
+	return sv.state > svConnected && time.Now().Sub(cliStart) < sslLeastDuration
 }
 
 // Apache 2.2 keep-alive timeout defaults to 5 seconds.
 const serverConnTimeout = 5 * time.Second
 
 func (sv *serverConn) mayBeClosed() bool {
-	if sv.connType == socksConn {
+	if sv.connType == ctSocksConn {
 		return false
 	}
 	return time.Now().Sub(sv.lastUse) > serverConnTimeout

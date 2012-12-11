@@ -21,7 +21,7 @@ func initShadowSocks() {
 
 var noShadowSocksErr = errors.New("No shadowsocks configuration")
 
-func createShadowSocksConnection(hostFull string) (cn conn, err error) {
+func createctShadowctSocksConnection(hostFull string) (cn conn, err error) {
 	if !hasShadowSocksServer {
 		return zeroConn, noShadowSocksErr
 	}
@@ -31,5 +31,5 @@ func createShadowSocksConnection(hostFull string) (cn conn, err error) {
 		return zeroConn, err
 	}
 	// debug.Println("shadowsocks connection created to:", hostFull)
-	return conn{c, shadowSocksConn}, nil
+	return conn{c, ctShadowctSocksConn}, nil
 }

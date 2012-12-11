@@ -59,7 +59,7 @@ var config struct {
 }
 
 func printVersion() {
-	fmt.Println("cow-proxy version", version)
+	fmt.Println("cow version", version)
 }
 
 func init() {

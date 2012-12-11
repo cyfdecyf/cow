@@ -35,7 +35,7 @@ func initSocksServer() {
 	hasSocksServer = (config.socksAddr != "")
 }
 
-func createSocksConnection(hostFull string) (cn conn, err error) {
+func createctSocksConnection(hostFull string) (cn conn, err error) {
 	c, err := net.Dial("tcp", config.socksAddr)
 	if err != nil {
 		debug.Printf("Can't connect to socks server %v\n", err)
@@ -135,5 +135,5 @@ func createSocksConnection(hostFull string) (cn conn, err error) {
 	}
 
 	// Now the socket can be used to pass data.
-	return conn{c, socksConn}, nil
+	return conn{c, ctSocksConn}, nil
 }
