@@ -43,7 +43,7 @@ func (ds domainSet) loadDomainList(fpath string) (lst []string, err error) {
 	return
 }
 
-func (ds domainSet) toArray() []string {
+func (ds domainSet) toSlice() []string {
 	l := len(ds)
 	lst := make([]string, l, l)
 
@@ -209,14 +209,14 @@ func writeBlockedDs() {
 	if !config.updateBlocked || !blockedDomainChanged {
 		return
 	}
-	writeDomainList(config.blockedFile, blockedDs.toArray())
+	writeDomainList(config.blockedFile, blockedDs.toSlice())
 }
 
 func writeDirectDs() {
 	if !config.updateDirect || !directDomainChanged {
 		return
 	}
-	writeDomainList(config.directFile, directDs.toArray())
+	writeDomainList(config.directFile, directDs.toSlice())
 }
 
 // filter out domain in blocked and direct domain set.

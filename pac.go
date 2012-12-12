@@ -23,11 +23,7 @@ for (var i = 0; i < directList.length; i += 1) {
 }
 
 var topLevel = {
-	"co":  true,
-	"org": true,
-	"com": true,
-	"net": true,
-	"edu": true
+{{.TopLevel}}
 };
 
 function host2domain(host) {
@@ -56,6 +52,7 @@ function FindProxyForURL(url, host) {
 `
 
 var pacTmpl *template.Template
+var pacTopLevelDomain string
 
 func init() {
 	var err error
@@ -64,6 +61,13 @@ func init() {
 		fmt.Println("Internal error on generating pac file template")
 		os.Exit(1)
 	}
+
+	var buf bytes.Buffer
+	for k, _ := range topLevelDomain {
+		buf.WriteString(fmt.Sprintf("\t\"%s\": true,\n", k))
+	}
+	pacTopLevelDomain = buf.String()
+	pacTopLevelDomain = pacTopLevelDomain[:len(pacTopLevelDomain)-2] // remove the final comma
 }
 
 var proxyServerAddr string
@@ -95,8 +99,8 @@ var pacDirect = []byte("function FindProxyForURL(url, host) { return 'DIRECT'; }
 
 func sendPAC(w io.Writer) {
 	// domains in PAC file needs double quote
-	ds1 := strings.Join(alwaysDirectDs.toArray(), "\",\n\"")
-	ds2 := strings.Join(directDs.toArray(), "\",\n\"")
+	ds1 := strings.Join(alwaysDirectDs.toSlice(), "\",\n\"")
+	ds2 := strings.Join(directDs.toSlice(), "\",\n\"")
 	var ds string
 	if ds1 == "" {
 		ds = ds2
@@ -115,9 +119,11 @@ func sendPAC(w io.Writer) {
 	data := struct {
 		ProxyAddr     string
 		DirectDomains string
+		TopLevel      string
 	}{
 		proxyServerAddr,
 		",\n\"" + ds + "\"",
+		pacTopLevelDomain,
 	}
 
 	if _, err := w.Write(pacHeader); err != nil {
