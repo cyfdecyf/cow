@@ -545,7 +545,7 @@ const connFailedErrCode = "504 Connection failed"
 func createParentProxyConnection(host string) (srvconn conn, err error) {
 	// Try shadowsocks server first
 	if hasShadowSocksServer {
-		if srvconn, err = createShadowSocksConnection(host); err == nil {
+		if srvconn, err = createShadowctSocksConnection(host); err == nil {
 			return
 		}
 	}
