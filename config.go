@@ -65,7 +65,7 @@ func printVersion() {
 func init() {
 	u, err := user.Current()
 	if err != nil {
-		errl.Printf("Can't get user information %v", err)
+		fmt.Printf("Can't get user information %v", err)
 		os.Exit(1)
 	}
 	homeDir = u.HomeDir
