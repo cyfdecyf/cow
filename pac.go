@@ -9,7 +9,14 @@ import (
 	"text/template"
 )
 
-const pacRawTmpl = `var direct = 'DIRECT';
+var pac struct {
+	template        *template.Template
+	topLevelDomain  string
+	proxyServerAddr string
+}
+
+func init() {
+	const pacRawTmpl = `var direct = 'DIRECT';
 var httpProxy = '{{.ProxyAddr}}';
 
 var directList = [
@@ -50,13 +57,8 @@ function FindProxyForURL(url, host) {
 	return directAcc[host2domain(host)] ? direct : httpProxy;
 };
 `
-
-var pacTmpl *template.Template
-var pacTopLevelDomain string
-
-func init() {
 	var err error
-	pacTmpl, err = template.New("pac").Parse(pacRawTmpl)
+	pac.template, err = template.New("pac").Parse(pacRawTmpl)
 	if err != nil {
 		fmt.Println("Internal error on generating pac file template")
 		os.Exit(1)
@@ -66,11 +68,8 @@ func init() {
 	for k, _ := range topLevelDomain {
 		buf.WriteString(fmt.Sprintf("\t\"%s\": true,\n", k))
 	}
-	pacTopLevelDomain = buf.String()
-	pacTopLevelDomain = pacTopLevelDomain[:len(pacTopLevelDomain)-2] // remove the final comma
+	pac.topLevelDomain = buf.String()[:buf.Len()-2] // remove the final comma
 }
-
-var proxyServerAddr string
 
 func initProxyServerAddr() {
 	listen, port := splitHostPort(config.listenAddr)
@@ -82,13 +81,13 @@ func initProxyServerAddr() {
 		}
 
 		for _, ip := range addrs {
-			proxyServerAddr += fmt.Sprintf("PROXY %s:%s; ", ip, port)
+			pac.proxyServerAddr += fmt.Sprintf("PROXY %s:%s; ", ip, port)
 		}
-		proxyServerAddr += "DIRECT"
+		pac.proxyServerAddr += "DIRECT"
 		info.Printf("proxy listen address is %s, PAC will have proxy address: %s\n",
-			config.listenAddr, proxyServerAddr)
+			config.listenAddr, pac.proxyServerAddr)
 	} else {
-		proxyServerAddr = fmt.Sprintf("PROXY %s; DIRECT", config.listenAddr)
+		pac.proxyServerAddr = fmt.Sprintf("PROXY %s; DIRECT", config.listenAddr)
 	}
 }
 
@@ -121,9 +120,9 @@ func sendPAC(w io.Writer) {
 		DirectDomains string
 		TopLevel      string
 	}{
-		proxyServerAddr,
+		pac.proxyServerAddr,
 		",\n\"" + ds + "\"",
-		pacTopLevelDomain,
+		pac.topLevelDomain,
 	}
 
 	if _, err := w.Write(pacHeader); err != nil {
@@ -132,7 +131,7 @@ func sendPAC(w io.Writer) {
 	}
 	// debug.Println("direct:", data.DirectDomains)
 	buf := new(bytes.Buffer)
-	if err := pacTmpl.Execute(buf, data); err != nil {
+	if err := pac.template.Execute(buf, data); err != nil {
 		errl.Println("Error generating pac file:", err)
 	}
 	if _, err := w.Write(buf.Bytes()); err != nil {
