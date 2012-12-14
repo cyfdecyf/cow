@@ -2,15 +2,19 @@ package main
 
 import (
 	"errors"
-	"github.com/shadowsocks/shadowsocks-go/shadowsocks"
+	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
 )
 
 var hasShadowSocksServer = false
 
+var noShadowSocksErr = errors.New("No shadowsocks configuration")
+
+var encTbl *ss.EncryptTable
+
 func initShadowSocks() {
 	if config.shadowSocks != "" && config.shadowPasswd != "" {
-		shadowsocks.InitTable(config.shadowPasswd)
 		hasShadowSocksServer = true
+		encTbl = ss.GetTable(config.shadowPasswd)
 		return
 	}
 	if (config.shadowSocks != "" && config.shadowPasswd == "") ||
@@ -19,13 +23,11 @@ func initShadowSocks() {
 	}
 }
 
-var noShadowSocksErr = errors.New("No shadowsocks configuration")
-
-func createctShadowctSocksConnection(hostFull string) (cn conn, err error) {
+func createShadowctSocksConnection(hostFull string) (cn conn, err error) {
 	if !hasShadowSocksServer {
 		return zeroConn, noShadowSocksErr
 	}
-	c, err := shadowsocks.Dial(hostFull, config.shadowSocks)
+	c, err := ss.Dial(hostFull, config.shadowSocks, encTbl)
 	if err != nil {
 		// debug.Printf("Creating shadowsocks connection: %s %v\n", hostFull, err)
 		return zeroConn, err
