@@ -259,6 +259,13 @@ func (c *clientConn) serve() {
 		}
 
 	retry:
+		if r.tryCnt > 5 {
+			debug.Println("Retry too many times, abort")
+			sendErrorPage(c, "502 retry failed", "Can't finish HTTP request",
+				genErrMsg(r, "Has retried several times."))
+			continue
+		}
+		r.tryCnt++
 		if sv, err = c.getServerConn(r); err != nil {
 			// Failed connection will send error page back to client
 			// debug.Printf("Failed to get serverConn for %s %v\n", c.RemoteAddr(), r)
@@ -723,6 +730,7 @@ func copyClient2Server(c *clientConn, sv *serverConn, srvStopped notification, r
 		}
 		// When retrying request, should use socks server. So maybeFake
 		// will return false. Better to make sure about this.
+		// TODO when should create contBuf?
 		if sv.maybeFake() {
 			if r.contBuf == nil {
 				r.contBuf = new(bytes.Buffer)

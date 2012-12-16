@@ -34,9 +34,10 @@ type Request struct {
 	Header
 	isConnect bool
 
-	raw     bytes.Buffer
-	contBuf *bytes.Buffer // will be non nil when retrying request
-	state   rqState
+	raw      bytes.Buffer
+	contBuf  *bytes.Buffer // will be non nil when retrying request
+	state    rqState
+	tryCnt int
 }
 
 func (r *Request) String() (s string) {
