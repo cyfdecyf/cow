@@ -54,10 +54,15 @@ var zeroTime = time.Time{}
 // For both client and server connection, there's only read buffer. If we
 // create write buffer for the connection and pass it to io.CopyN, there will
 // be unnecessary copies: from read buffer to tmp buffer, then call io.Write.
-//
-// As HTTP uses TCP connection and net.TCPConn implements ReadFrom, io.CopyN
-// can avoid unnecessary use the connection directly.
-// There maybe more call to write, but the avoided copy should benefit more.
+
+// net.Conn implements ReadFrom, but it only works if the src is a regular
+// file. io.Copy will try ReadFrom first and fallback to generic copy if src
+// is not a regular file, introducing unnecessary overhead.
+// Export only the write interface can avoid this try and fallback. Learnt
+// from net/sock.go
+type writerOnly struct {
+	io.Writer
+}
 
 type serverConn struct {
 	conn
@@ -861,7 +866,7 @@ func sendBodyWithContLen(w, contBuf io.Writer, r *bufio.Reader, contLen int64) (
 
 func copyWithBuf(w, contBuf io.Writer, r io.Reader, size int64) (err error) {
 	if contBuf == nil {
-		_, err = io.CopyN(w, r, size)
+		_, err = io.CopyN(writerOnly{w}, r, size)
 	} else {
 		buf := make([]byte, size, size)
 		if _, err = r.Read(buf); err != nil {
