@@ -20,7 +20,6 @@ var (
 )
 
 const (
-	dotDir             = ".cow"
 	blockedFname       = "auto-blocked"
 	directFname        = "auto-direct"
 	alwaysBlockedFname = "blocked"
@@ -32,6 +31,7 @@ const (
 )
 
 var config struct {
+	rcFile        string // config file
 	listenAddr    string
 	socksAddr     string
 	numProc       int
@@ -55,7 +55,6 @@ var config struct {
 	alwaysDirectFile  string
 	alwaysBlockedFile string
 	chouFile          string // chou feng, sites which will be temporary blocked
-	rcFile            string
 }
 
 func printVersion() {
@@ -63,13 +62,24 @@ func printVersion() {
 }
 
 func init() {
-	u, err := user.Current()
-	if err != nil {
-		fmt.Printf("Can't get user information %v", err)
-		os.Exit(1)
+	var rcFileDefault string
+	if isWindows() {
+		// On windows, put the configuration file in the same directory of cow executable
+		homeDir = path.Base(os.Args[0])
+		config.dir = homeDir
+		rcFileDefault = path.Join(homeDir, "rc")
+	} else {
+		u, err := user.Current()
+		if err != nil {
+			fmt.Printf("Can't get user information %v", err)
+			os.Exit(1)
+		}
+		homeDir = u.HomeDir
+		config.dir = path.Join(homeDir, ".cow")
+		rcFileDefault = "~/.cow/rc"
 	}
-	homeDir = u.HomeDir
 
+	flag.StringVar(&config.rcFile, "rc", rcFileDefault, "configuration file")
 	flag.StringVar(&config.listenAddr, "listen", "127.0.0.1:7777", "proxy server listen address")
 	flag.StringVar(&config.socksAddr, "socks", "127.0.0.1:1080", "socks proxy address")
 	flag.IntVar(&config.numProc, "core", 2, "number of cores to use")
@@ -85,18 +95,11 @@ func init() {
 	flag.StringVar(&config.shadowSocks, "shadowSocks", "", "shadowsocks server address")
 	flag.StringVar(&config.shadowPasswd, "shadowPasswd", "", "shadowsocks password")
 
-	config.dir = path.Join(homeDir, dotDir)
 	config.blockedFile = path.Join(config.dir, blockedFname)
 	config.directFile = path.Join(config.dir, directFname)
 	config.alwaysBlockedFile = path.Join(config.dir, alwaysBlockedFname)
 	config.alwaysDirectFile = path.Join(config.dir, alwaysDirectFname)
 	config.chouFile = path.Join(config.dir, chouFname)
-	config.rcFile = path.Join(config.dir, rcFname)
-
-	// Make it easy to find config directory on windows
-	if isWindows() {
-		fmt.Println("Config directory:", config.dir)
-	}
 }
 
 // Tries to open a file, if file not exist, return both nil for os.File and
