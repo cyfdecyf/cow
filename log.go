@@ -36,17 +36,19 @@ var (
 
 func init() {
 	flag.BoolVar((*bool)(&info), "info", true, "info log")
-	flag.BoolVar((*bool)(&debug), "debug", false, "debug log")
+	flag.BoolVar((*bool)(&debug), "debug", false, "debug log, with this option, log goes to stdout with color")
 	flag.BoolVar((*bool)(&errl), "err", true, "error log")
 	flag.BoolVar((*bool)(&dbgRq), "request", false, "request log")
 	flag.BoolVar((*bool)(&dbgRep), "reply", false, "reply log")
 	flag.BoolVar(&verbose, "v", false, "More info in request/response logging")
-	flag.BoolVar(&colorize, "color", false, "Colorize log output")
+	// flag.BoolVar(&colorize, "color", false, "Colorize log output")
 }
 
 func initLog() {
 	logFile = os.Stdout
-	if config.logFile != "" {
+	if bool(debug) {
+		colorize = true
+	} else if config.logFile != "" {
 		if config.logFile[0] == '~' {
 			config.logFile = homeDir + config.logFile[1:]
 		}
