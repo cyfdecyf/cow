@@ -217,7 +217,7 @@ func (c *clientConn) serveSelfURL(r *Request) (err error) {
 	if r.Method != "GET" {
 		goto end
 	}
-	if r.URL.Path == "/pac" {
+	if r.URL.Path == "/pac" || strings.HasPrefix(r.URL.Path, "/pac?") {
 		sendPAC(c)
 		// Send non nil error to close client connection.
 		return errPageSent
