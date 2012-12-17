@@ -100,16 +100,22 @@ func parseCmdLineConfig() *Config {
 	flag.StringVar(&c.SocksAddr, "socks", "", "socks proxy address")
 	flag.IntVar(&c.Core, "core", 2, "number of cores to use")
 	flag.StringVar(&c.SshServer, "sshServer", "", "remote server which will ssh to and provide sock server")
-	flag.BoolVar(&c.UpdateBlocked, "updateBlocked", true, "update blocked site list")
-	flag.BoolVar(&c.UpdateDirect, "updateDirect", true, "update direct site list")
-	flag.BoolVar(&c.AutoRetry, "autoRetry", false, "automatically retry timeout requests using socks proxy")
-	flag.BoolVar(&c.DetectSSLErr, "detectSSLErr", true, "detect SSL error based on how soon client closes connection")
 	flag.StringVar(&c.LogFile, "logFile", "", "write output to file, empty means stdout")
-	flag.BoolVar(&c.AlwaysProxy, "alwaysProxy", false, "always use parent proxy")
-	flag.BoolVar(&c.PrintVer, "version", false, "print version")
-
 	flag.StringVar(&c.ShadowSocks, "shadowSocks", "", "shadowsocks server address")
 	flag.StringVar(&c.ShadowPasswd, "shadowPasswd", "", "shadowsocks password")
+	flag.BoolVar(&c.PrintVer, "version", false, "print version")
+
+	// Bool options can't be specified on command line because the flag
+	// pacakge dosen't provide an easy way to detect if an option is actually
+	// given on command line, so we don't know if the option in config file
+	// should be override.
+
+	// flag.BoolVar(&c.AutoRetry, "autoRetry", false, "automatically retry timeout requests using socks proxy")
+	// flag.BoolVar(&c.UpdateBlocked, "updateBlocked", true, "update blocked site list")
+	// flag.BoolVar(&c.UpdateDirect, "updateDirect", true, "update direct site list")
+	// flag.BoolVar(&c.DetectSSLErr, "detectSSLErr", true, "detect SSL error based on how soon client closes connection")
+	// flag.BoolVar(&c.AlwaysProxy, "alwaysProxy", false, "always use parent proxy")
+
 	flag.Parse()
 	return &c
 }
@@ -291,9 +297,6 @@ func updateConfig(new *Config) {
 			if i != 0 {
 				oldField.SetInt(i)
 			}
-		case reflect.Bool:
-			b := newField.Bool()
-			oldField.SetBool(b)
 		}
 	}
 }
