@@ -690,6 +690,7 @@ func copyServer2Client(sv *serverConn, c *clientConn, cliStopped notification, r
 }
 
 func copyClient2Server(c *clientConn, sv *serverConn, srvStopped notification, r *Request) (err error) {
+	// TODO this is complicated, simplify it.
 	buf := make([]byte, bufSize)
 	var n int
 	var timeout time.Duration
@@ -728,15 +729,17 @@ func copyClient2Server(c *clientConn, sv *serverConn, srvStopped notification, r
 			debug.Printf("copyClient2Server read data: %v\n", err)
 			return
 		}
-		// When retrying request, should use socks server. So maybeFake
-		// will return false. Better to make sure about this.
-		// TODO when should create contBuf?
-		if sv.maybeFake() {
+		// When retrying request, should use socks server. So maybeFake will return false.
+		if sv.state == svConnected && sv.maybeFake() {
 			if r.contBuf == nil {
 				r.contBuf = new(bytes.Buffer)
 			}
 			// store client data in case needing retry
 			r.contBuf.Write(buf[0:n])
+		} else {
+			// if connection has sent some data back and forth, it's not
+			// likely blocked, so no need to retry. Set to nil to release memory.
+			r.contBuf = nil
 		}
 		// Read is using buffer, so write what have been read directly
 		if _, err = sv.Write(buf[0:n]); err != nil {
@@ -812,7 +815,7 @@ func (sv *serverConn) doConnect(r *Request, c *clientConn) (err error) {
 
 	<-doneChan
 	// maybeFake is needed here. If server has sent response to client, should not retry.
-	if sv.maybeFake() && (err == errRetry || srv2CliErr == errRetry) {
+	if r.contBuf != nil && (err == errRetry || srv2CliErr == errRetry) && sv.maybeFake() {
 		return errRetry
 	}
 	// Because this is in doConnect, there's no way reporting error to the client.
