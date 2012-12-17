@@ -137,6 +137,15 @@ func newClientConn(rwc net.Conn) *clientConn {
 	return c
 }
 
+func (c *clientConn) increaseBufSize(atLeast int) {
+	errl.Println("increasing buf size to at least:", atLeast)
+	newLen := len(c.buf) + bufSize
+	if atLeast > newLen {
+		newLen = atLeast
+	}
+	c.buf = make([]byte, newLen, newLen)
+}
+
 func (c *clientConn) close() {
 	for _, sv := range c.serverConn {
 		sv.Close()
@@ -145,7 +154,7 @@ func (c *clientConn) close() {
 	if debug {
 		debug.Printf("Client %v connection closed\n", c.RemoteAddr())
 	}
-	c = nil
+	c.buf = nil
 }
 
 func isSelfURL(url string) bool {
@@ -466,7 +475,7 @@ func (c *clientConn) readResponse(sv *serverConn, r *Request) (err error) {
 
 	if rp.hasBody(r.Method) {
 		r.state = rsRecvBody
-		if err = sendBody(c, nil, sv.bufRd, rp.Chunking, rp.ContLen); err != nil {
+		if err = sendBody(c, sv, nil, rp); err != nil {
 			// Non persistent connection will return nil upon successful response reading
 			if err == io.EOF {
 				// For persistent connection, EOF from server is error.
@@ -694,7 +703,7 @@ func copyServer2Client(sv *serverConn, c *clientConn, cliStopped notification, r
 func copyClient2Server(c *clientConn, sv *serverConn, srvStopped notification, r *Request) (err error) {
 	// TODO this is complicated, simplify it.
 	buf := make([]byte, bufSize)
-	hasBufferedCont := false
+	var buffered []byte
 	var n int
 
 	if c.bufRd != nil {
@@ -703,8 +712,7 @@ func copyClient2Server(c *clientConn, sv *serverConn, srvStopped notification, r
 			buf = make([]byte, n, n)
 		}
 		if n > 0 {
-			c.bufRd.Read(buf[:n])
-			hasBufferedCont = true
+			buffered, _ = c.bufRd.Peek(n) // should not return error
 		}
 		c.bufRd = nil
 	}
@@ -723,7 +731,7 @@ func copyClient2Server(c *clientConn, sv *serverConn, srvStopped notification, r
 			debug.Println("copyClient2Server server stopped")
 			return
 		}
-		if hasBufferedCont {
+		if buffered != nil {
 			goto writeBuf
 		}
 		if sv.maybeFake() && sv.state == svConnected {
@@ -747,23 +755,23 @@ func copyClient2Server(c *clientConn, sv *serverConn, srvStopped notification, r
 			debug.Printf("copyClient2Server read data: %v\n", err)
 			return
 		}
+		buffered = buf[:n]
 
 	writeBuf:
-		hasBufferedCont = false
 		// When retrying request, should use socks server. So maybeFake will return false.
 		if sv.state == svConnected && sv.maybeFake() {
 			if r.contBuf == nil {
 				r.contBuf = new(bytes.Buffer)
 			}
 			// store client data in case needing retry
-			r.contBuf.Write(buf[0:n])
+			r.contBuf.Write(buffered)
 		} else {
 			// if connection has sent some data back and forth, it's not
 			// likely blocked, so no need to retry. Set to nil to release memory.
 			r.contBuf = nil
 		}
 		// Read is using buffer, so write what have been read directly
-		if _, err = sv.Write(buf[0:n]); err != nil {
+		if _, err = sv.Write(buffered); err != nil {
 			if sv.maybeFake() && isErrConnReset(err) && addBlockedHost(r.URL.Host) {
 				debug.Printf("copyClient2Server blocked site %d detected, retry\n", r.URL.Host)
 				return errRetry
@@ -771,6 +779,7 @@ func copyClient2Server(c *clientConn, sv *serverConn, srvStopped notification, r
 			debug.Printf("copyClient2Server write data: %v\n", err)
 			return
 		}
+		buffered = nil
 	}
 	return
 }
@@ -846,6 +855,9 @@ func (sv *serverConn) doConnect(r *Request, c *clientConn) (err error) {
 
 // Do HTTP request other that CONNECT
 func (sv *serverConn) doRequest(r *Request, c *clientConn) (err error) {
+	if c.buf == nil {
+		c.buf = make([]byte, bufSize*2, bufSize*2)
+	}
 	r.state = rsCreated
 	// Send request to the server
 	if _, err = sv.Write(r.raw.Bytes()); err != nil {
@@ -866,7 +878,7 @@ func (sv *serverConn) doRequest(r *Request, c *clientConn) (err error) {
 	} else if r.Method == "POST" {
 		// The server connection may have been closed, need to retry request in that case.
 		r.contBuf = new(bytes.Buffer)
-		if err = sendBody(sv, r.contBuf, c.bufRd, r.Chunking, r.ContLen); err != nil {
+		if err = sendBody(c, sv, r, nil); err != nil {
 			if err == io.EOF {
 				if r.KeepAlive {
 					errl.Println("Unexpected EOF reading request body from client", r)
@@ -885,31 +897,45 @@ func (sv *serverConn) doRequest(r *Request, c *clientConn) (err error) {
 	return c.readResponse(sv, r)
 }
 
+func copyN(r io.Reader, w, contBuf io.Writer, n int, buf []byte) (err error) {
+	var nn int
+	bufLen := len(buf)
+	var b []byte
+	for n != 0 {
+		if n >= bufLen {
+			b = buf
+		} else {
+			b = buf[:n]
+		}
+		if nn, err = r.Read(b); err != nil {
+			return
+		}
+		n -= nn
+		if contBuf != nil {
+			contBuf.Write(b[:nn])
+		}
+		if _, err = w.Write(b[:nn]); err != nil {
+			return
+		}
+	}
+	return
+}
+
 // Send response body if header specifies content length
-func sendBodyWithContLen(w, contBuf io.Writer, r *bufio.Reader, contLen int64) (err error) {
+func sendBodyWithContLen(c *clientConn, r io.Reader, w, contBuf io.Writer, contLen int) (err error) {
 	// debug.Println("Sending body with content length", contLen)
 	if contLen == 0 {
 		return
 	}
-	buf := make([]byte, contLen, contLen)
-	if _, err = io.ReadFull(r, buf); err != nil {
-		debug.Println("sendBodyWithContLen read error:", err)
-		return
-	}
-	if contBuf != nil {
-		contBuf.Write(buf)
-	}
-	if _, err = w.Write(buf); err != nil {
-		debug.Println("sendBodyWithContLen:", err)
+	if err = copyN(r, w, contBuf, contLen, c.buf); err != nil {
+		debug.Println("sendBodyWithContLen error:", err)
 	}
 	return
 }
 
 // Send response body if header specifies chunked encoding
-func sendBodyChunked(w, contBuf io.Writer, r *bufio.Reader) (err error) {
+func sendBodyChunked(c *clientConn, r *bufio.Reader, w, contBuf io.Writer) (err error) {
 	// debug.Println("Sending chunked body")
-	bufLen := bufSize * 2
-	buf := make([]byte, bufLen, bufLen)
 	for {
 		var s string
 		// Read chunk size line, ignore chunk extension if any
@@ -937,24 +963,24 @@ func sendBodyChunked(w, contBuf io.Writer, r *bufio.Reader) (err error) {
 			return
 		}
 		chunkLen := len(s) + 2 + int(size) + 2 // remember to include the length of 2 CRLF
-		if chunkLen > bufLen {
-			bufLen = chunkLen
-			buf = make([]byte, bufLen, bufLen)
+		if chunkLen > len(c.buf) {
+			errl.Printf("sendBodyChunked buf size=%d chunkLen=%d\n", len(c.buf), chunkLen)
+			c.increaseBufSize(chunkLen)
 		}
-		copy(buf, []byte(s+"\r\n"))
+		copy(c.buf, []byte(s+"\r\n"))
 		dataStart := len(s) + 2
-		if _, err = io.ReadFull(r, buf[dataStart:dataStart+int(size)]); err != nil {
+		if _, err = io.ReadFull(r, c.buf[dataStart:dataStart+int(size)]); err != nil {
 			debug.Println("Reading chunked data:", err)
 			return
 		}
 		if err = readCheckCRLF(r); err != nil {
 			errl.Println("Chunked data not end with CRLF, try continue")
 		}
-		copy(buf[chunkLen-2:chunkLen], CRLFbytes)
+		copy(c.buf[chunkLen-2:chunkLen], CRLFbytes)
 		if contBuf != nil {
-			contBuf.Write(buf[:chunkLen])
+			contBuf.Write(c.buf[:chunkLen])
 		}
-		if _, err = w.Write(buf[:chunkLen]); err != nil {
+		if _, err = w.Write(c.buf[:chunkLen]); err != nil {
 			debug.Println("Writing chunk size in sendBodyChunked:", err)
 			return
 		}
@@ -968,11 +994,11 @@ var chunkEndbytes = []byte("0\r\n\r\n")
 // Client can't use closed connection to indicate end of request, so must
 // content length or use chunked encoding. Thus contBuf is not necessary for
 // sendBodySplitIntoChunk.
-func sendBodySplitIntoChunk(w io.Writer, r *bufio.Reader) (err error) {
-	buf := make([]byte, bufSize)
+func sendBodySplitIntoChunk(c *clientConn, r io.Reader, w io.Writer) (err error) {
 	var n int
+	bufLen := len(c.buf)
 	for {
-		n, err = r.Read(buf)
+		n, err = r.Read(c.buf[:bufLen-2]) // make sure we have space to add CRLF
 		// debug.Println("split into chunk n =", n, "err =", err)
 		if err != nil {
 			if err == io.EOF {
@@ -987,14 +1013,13 @@ func sendBodySplitIntoChunk(w io.Writer, r *bufio.Reader) (err error) {
 			return
 		}
 
-		sb := []byte(fmt.Sprintf("%x\r\n", n))
-		buf = append(buf[:n], CRLFbytes...)
-		n += 2
-		if _, err = w.Write(sb); err != nil {
+		chunkSize := []byte(fmt.Sprintf("%x\r\n", n))
+		if _, err = w.Write(chunkSize); err != nil {
 			debug.Printf("Writing chunk size %v\n", err)
 			return
 		}
-		if _, err = w.Write(buf[:n]); err != nil {
+		copy(c.buf[n:], CRLFbytes)
+		if _, err = w.Write(c.buf[:n+len(CRLFbytes)]); err != nil {
 			debug.Println("Writing chunk data:", err)
 			return
 		}
@@ -1002,17 +1027,36 @@ func sendBodySplitIntoChunk(w io.Writer, r *bufio.Reader) (err error) {
 	return
 }
 
-// Send message body
-func sendBody(w, contBuf io.Writer, r *bufio.Reader, chunk bool, contLen int64) (err error) {
-	if chunk {
-		err = sendBodyChunked(w, contBuf, r)
-	} else if contLen >= 0 {
-		err = sendBodyWithContLen(w, contBuf, r, contLen)
+// Send message body. If req is not nil, read from client, send to server. If
+// rp is not nil, the direction is the oppisite.
+func sendBody(c *clientConn, sv *serverConn, req *Request, rp *Response) (err error) {
+	var contLen int
+	var chunk bool
+	var bufRd *bufio.Reader
+	var w, contBuf io.Writer
+
+	if req == nil { // read from server, write to client
+		w = c
+		bufRd = sv.bufRd
+		contLen = int(rp.ContLen)
+		chunk = rp.Chunking
 	} else {
-		if contBuf != nil {
+		w = sv
+		bufRd = c.bufRd
+		contLen = int(req.ContLen)
+		chunk = req.Chunking
+		contBuf = req.contBuf
+	}
+
+	if chunk {
+		err = sendBodyChunked(c, bufRd, w, contBuf)
+	} else if contLen >= 0 {
+		err = sendBodyWithContLen(c, bufRd, w, contBuf, contLen)
+	} else {
+		if req != nil {
 			errl.Println("Should not happen! Client request with body but no length specified.")
 		}
-		err = sendBodySplitIntoChunk(w, r)
+		err = sendBodySplitIntoChunk(c, bufRd, w)
 	}
 	return
 }
