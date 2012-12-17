@@ -877,7 +877,7 @@ func copyWithBuf(w, contBuf io.Writer, r io.Reader, size int64) (err error) {
 		_, err = io.CopyN(writerOnly{w}, r, size)
 	} else {
 		buf := make([]byte, size, size)
-		if _, err = r.Read(buf); err != nil {
+		if _, err = io.ReadFull(r, buf); err != nil {
 			return
 		}
 		contBuf.Write(buf)
@@ -889,6 +889,8 @@ func copyWithBuf(w, contBuf io.Writer, r io.Reader, size int64) (err error) {
 // Send response body if header specifies chunked encoding
 func sendBodyChunked(w, contBuf io.Writer, r *bufio.Reader) (err error) {
 	// debug.Println("Sending chunked body")
+	bufLen := bufSize * 2
+	buf := make([]byte, bufLen, bufLen)
 	for {
 		var s string
 		// Read chunk size line, ignore chunk extension if any
@@ -903,30 +905,38 @@ func sendBodyChunked(w, contBuf io.Writer, r *bufio.Reader) (err error) {
 			errl.Println("Chunk size not valid:", err)
 			return
 		}
-		sb := []byte(s + "\r\n")
-		if contBuf != nil {
-			contBuf.Write(sb)
-		}
-		// Write chunk size, not buffered
-		if _, err = w.Write(sb); err != nil {
-			debug.Println("Writing chunk size in sendBodyChunked:", err)
-			return
-		}
 		if size == 0 { // end of chunked data, ignore any trailers
-			// Send final blank line to client
-			if err = copyWithBuf(w, contBuf, r, 2); err != nil {
-				debug.Println("sendBodyChunked send ending CRLF:", err)
+			if err = readCheckCRLF(r); err != nil {
+				errl.Println("Check CRLF after chunked size 0:", err)
+			}
+			if contBuf != nil {
+				contBuf.Write(chunkEndbytes)
+			}
+			if _, err = w.Write(chunkEndbytes); err != nil {
+				debug.Println("Sending chunk ending:", err)
 			}
 			return
 		}
-		// If we assume correct data from read side, we can use size+2 to read
-		// chunked data and the followed CRLF. Though we should be strict on
-		// input data, almost all server on the internet implements chunked
-		// encoding correctly, this assumption should almost always hold. In
-		// the rare case of wrong data, parsing the followed chunk size line
-		// may discover error and stop.
-		if err = copyWithBuf(w, contBuf, r, size+2); err != nil {
-			debug.Println("sendBodyChunked copying chunk data:", err)
+		chunkLen := len(s) + 2 + int(size) + 2 // remember to include the length of 2 CRLF
+		if chunkLen > bufLen {
+			bufLen = chunkLen
+			buf = make([]byte, bufLen, bufLen)
+		}
+		copy(buf, []byte(s+"\r\n"))
+		dataStart := len(s) + 2
+		if _, err = io.ReadFull(r, buf[dataStart:dataStart+int(size)]); err != nil {
+			debug.Println("Reading chunked data:", err)
+			return
+		}
+		if err = readCheckCRLF(r); err != nil {
+			errl.Println("Chunked data not end with CRLF, try continue")
+		}
+		copy(buf[chunkLen-2:chunkLen], CRLFbytes)
+		if contBuf != nil {
+			contBuf.Write(buf[:chunkLen])
+		}
+		if _, err = w.Write(buf[:chunkLen]); err != nil {
+			debug.Println("Writing chunk size in sendBodyChunked:", err)
 			return
 		}
 	}

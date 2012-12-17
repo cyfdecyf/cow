@@ -309,9 +309,8 @@ func (r *Request) responseNotSent() bool {
 	return r.state <= rsSent
 }
 
-var crlfBuf = make([]byte, 2)
-
 func readCheckCRLF(reader *bufio.Reader) error {
+	crlfBuf := make([]byte, 2)
 	if _, err := io.ReadFull(reader, crlfBuf); err != nil {
 		return err
 	}
