@@ -23,7 +23,7 @@ func initShadowSocks() {
 	}
 }
 
-func createShadowctSocksConnection(hostFull string) (cn conn, err error) {
+func createShadowSocksConnection(hostFull string) (cn conn, err error) {
 	if !hasShadowSocksServer {
 		return zeroConn, noShadowSocksErr
 	}
