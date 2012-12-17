@@ -866,22 +866,16 @@ func sendBodyWithContLen(w, contBuf io.Writer, r *bufio.Reader, contLen int64) (
 	if contLen == 0 {
 		return
 	}
-	if err = copyWithBuf(w, contBuf, r, contLen); err != nil {
-		debug.Println("sendBodyWithContLen:", err)
+	buf := make([]byte, contLen, contLen)
+	if _, err = io.ReadFull(r, buf); err != nil {
+		debug.Println("sendBodyWithContLen read error:", err)
+		return
 	}
-	return
-}
-
-func copyWithBuf(w, contBuf io.Writer, r io.Reader, size int64) (err error) {
-	if contBuf == nil {
-		_, err = io.CopyN(writerOnly{w}, r, size)
-	} else {
-		buf := make([]byte, size, size)
-		if _, err = io.ReadFull(r, buf); err != nil {
-			return
-		}
+	if contBuf != nil {
 		contBuf.Write(buf)
-		_, err = w.Write(buf)
+	}
+	if _, err = w.Write(buf); err != nil {
+		debug.Println("sendBodyWithContLen:", err)
 	}
 	return
 }
