@@ -66,7 +66,7 @@ type writerOnly struct {
 
 type serverConn struct {
 	conn
-	buf     *bufio.Reader
+	bufRd   *bufio.Reader
 	host    string
 	state   serverConnState
 	lastUse time.Time
@@ -74,16 +74,17 @@ type serverConn struct {
 
 func newServerConn(c conn, host string) *serverConn {
 	return &serverConn{
-		conn: c,
-		host: host,
-		buf:  bufio.NewReaderSize(c, bufSize),
+		conn:  c,
+		host:  host,
+		bufRd: bufio.NewReaderSize(c, bufSize),
 	}
 }
 
 type clientConn struct {
 	net.Conn   // connection to the proxy client
-	buf        *bufio.Reader
+	bufRd      *bufio.Reader
 	serverConn map[string]*serverConn // request serverConn, host:port as key
+	buf        []byte                 // buffer for reading request, avoids repeatedly allocating buffer
 }
 
 var (
@@ -131,7 +132,7 @@ func newClientConn(rwc net.Conn) *clientConn {
 	c := &clientConn{
 		Conn:       rwc,
 		serverConn: map[string]*serverConn{},
-		buf:        bufio.NewReaderSize(rwc, bufSize),
+		bufRd:      bufio.NewReaderSize(rwc, bufSize),
 	}
 	return c
 }
@@ -155,7 +156,7 @@ func (c *clientConn) getRequest() (r *Request) {
 	var err error
 
 	setConnReadTimeout(c, clientConnTimeout, "BEFORE receiving client request")
-	if r, err = parseRequest(c.buf); err != nil {
+	if r, err = parseRequest(c.bufRd); err != nil {
 		c.handleClientReadError(r, err, "parse client request")
 		return nil
 	}
@@ -438,7 +439,7 @@ func (c *clientConn) readResponse(sv *serverConn, r *Request) (err error) {
 	if sv.state == svConnected && sv.maybeFake() {
 		setConnReadTimeout(sv, readTimeout, "BEFORE receiving the first response")
 	}
-	if rp, err = parseResponse(sv.buf, r); err != nil {
+	if rp, err = parseResponse(sv.bufRd, r); err != nil {
 		return c.handleServerReadError(r, sv, err, "Parse response from server.")
 	}
 	// After have received the first reponses from the server, we consider
@@ -465,7 +466,7 @@ func (c *clientConn) readResponse(sv *serverConn, r *Request) (err error) {
 
 	if rp.hasBody(r.Method) {
 		r.state = rsRecvBody
-		if err = sendBody(c, nil, sv.buf, rp.Chunking, rp.ContLen); err != nil {
+		if err = sendBody(c, nil, sv.bufRd, rp.Chunking, rp.ContLen); err != nil {
 			// Non persistent connection will return nil upon successful response reading
 			if err == io.EOF {
 				// For persistent connection, EOF from server is error.
@@ -662,7 +663,7 @@ func copyServer2Client(sv *serverConn, c *clientConn, cliStopped notification, r
 			return
 		}
 		setConnReadTimeout(sv, readTimeout, "copyServer2Client")
-		if n, err = sv.buf.Read(buf); err != nil {
+		if n, err = sv.bufRd.Read(buf); err != nil {
 			if sv.maybeFake() && maybeBlocked(err) && addBlockedHost(r.URL.Host) {
 				debug.Printf("copyServer2Client blocked site %s detected, retry\n", r.URL.Host)
 				return errRetry
@@ -714,7 +715,7 @@ func copyClient2Server(c *clientConn, sv *serverConn, srvStopped notification, r
 			timeout = readTimeout
 		}
 		setConnReadTimeout(c, timeout, "copyClient2Server")
-		if n, err = c.buf.Read(buf); err != nil {
+		if n, err = c.bufRd.Read(buf); err != nil {
 			if isErrTimeout(err) {
 				// Applications like Twitter for Mac needs long connection for
 				// live stream. So should not close connection here. But this
@@ -843,8 +844,9 @@ func (sv *serverConn) doRequest(r *Request, c *clientConn) (err error) {
 			return errPageSent
 		}
 	} else if r.Method == "POST" {
+		// The server connection may have been closed, need to retry request in that case.
 		r.contBuf = new(bytes.Buffer)
-		if err = sendBody(sv, r.contBuf, c.buf, r.Chunking, r.ContLen); err != nil {
+		if err = sendBody(sv, r.contBuf, c.bufRd, r.Chunking, r.ContLen); err != nil {
 			if err == io.EOF {
 				if r.KeepAlive {
 					errl.Println("Unexpected EOF reading request body from client", r)
