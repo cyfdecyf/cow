@@ -655,6 +655,7 @@ func unsetConnReadTimeout(cn net.Conn, msg string) {
 
 func copyServer2Client(sv *serverConn, c *clientConn, cliStopped notification, r *Request) (err error) {
 	buf := make([]byte, bufSize)
+	sv.bufRd = nil
 	var n int
 
 	for {
@@ -663,8 +664,8 @@ func copyServer2Client(sv *serverConn, c *clientConn, cliStopped notification, r
 			return
 		}
 		setConnReadTimeout(sv, readTimeout, "copyServer2Client")
-		if n, err = sv.bufRd.Read(buf); err != nil {
-			if sv.maybeFake() && maybeBlocked(err) && addBlockedHost(r.URL.Host) {
+		if n, err = sv.Read(buf); err != nil {
+			if maybeBlocked(err) && sv.maybeFake() && addBlockedHost(r.URL.Host) {
 				debug.Printf("copyServer2Client blocked site %s detected, retry\n", r.URL.Host)
 				return errRetry
 			} else if isErrTimeout(err) {
@@ -693,9 +694,22 @@ func copyServer2Client(sv *serverConn, c *clientConn, cliStopped notification, r
 func copyClient2Server(c *clientConn, sv *serverConn, srvStopped notification, r *Request) (err error) {
 	// TODO this is complicated, simplify it.
 	buf := make([]byte, bufSize)
+	hasBufferedCont := false
 	var n int
-	var timeout time.Duration
 
+	if c.bufRd != nil {
+		n = c.bufRd.Buffered()
+		if n > bufSize {
+			buf = make([]byte, n, n)
+		}
+		if n > 0 {
+			c.bufRd.Read(buf[:n])
+			hasBufferedCont = true
+		}
+		c.bufRd = nil
+	}
+
+	var timeout time.Duration
 	if r.contBuf != nil {
 		debug.Println("copyClient2Server retry request:", r)
 		if _, err = sv.Write(r.contBuf.Bytes()); err != nil {
@@ -709,13 +723,16 @@ func copyClient2Server(c *clientConn, sv *serverConn, srvStopped notification, r
 			debug.Println("copyClient2Server server stopped")
 			return
 		}
+		if hasBufferedCont {
+			goto writeBuf
+		}
 		if sv.maybeFake() && sv.state == svConnected {
 			timeout = 2 * time.Second
 		} else {
 			timeout = readTimeout
 		}
 		setConnReadTimeout(c, timeout, "copyClient2Server")
-		if n, err = c.bufRd.Read(buf); err != nil {
+		if n, err = c.Read(buf); err != nil {
 			if isErrTimeout(err) {
 				// Applications like Twitter for Mac needs long connection for
 				// live stream. So should not close connection here. But this
@@ -730,6 +747,9 @@ func copyClient2Server(c *clientConn, sv *serverConn, srvStopped notification, r
 			debug.Printf("copyClient2Server read data: %v\n", err)
 			return
 		}
+
+	writeBuf:
+		hasBufferedCont = false
 		// When retrying request, should use socks server. So maybeFake will return false.
 		if sv.state == svConnected && sv.maybeFake() {
 			if r.contBuf == nil {
