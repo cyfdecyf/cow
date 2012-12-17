@@ -32,11 +32,14 @@ var socksMsgVerMethodSelection = []byte{
 var hasSocksServer = false
 
 func initSocksServer() {
-	hasSocksServer = (config.socksAddr != "")
+	hasSocksServer = (config.SocksAddr != "")
+	if hasSocksServer {
+		debug.Println("has socks server:", config.SocksAddr)
+	}
 }
 
 func createctSocksConnection(hostFull string) (cn conn, err error) {
-	c, err := net.Dial("tcp", config.socksAddr)
+	c, err := net.Dial("tcp", config.SocksAddr)
 	if err != nil {
 		debug.Printf("Can't connect to socks server %v\n", err)
 		return

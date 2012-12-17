@@ -72,7 +72,7 @@ function FindProxyForURL(url, host) {
 }
 
 func initProxyServerAddr() {
-	listen, port := splitHostPort(config.listenAddr)
+	listen, port := splitHostPort(config.ListenAddr)
 	if listen == "0.0.0.0" {
 		addrs, err := hostIP()
 		if err != nil {
@@ -85,9 +85,9 @@ func initProxyServerAddr() {
 		}
 		pac.proxyServerAddr += "DIRECT"
 		info.Printf("proxy listen address is %s, PAC will have proxy address: %s\n",
-			config.listenAddr, pac.proxyServerAddr)
+			config.ListenAddr, pac.proxyServerAddr)
 	} else {
-		pac.proxyServerAddr = fmt.Sprintf("PROXY %s; DIRECT", config.listenAddr)
+		pac.proxyServerAddr = fmt.Sprintf("PROXY %s; DIRECT", config.ListenAddr)
 	}
 }
 

@@ -48,12 +48,8 @@ func initLog() {
 	logFile = os.Stdout
 	if bool(debug) {
 		colorize = true
-	} else if config.logFile != "" {
-		if config.logFile[0] == '~' {
-			config.logFile = homeDir + config.logFile[1:]
-		}
-
-		if f, err := os.OpenFile(config.logFile,
+	} else if config.LogFile != "" {
+		if f, err := os.OpenFile(expandTild(config.LogFile),
 			os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600); err != nil {
 			fmt.Printf("Can't open log file, logging to stdout: %v\n", err)
 		} else {

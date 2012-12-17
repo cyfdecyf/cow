@@ -12,13 +12,14 @@ var noShadowSocksErr = errors.New("No shadowsocks configuration")
 var encTbl *ss.EncryptTable
 
 func initShadowSocks() {
-	if config.shadowSocks != "" && config.shadowPasswd != "" {
+	if config.ShadowSocks != "" && config.ShadowPasswd != "" {
 		hasShadowSocksServer = true
-		encTbl = ss.GetTable(config.shadowPasswd)
+		debug.Println("shadowsocks server:", config.ShadowSocks)
+		encTbl = ss.GetTable(config.ShadowPasswd)
 		return
 	}
-	if (config.shadowSocks != "" && config.shadowPasswd == "") ||
-		(config.shadowSocks == "" && config.shadowPasswd != "") {
+	if (config.ShadowSocks != "" && config.ShadowPasswd == "") ||
+		(config.ShadowSocks == "" && config.ShadowPasswd != "") {
 		errl.Println("Missing option: shadowSocks and shadowPasswd should be both given")
 	}
 }
@@ -27,9 +28,9 @@ func createShadowSocksConnection(hostFull string) (cn conn, err error) {
 	if !hasShadowSocksServer {
 		return zeroConn, noShadowSocksErr
 	}
-	c, err := ss.Dial(hostFull, config.shadowSocks, encTbl)
+	c, err := ss.Dial(hostFull, config.ShadowSocks, encTbl)
 	if err != nil {
-		// debug.Printf("Creating shadowsocks connection: %s %v\n", hostFull, err)
+		debug.Printf("Can't create shadowsocks connection for: %s %v\n", hostFull, err)
 		return zeroConn, err
 	}
 	// debug.Println("shadowsocks connection created to:", hostFull)

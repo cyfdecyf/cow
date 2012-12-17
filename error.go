@@ -136,7 +136,7 @@ func sendBlockedErrorPage(w io.Writer, codeReason, h1, msg string, r *Request) {
 		Host       string
 		Domain     string
 	}{
-		config.listenAddr,
+		config.ListenAddr,
 		h,
 		host2Domain(r.URL.Host),
 	}

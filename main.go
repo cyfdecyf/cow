@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"os"
 	"os/signal"
 	"runtime"
@@ -27,8 +26,11 @@ var hasParentProxy = false
 
 func main() {
 	// Parse flags after load config to allow override options in config
-	loadConfig()
-	flag.Parse()
+	cmdLineConfig := parseCmdLineConfig()
+	parseConfig(cmdLineConfig.RcFile)
+	// need to update config
+	updateConfig(cmdLineConfig)
+
 	initLog()
 
 	initProxyServerAddr()
@@ -43,7 +45,7 @@ func main() {
 
 	setSelfURL()
 
-	if config.printVer {
+	if config.PrintVer {
 		printVersion()
 		os.Exit(0)
 	}
@@ -68,7 +70,7 @@ func main() {
 		}
 	*/
 
-	runtime.GOMAXPROCS(config.numProc)
+	runtime.GOMAXPROCS(config.Core)
 
 	signal.Notify(sigChan, syscall.SIGINT)
 	signal.Notify(sigChan, syscall.SIGTERM)
@@ -76,6 +78,6 @@ func main() {
 
 	go runSSH()
 
-	py := NewProxy(config.listenAddr)
+	py := NewProxy(config.ListenAddr)
 	py.Serve()
 }

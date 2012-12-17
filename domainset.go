@@ -206,17 +206,17 @@ func delDirectDomain(dm string) {
 }
 
 func writeBlockedDs() {
-	if !config.updateBlocked || !blockedDomainChanged {
+	if !config.UpdateBlocked || !blockedDomainChanged {
 		return
 	}
-	writeDomainList(config.blockedFile, blockedDs.toSlice())
+	writeDomainList(dsFile.blocked, blockedDs.toSlice())
 }
 
 func writeDirectDs() {
-	if !config.updateDirect || !directDomainChanged {
+	if !config.UpdateDirect || !directDomainChanged {
 		return
 	}
-	writeDomainList(config.directFile, directDs.toSlice())
+	writeDomainList(dsFile.direct, directDs.toSlice())
 }
 
 // filter out domain in blocked and direct domain set.
@@ -286,19 +286,19 @@ func loadDomainList(fpath string) (lst []string, err error) {
 }
 
 func mkConfigDir() (err error) {
-	stat, err := os.Stat(config.dir)
+	stat, err := os.Stat(dsFile.dir)
 	if err == nil {
 		if stat.IsDir() {
 			return
 		}
-		log.Printf("%s is not directory, can't write domain list\n", config.dir)
-		return errors.New("config.dir is not directory")
+		log.Printf("%s is not directory, can't write domain list\n", dsFile.dir)
+		return errors.New("dsFile.dir is not directory")
 	}
 	if os.IsNotExist(err) {
-		err = os.Mkdir(config.dir, 0755)
+		err = os.Mkdir(dsFile.dir, 0755)
 	}
 	if err != nil {
-		log.Printf("Config directory %s: %v\n", config.dir, err)
+		log.Printf("Config directory %s: %v\n", dsFile.dir, err)
 	}
 	return
 }
@@ -307,7 +307,7 @@ func writeDomainList(fpath string, lst []string) (err error) {
 	if err = mkConfigDir(); err != nil {
 		return
 	}
-	tmpPath := path.Join(config.dir, "tmp-domain")
+	tmpPath := path.Join(dsFile.dir, "tmp-domain")
 	f, err := os.Create(tmpPath)
 	if err != nil {
 		errl.Println("Error creating tmp domain list file:", err)
@@ -375,11 +375,11 @@ func host2Domain(host string) (domain string) {
 // Domain set reference changing should be atomic.
 
 func loadDomainSet() {
-	blockedDs.loadDomainList(config.blockedFile)
-	directDs.loadDomainList(config.directFile)
-	alwaysBlockedDs.loadDomainList(config.alwaysBlockedFile)
-	alwaysDirectDs.loadDomainList(config.alwaysDirectFile)
-	chouDs.loadDomainList(config.chouFile)
+	blockedDs.loadDomainList(dsFile.blocked)
+	directDs.loadDomainList(dsFile.direct)
+	alwaysBlockedDs.loadDomainList(dsFile.alwaysBlocked)
+	alwaysDirectDs.loadDomainList(dsFile.alwaysDirect)
+	chouDs.loadDomainList(dsFile.chou)
 
 	filterOutDs(chouDs)
 	filterOutDs(alwaysDirectDs)

@@ -322,7 +322,7 @@ func (c *clientConn) handleBlockedRequest(r *Request, err error, errCode, msg st
 	// Domain in chou domain set is likely to be blocked, should automatically
 	// restart request using parent proxy.
 	// Reset is usually reliable in detecting blocked site, so retry for connection reset.
-	if errCode == errCodeReset || config.autoRetry || isHostChouFeng(r.URL.Host) {
+	if errCode == errCodeReset || config.AutoRetry || isHostChouFeng(r.URL.Host) {
 		debug.Printf("Blocked site %s detected for request %v error: %v\n", r.URL.Host, r, err)
 		if addBlockedHost(r.URL.Host) {
 			return errRetry
@@ -569,7 +569,7 @@ func createParentProxyConnection(host string) (srvconn conn, err error) {
 }
 
 func (c *clientConn) createConnection(host string, r *Request) (srvconn conn, err error) {
-	if config.alwaysProxy {
+	if config.AlwaysProxy {
 		if srvconn, err = createParentProxyConnection(host); err == nil {
 			return
 		}
@@ -603,7 +603,7 @@ func (c *clientConn) createConnection(host string, r *Request) (srvconn conn, er
 				// Connection reset is very likely caused by GFW, directly add
 				// to blocked list. Timeout error is not reliable detecting
 				// blocked site, ask the user unless autoRetry is enabled.
-				if config.autoRetry || isHostChouFeng(host) || isErrConnReset(err) {
+				if config.AutoRetry || isHostChouFeng(host) || isErrConnReset(err) {
 					addBlockedHost(host)
 					return srvconn, nil
 				}
@@ -721,7 +721,7 @@ func copyClient2Server(c *clientConn, sv *serverConn, srvStopped notification, r
 				// open connections.
 				continue
 			}
-			if config.detectSSLErr && (isErrConnReset(err) || err == io.EOF) && sv.maybeSSLErr(start) {
+			if config.DetectSSLErr && (isErrConnReset(err) || err == io.EOF) && sv.maybeSSLErr(start) {
 				debug.Println("client connection closed very soon, taken as SSL error:", r)
 				addBlockedHost(r.URL.Host)
 			}

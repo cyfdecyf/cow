@@ -30,31 +30,34 @@ const (
 	version = "0.3.4"
 )
 
-var config struct {
-	rcFile        string // config file
-	listenAddr    string
-	socksAddr     string
-	numProc       int
-	sshServer     string
-	updateBlocked bool
-	updateDirect  bool
-	autoRetry     bool
-	detectSSLErr  bool
-	logFile       string
-	alwaysProxy   bool
-	printVer      bool
+type Config struct {
+	RcFile        string // config file
+	ListenAddr    string
+	SocksAddr     string
+	Core          int
+	SshServer     string
+	UpdateBlocked bool
+	UpdateDirect  bool
+	AutoRetry     bool
+	DetectSSLErr  bool
+	LogFile       string
+	AlwaysProxy   bool
+	ShadowSocks   string
+	ShadowPasswd  string
 
-	// For shadowsocks server
-	shadowSocks  string
-	shadowPasswd string
+	// not configurable in config file
+	PrintVer bool
+}
 
-	// These are for internal use
-	dir               string // directory containing config file and blocked site list
-	blockedFile       string // contains blocked domains
-	directFile        string // contains sites that can be directly accessed
-	alwaysDirectFile  string
-	alwaysBlockedFile string
-	chouFile          string // chou feng, sites which will be temporary blocked
+var config Config
+
+var dsFile struct {
+	dir           string // directory containing config file and blocked site list
+	blocked       string // contains blocked domains
+	direct        string // contains sites that can be directly accessed
+	alwaysDirect  string
+	alwaysBlocked string
+	chou          string // chou feng, sites which will be temporary blocked
 }
 
 func printVersion() {
@@ -62,12 +65,10 @@ func printVersion() {
 }
 
 func init() {
-	var rcFileDefault string
 	if isWindows() {
 		// On windows, put the configuration file in the same directory of cow executable
 		homeDir = path.Base(os.Args[0])
-		config.dir = homeDir
-		rcFileDefault = path.Join(homeDir, "rc")
+		dsFile.dir = homeDir
 	} else {
 		u, err := user.Current()
 		if err != nil {
@@ -75,35 +76,45 @@ func init() {
 			os.Exit(1)
 		}
 		homeDir = u.HomeDir
-		config.dir = path.Join(homeDir, ".cow")
-		rcFileDefault = "~/.cow/rc"
+		dsFile.dir = path.Join(homeDir, ".cow")
 	}
+	// fmt.Println("home dir:", homeDir)
 
-	flag.StringVar(&config.rcFile, "rc", rcFileDefault, "configuration file")
-	flag.StringVar(&config.listenAddr, "listen", "127.0.0.1:7777", "proxy server listen address")
-	flag.StringVar(&config.socksAddr, "socks", "127.0.0.1:1080", "socks proxy address")
-	flag.IntVar(&config.numProc, "core", 2, "number of cores to use")
-	flag.StringVar(&config.sshServer, "sshServer", "", "remote server which will ssh to and provide sock server")
-	flag.BoolVar(&config.updateBlocked, "updateBlocked", true, "update blocked site list")
-	flag.BoolVar(&config.updateDirect, "updateDirect", true, "update direct site list")
-	flag.BoolVar(&config.autoRetry, "autoRetry", false, "automatically retry timeout requests using socks proxy")
-	flag.BoolVar(&config.detectSSLErr, "detectSSLErr", true, "detect SSL error based on how soon client closes connection")
-	flag.StringVar(&config.logFile, "logFile", "", "write output to file, empty means stdout")
-	flag.BoolVar(&config.alwaysProxy, "alwaysProxy", false, "always use parent proxy")
-	flag.BoolVar(&config.printVer, "version", false, "print version")
-
-	flag.StringVar(&config.shadowSocks, "shadowSocks", "", "shadowsocks server address")
-	flag.StringVar(&config.shadowPasswd, "shadowPasswd", "", "shadowsocks password")
-
-	config.blockedFile = path.Join(config.dir, blockedFname)
-	config.directFile = path.Join(config.dir, directFname)
-	config.alwaysBlockedFile = path.Join(config.dir, alwaysBlockedFname)
-	config.alwaysDirectFile = path.Join(config.dir, alwaysDirectFname)
-	config.chouFile = path.Join(config.dir, chouFname)
+	dsFile.blocked = path.Join(dsFile.dir, blockedFname)
+	dsFile.direct = path.Join(dsFile.dir, directFname)
+	dsFile.alwaysBlocked = path.Join(dsFile.dir, alwaysBlockedFname)
+	dsFile.alwaysDirect = path.Join(dsFile.dir, alwaysDirectFname)
+	dsFile.chou = path.Join(dsFile.dir, chouFname)
 }
 
-// Tries to open a file, if file not exist, return both nil for os.File and
-// err
+func parseCmdLineConfig() *Config {
+	var rcFileDefault string
+	if isWindows() {
+		rcFileDefault = path.Join(homeDir, "rc")
+	} else {
+		rcFileDefault = "~/.cow/rc"
+	}
+	var c Config
+	flag.StringVar(&c.RcFile, "rc", rcFileDefault, "configuration file")
+	flag.StringVar(&c.ListenAddr, "listen", "127.0.0.1:7777", "proxy server listen address")
+	flag.StringVar(&c.SocksAddr, "socks", "", "socks proxy address")
+	flag.IntVar(&c.Core, "core", 2, "number of cores to use")
+	flag.StringVar(&c.SshServer, "sshServer", "", "remote server which will ssh to and provide sock server")
+	flag.BoolVar(&c.UpdateBlocked, "updateBlocked", true, "update blocked site list")
+	flag.BoolVar(&c.UpdateDirect, "updateDirect", true, "update direct site list")
+	flag.BoolVar(&c.AutoRetry, "autoRetry", false, "automatically retry timeout requests using socks proxy")
+	flag.BoolVar(&c.DetectSSLErr, "detectSSLErr", true, "detect SSL error based on how soon client closes connection")
+	flag.StringVar(&c.LogFile, "logFile", "", "write output to file, empty means stdout")
+	flag.BoolVar(&c.AlwaysProxy, "alwaysProxy", false, "always use parent proxy")
+	flag.BoolVar(&c.PrintVer, "version", false, "print version")
+
+	flag.StringVar(&c.ShadowSocks, "shadowSocks", "", "shadowsocks server address")
+	flag.StringVar(&c.ShadowPasswd, "shadowPasswd", "", "shadowsocks password")
+	flag.Parse()
+	return &c
+}
+
+// Tries to open a file, if file not exist, return both nil, err
 func openFile(path string) (f *os.File, err error) {
 	if f, err = os.Open(path); err != nil {
 		if os.IsNotExist(err) {
@@ -131,7 +142,7 @@ func parseBool(v string, msg string) bool {
 type configParser struct{}
 
 func (p configParser) ParseListen(val string) {
-	config.listenAddr = val
+	config.ListenAddr = val
 }
 
 func isServerAddrValid(val string) bool {
@@ -150,7 +161,7 @@ func (p configParser) ParseSocks(val string) {
 		fmt.Println("socks server must have port specified")
 		os.Exit(1)
 	}
-	config.socksAddr = val
+	config.SocksAddr = val
 }
 
 func (p configParser) ParseCore(val string) {
@@ -158,7 +169,7 @@ func (p configParser) ParseCore(val string) {
 		return
 	}
 	var err error
-	config.numProc, err = strconv.Atoi(val)
+	config.Core, err = strconv.Atoi(val)
 	if err != nil {
 		fmt.Printf("Config error: core number %s %v", val, err)
 		os.Exit(1)
@@ -166,31 +177,31 @@ func (p configParser) ParseCore(val string) {
 }
 
 func (p configParser) ParseSshServer(val string) {
-	config.sshServer = val
+	config.SshServer = val
 }
 
 func (p configParser) ParseUpdateBlocked(val string) {
-	config.updateBlocked = parseBool(val, "updateBlocked")
+	config.UpdateBlocked = parseBool(val, "updateBlocked")
 }
 
 func (p configParser) ParseUpdateDirect(val string) {
-	config.updateDirect = parseBool(val, "updateDirect")
+	config.UpdateDirect = parseBool(val, "updateDirect")
 }
 
 func (p configParser) ParseAutoRetry(val string) {
-	config.autoRetry = parseBool(val, "autoRetry")
+	config.AutoRetry = parseBool(val, "autoRetry")
 }
 
 func (p configParser) ParseDetectSSLErr(val string) {
-	config.detectSSLErr = parseBool(val, "detectSSLErr")
+	config.DetectSSLErr = parseBool(val, "detectSSLErr")
 }
 
 func (p configParser) ParseLogFile(val string) {
-	config.logFile = val
+	config.LogFile = val
 }
 
 func (p configParser) ParseAlwaysProxy(val string) {
-	config.alwaysProxy = parseBool(val, "alwaysProxy")
+	config.AlwaysProxy = parseBool(val, "alwaysProxy")
 }
 
 func (p configParser) ParseShadowSocks(val string) {
@@ -198,16 +209,18 @@ func (p configParser) ParseShadowSocks(val string) {
 		fmt.Println("shadowsocks server must have port specified")
 		os.Exit(1)
 	}
-	config.shadowSocks = val
+	config.ShadowSocks = val
 }
 
 func (p configParser) ParseShadowPasswd(val string) {
-	config.shadowPasswd = val
+	config.ShadowPasswd = val
 }
 
-func loadConfig() {
-	f, err := openFile(config.rcFile)
-	if f == nil || err != nil {
+func parseConfig(path string) {
+	// fmt.Println("rcFile:", path)
+	f, err := os.Open(expandTild(path))
+	if err != nil {
+		fmt.Println("error opening config file:", err)
 		return
 	}
 	defer f.Close()
@@ -257,8 +270,36 @@ func loadConfig() {
 	}
 }
 
+func updateConfig(new *Config) {
+	newVal := reflect.ValueOf(new).Elem()
+	oldVal := reflect.ValueOf(&config).Elem()
+
+	// typeOfT := newVal.Type()
+	for i := 0; i < newVal.NumField(); i++ {
+		newField := newVal.Field(i)
+		oldField := oldVal.Field(i)
+		// log.Printf("%d: %s %s = %v\n", i,
+		// typeOfT.Field(i).Name, newField.Type(), newField.Interface())
+		switch newField.Kind() {
+		case reflect.String:
+			s := newField.String()
+			if s != "" {
+				oldField.SetString(s)
+			}
+		case reflect.Int:
+			i := newField.Int()
+			if i != 0 {
+				oldField.SetInt(i)
+			}
+		case reflect.Bool:
+			b := newField.Bool()
+			oldField.SetBool(b)
+		}
+	}
+}
+
 func setSelfURL() {
-	_, port := splitHostPort(config.listenAddr)
+	_, port := splitHostPort(config.ListenAddr)
 	selfURL127 = "127.0.0.1:" + port
 	selfURLLH = "localhost:" + port
 }
