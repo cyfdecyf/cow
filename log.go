@@ -46,7 +46,9 @@ func init() {
 
 func initLog() {
 	logFile = os.Stdout
-	if bool(debug) {
+	if bool(debug) && !isWindows() {
+		// On windows, we don't know if the terminal supports ANSI color, so
+		// does not turn color by default in debug mode
 		colorize = true
 	} else if config.LogFile != "" {
 		if f, err := os.OpenFile(expandTilde(config.LogFile),
@@ -57,7 +59,7 @@ func initLog() {
 		}
 	}
 	log.SetOutput(logFile)
-	if colorize && !isWindows() {
+	if colorize {
 		errorLog = log.New(logFile, "\033[31m[Error]\033[0m ", log.LstdFlags)
 		debugLog = log.New(logFile, "\033[34m[Debug]\033[0m ", log.LstdFlags)
 		requestLog = log.New(logFile, "\033[32m[>>>>>]\033[0m ", log.LstdFlags)

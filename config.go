@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/user"
 	"path"
 	"reflect"
 	"strconv"
@@ -14,21 +13,11 @@ import (
 )
 
 var (
-	homeDir    string
 	selfURL127 string // 127.0.0.1:listenAddr
 	selfURLLH  string // localhost:listenAddr
 )
 
-const (
-	blockedFname       = "auto-blocked"
-	directFname        = "auto-direct"
-	alwaysBlockedFname = "blocked"
-	alwaysDirectFname  = "direct"
-	chouFname          = "chou"
-	rcFname            = "rc"
-
-	version = "0.3.4"
-)
+const version = "0.3.4"
 
 type Config struct {
 	RcFile        string // config file
@@ -65,23 +54,7 @@ func printVersion() {
 }
 
 func init() {
-	if isWindows() {
-		// On windows, put the configuration file in the same directory of cow executable
-		homeDir = path.Base(os.Args[0])
-		if homeDir == os.Args[0] {
-			// Invoked in the current directory
-			homeDir = ""
-		}
-		dsFile.dir = homeDir
-	} else {
-		u, err := user.Current()
-		if err != nil {
-			fmt.Printf("Can't get user information %v", err)
-			os.Exit(1)
-		}
-		homeDir = u.HomeDir
-		dsFile.dir = path.Join(homeDir, ".cow")
-	}
+	initConfigDir()
 	// fmt.Println("home dir:", homeDir)
 
 	dsFile.blocked = path.Join(dsFile.dir, blockedFname)
@@ -98,14 +71,8 @@ func init() {
 }
 
 func parseCmdLineConfig() *Config {
-	var rcFileDefault string
-	if isWindows() {
-		rcFileDefault = path.Join(homeDir, "rc")
-	} else {
-		rcFileDefault = "~/.cow/rc"
-	}
 	var c Config
-	flag.StringVar(&c.RcFile, "rc", rcFileDefault, "configuration file")
+	flag.StringVar(&c.RcFile, "rc", path.Join(dsFile.dir, rcFname), "configuration file")
 	flag.StringVar(&c.ListenAddr, "listen", "127.0.0.1:7777", "proxy server listen address")
 	flag.StringVar(&c.SocksAddr, "socks", "", "socks proxy address")
 	flag.IntVar(&c.Core, "core", 2, "number of cores to use")

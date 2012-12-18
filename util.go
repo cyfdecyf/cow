@@ -5,8 +5,10 @@ import (
 	// "fmt"
 	"errors"
 	"io"
+	"log"
 	"net"
 	"os"
+	"os/user"
 	"runtime"
 )
 
@@ -62,7 +64,7 @@ func isWindows() bool {
 func isFileExists(path string) (bool, error) {
 	stat, err := os.Stat(path)
 	if err == nil {
-		if stat.Mode() & os.ModeType == 0 {
+		if stat.Mode()&os.ModeType == 0 {
 			return true, nil
 		}
 		return false, errors.New(path + " exists but is not regular file")
@@ -110,9 +112,21 @@ func trimLastDot(s string) string {
 	return s
 }
 
+func getUserHomeDir() (home string, err error) {
+	u, err := user.Current()
+	if err != nil {
+		return
+	}
+	return u.HomeDir, nil
+}
+
 func expandTilde(path string) string {
 	if len(path) > 0 && path[0] == '~' {
-		return homeDir + path[1:]
+		home, err := getUserHomeDir()
+		if err != nil {
+			log.Println("expandTilde can't get user home directory:", err)
+		}
+		return home + path[1:]
 	}
 	return path
 }

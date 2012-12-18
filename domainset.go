@@ -323,12 +323,7 @@ func writeDomainList(fpath string, lst []string) (err error) {
 
 	sort.Sort(sort.StringSlice(lst))
 
-	var all string
-	if isWindows() {
-		all = strings.Join(lst, "\r\n")
-	} else {
-		all = strings.Join(lst, "\n")
-	}
+	all := strings.Join(lst, newLine)
 	f.WriteString(all)
 	f.Close()
 
