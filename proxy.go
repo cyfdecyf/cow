@@ -888,7 +888,7 @@ func (sv *serverConn) doRequest(r *Request, c *clientConn) (err error) {
 	return c.readResponse(sv, r)
 }
 
-func copyN(r io.Reader, w, contBuf io.Writer, n int, buf []byte) (err error) {
+func copyN(r io.Reader, w, contBuf io.Writer, n int, buf, end []byte) (err error) {
 	var nn int
 	bufLen := len(buf)
 	var b []byte
@@ -902,10 +902,20 @@ func copyN(r io.Reader, w, contBuf io.Writer, n int, buf []byte) (err error) {
 			return
 		}
 		n -= nn
-		if contBuf != nil {
-			contBuf.Write(b[:nn])
+		if n == 0 && end != nil && nn+len(end) <= bufLen {
+			copy(buf[nn:], end)
+			nn += len(end)
+			end = nil
 		}
-		if _, err = w.Write(b[:nn]); err != nil {
+		if contBuf != nil {
+			contBuf.Write(buf[:nn])
+		}
+		if _, err = w.Write(buf[:nn]); err != nil {
+			return
+		}
+	}
+	if end != nil {
+		if _, err = w.Write(end); err != nil {
 			return
 		}
 	}
@@ -918,7 +928,7 @@ func sendBodyWithContLen(c *clientConn, r io.Reader, w, contBuf io.Writer, contL
 	if contLen == 0 {
 		return
 	}
-	if err = copyN(r, w, contBuf, contLen, c.buf); err != nil {
+	if err = copyN(r, w, contBuf, contLen, c.buf, nil); err != nil {
 		debug.Println("sendBodyWithContLen error:", err)
 	}
 	return
@@ -941,7 +951,7 @@ func sendBodyChunked(c *clientConn, r *bufio.Reader, w, contBuf io.Writer) (err 
 			errl.Println("Chunk size not valid:", err)
 			return
 		}
-		if size == 0 { // end of chunked data, ignore any trailers
+		if size == 0 { // end of chunked data, TODO should ignore trailers
 			if err = readCheckCRLF(r); err != nil {
 				errl.Println("Check CRLF after chunked size 0:", err)
 			}
@@ -953,23 +963,17 @@ func sendBodyChunked(c *clientConn, r *bufio.Reader, w, contBuf io.Writer) (err 
 			}
 			return
 		}
-		// TODO is there an easy way to avoid the 2 small write?
+		// TODO is there an easy way to avoid this small write?
 		if _, err = w.Write([]byte(s + "\r\n")); err != nil {
 			debug.Println("Sending chunk size:", err)
 			return
 		}
-		if err = copyN(r, w, contBuf, size, c.buf); err != nil {
+		if err = copyN(r, w, contBuf, int(size), c.buf, CRLFbytes); err != nil {
 			debug.Println("Copying chunked data:", err)
 		}
 		if err = readCheckCRLF(r); err != nil {
+			// If we see this, maybe the server is sending trailers
 			errl.Println("Chunked data not end with CRLF, try continue")
-		}
-		if contBuf != nil {
-			contBuf.Write(CRLFbytes)
-		}
-		if _, err = w.Write(CRLFbytes); err != nil {
-			debug.Println("Writing chunk end CRLF in sendBodyChunked:", err)
-			return
 		}
 	}
 	return
