@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	// "fmt"
+	"errors"
 	"io"
 	"net"
 	"os"
@@ -56,6 +57,34 @@ func (n notification) hasNotified() bool {
 
 func isWindows() bool {
 	return runtime.GOOS == "windows"
+}
+
+func isFileExists(path string) (bool, error) {
+	stat, err := os.Stat(path)
+	if err == nil {
+		if stat.Mode() & os.ModeType == 0 {
+			return true, nil
+		}
+		return false, errors.New(path + " exists but is not regular file")
+	}
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	return false, err
+}
+
+func isDirExists(path string) (bool, error) {
+	stat, err := os.Stat(path)
+	if err == nil {
+		if stat.IsDir() {
+			return true, nil
+		}
+		return false, errors.New(path + " exists but is not directory")
+	}
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	return false, err
 }
 
 // Get host IP address

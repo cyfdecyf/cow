@@ -89,6 +89,12 @@ func init() {
 	dsFile.alwaysBlocked = path.Join(dsFile.dir, alwaysBlockedFname)
 	dsFile.alwaysDirect = path.Join(dsFile.dir, alwaysDirectFname)
 	dsFile.chou = path.Join(dsFile.dir, chouFname)
+
+	config.UpdateBlocked = true
+	config.UpdateDirect = true
+	config.AutoRetry = false
+	config.DetectSSLErr = true
+	config.AlwaysProxy = false
 }
 
 func parseCmdLineConfig() *Config {
@@ -122,18 +128,6 @@ func parseCmdLineConfig() *Config {
 
 	flag.Parse()
 	return &c
-}
-
-// Tries to open a file, if file not exist, return both nil, err
-func openFile(path string) (f *os.File, err error) {
-	if f, err = os.Open(path); err != nil {
-		if os.IsNotExist(err) {
-			return nil, nil
-		}
-		errl.Println("Error opening file:", path, err)
-		return nil, err
-	}
-	return
 }
 
 func parseBool(v string, msg string) bool {
@@ -230,7 +224,11 @@ func parseConfig(path string) {
 	// fmt.Println("rcFile:", path)
 	f, err := os.Open(expandTilde(path))
 	if err != nil {
-		fmt.Println("error opening config file:", err)
+		if os.IsNotExist(err) {
+			fmt.Printf("Config file %s not found, using default options\n", path)
+		} else {
+			fmt.Println("Error opening config file:", err)
+		}
 		return
 	}
 	defer f.Close()
