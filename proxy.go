@@ -108,7 +108,7 @@ func (py *Proxy) Serve() {
 		fmt.Println("Server creation failed:", err)
 		os.Exit(1)
 	}
-	info.Println("COW proxy listening", py.addr)
+	info.Printf("COW proxy address %s, PAC url %s\n", py.addr, "http://"+py.addr+"/pac")
 
 	for {
 		conn, err := ln.Accept()
