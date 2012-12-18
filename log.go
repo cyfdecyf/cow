@@ -41,7 +41,7 @@ func init() {
 	flag.BoolVar((*bool)(&dbgRq), "request", false, "request log")
 	flag.BoolVar((*bool)(&dbgRep), "reply", false, "reply log")
 	flag.BoolVar(&verbose, "v", false, "More info in request/response logging")
-	// flag.BoolVar(&colorize, "color", false, "Colorize log output")
+	flag.BoolVar(&colorize, "color", false, "Colorize log output")
 }
 
 func initLog() {
@@ -57,7 +57,7 @@ func initLog() {
 		}
 	}
 	log.SetOutput(logFile)
-	if colorize {
+	if colorize && !isWindows() {
 		errorLog = log.New(logFile, "\033[31m[Error]\033[0m ", log.LstdFlags)
 		debugLog = log.New(logFile, "\033[34m[Debug]\033[0m ", log.LstdFlags)
 		requestLog = log.New(logFile, "\033[32m[>>>>>]\033[0m ", log.LstdFlags)

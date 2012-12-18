@@ -68,6 +68,10 @@ func init() {
 	if isWindows() {
 		// On windows, put the configuration file in the same directory of cow executable
 		homeDir = path.Base(os.Args[0])
+		if homeDir == os.Args[0] {
+			// Invoked in the current directory
+			homeDir = ""
+		}
 		dsFile.dir = homeDir
 	} else {
 		u, err := user.Current()
