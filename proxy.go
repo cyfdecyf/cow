@@ -137,15 +137,6 @@ func newClientConn(rwc net.Conn) *clientConn {
 	return c
 }
 
-func (c *clientConn) increaseBufSize(atLeast int) {
-	errl.Println("increasing buf size to at least:", atLeast)
-	newLen := len(c.buf) + bufSize
-	if atLeast > newLen {
-		newLen = atLeast
-	}
-	c.buf = make([]byte, newLen, newLen)
-}
-
 func (c *clientConn) close() {
 	for _, sv := range c.serverConn {
 		sv.Close()
@@ -962,26 +953,22 @@ func sendBodyChunked(c *clientConn, r *bufio.Reader, w, contBuf io.Writer) (err 
 			}
 			return
 		}
-		chunkLen := len(s) + 2 + int(size) + 2 // remember to include the length of 2 CRLF
-		if chunkLen > len(c.buf) {
-			errl.Printf("sendBodyChunked buf size=%d chunkLen=%d\n", len(c.buf), chunkLen)
-			c.increaseBufSize(chunkLen)
-		}
-		copy(c.buf, []byte(s+"\r\n"))
-		dataStart := len(s) + 2
-		if _, err = io.ReadFull(r, c.buf[dataStart:dataStart+int(size)]); err != nil {
-			debug.Println("Reading chunked data:", err)
+		// TODO is there an easy way to avoid the 2 small write?
+		if _, err = w.Write([]byte(s + "\r\n")); err != nil {
+			debug.Println("Sending chunk size:", err)
 			return
+		}
+		if err = copyN(r, w, contBuf, size, c.buf); err != nil {
+			debug.Println("Copying chunked data:", err)
 		}
 		if err = readCheckCRLF(r); err != nil {
 			errl.Println("Chunked data not end with CRLF, try continue")
 		}
-		copy(c.buf[chunkLen-2:chunkLen], CRLFbytes)
 		if contBuf != nil {
-			contBuf.Write(c.buf[:chunkLen])
+			contBuf.Write(CRLFbytes)
 		}
-		if _, err = w.Write(c.buf[:chunkLen]); err != nil {
-			debug.Println("Writing chunk size in sendBodyChunked:", err)
+		if _, err = w.Write(CRLFbytes); err != nil {
+			debug.Println("Writing chunk end CRLF in sendBodyChunked:", err)
 			return
 		}
 	}
