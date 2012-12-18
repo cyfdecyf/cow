@@ -17,7 +17,10 @@ var (
 	selfURLLH  string // localhost:listenAddr
 )
 
-const version = "0.3.4"
+const (
+	version           = "0.3.4"
+	defaultListenAddr = "127.0.0.1:7777"
+)
 
 type Config struct {
 	RcFile        string // config file
@@ -73,7 +76,7 @@ func init() {
 func parseCmdLineConfig() *Config {
 	var c Config
 	flag.StringVar(&c.RcFile, "rc", path.Join(dsFile.dir, rcFname), "configuration file")
-	flag.StringVar(&c.ListenAddr, "listen", "127.0.0.1:7777", "proxy server listen address")
+	flag.StringVar(&c.ListenAddr, "listen", "", "proxy server listen address, default to "+defaultListenAddr)
 	flag.StringVar(&c.SocksAddr, "socks", "", "socks proxy address")
 	flag.IntVar(&c.Core, "core", 2, "number of cores to use")
 	flag.StringVar(&c.SshServer, "sshServer", "", "remote server which will ssh to and provide sock server")
@@ -267,6 +270,9 @@ func updateConfig(new *Config) {
 				oldField.SetInt(i)
 			}
 		}
+	}
+	if config.ListenAddr == "" {
+		config.ListenAddr = defaultListenAddr
 	}
 }
 
