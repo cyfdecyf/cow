@@ -224,7 +224,7 @@ func (p configParser) ParseShadowPasswd(val string) {
 
 func parseConfig(path string) {
 	// fmt.Println("rcFile:", path)
-	f, err := os.Open(expandTild(path))
+	f, err := os.Open(expandTilde(path))
 	if err != nil {
 		fmt.Println("error opening config file:", err)
 		return

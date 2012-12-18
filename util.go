@@ -79,7 +79,7 @@ func trimLastDot(s string) string {
 	return s
 }
 
-func expandTild(path string) string {
+func expandTilde(path string) string {
 	if len(path) > 0 && path[0] == '~' {
 		return homeDir + path[1:]
 	}
