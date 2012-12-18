@@ -2,6 +2,8 @@ package main
 
 import (
 	"bufio"
+	// "fmt"
+	"io"
 	"net"
 	"os"
 	"runtime"
@@ -84,4 +86,64 @@ func expandTilde(path string) string {
 		return homeDir + path[1:]
 	}
 	return path
+}
+
+func hostIsIP(host string) bool {
+	host, _ = splitHostPort(host)
+	return net.ParseIP(host) != nil
+}
+
+func copyN(r io.Reader, w, contBuf io.Writer, n int, buf, pre, end []byte) (err error) {
+	var nn int
+	bufLen := len(buf)
+	var b []byte
+	for n != 0 {
+		if pre != nil {
+			if len(pre) >= bufLen {
+				if _, err = w.Write(pre); err != nil {
+					return
+				}
+				pre = nil
+				continue
+			}
+			// append pre to buf
+			copy(buf, pre)
+			if len(pre)+n < bufLen {
+				b = buf[len(pre) : len(pre)+n]
+			} else {
+				b = buf[len(pre):]
+			}
+		} else {
+			if n < bufLen {
+				b = buf[:n]
+			} else {
+				b = buf
+			}
+		}
+		if nn, err = r.Read(b); err != nil {
+			return
+		}
+		n -= nn
+		if pre != nil {
+			nn += len(pre)
+			pre = nil
+		}
+		if n == 0 && end != nil && nn+len(end) <= bufLen {
+			copy(buf[nn:], end)
+			nn += len(end)
+			end = nil
+		}
+		if contBuf != nil {
+			contBuf.Write(buf[:nn])
+		}
+		if _, err = w.Write(buf[:nn]); err != nil {
+			return
+		}
+	}
+	if end != nil {
+		if _, err = w.Write(end); err != nil {
+			return
+		}
+	}
+	return
 }
