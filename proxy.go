@@ -88,11 +88,12 @@ type clientConn struct {
 }
 
 var (
-	errRetry         = errors.New("Retry")
-	errPageSent      = errors.New("Error page has sent")
-	errShouldClose   = errors.New("Error can only be handled by close connection")
-	errInternal      = errors.New("Internal error")
-	errNoParentProxy = errors.New("No parent proxy")
+	errRetry             = errors.New("Retry")
+	errPageSent          = errors.New("Error page has sent")
+	errShouldClose       = errors.New("Error can only be handled by close connection")
+	errInternal          = errors.New("Internal error")
+	errNoParentProxy     = errors.New("No parent proxy")
+	errFailedParentProxy = errors.New("Failed connecting to parent proxy")
 
 	errChunkedEncode = errors.New("Invalid chunked encoding")
 	errMalformHeader = errors.New("Malformed HTTP header")
@@ -565,6 +566,9 @@ func createParentProxyConnection(host string) (srvconn conn, err error) {
 		if srvconn, err = createctSocksConnection(host); err == nil {
 			return
 		}
+	}
+	if hasParentProxy {
+		return zeroConn, errFailedParentProxy
 	}
 	return zeroConn, errNoParentProxy
 }
