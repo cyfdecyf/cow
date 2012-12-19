@@ -18,10 +18,6 @@ const (
 
 func initConfigDir() {
 	// On windows, put the configuration file in the same directory of cow executable
-	home := path.Base(os.Args[0])
-	if home == os.Args[0] {
-		// Invoked in the current directory
-		home = ""
-	}
-	dsFile.dir = home
+	// This is not a reliable way to detect binary directory, but it works for double click and run
+	dsFile.dir = path.Dir(os.Args[0])
 }
