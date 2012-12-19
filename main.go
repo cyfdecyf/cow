@@ -9,11 +9,12 @@ import (
 	// "runtime/pprof"
 )
 
-var sigChan = make(chan os.Signal, 1)
-
 // var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
 
 func sigHandler() {
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
 	for sig := range sigChan {
 		info.Printf("%v caught, exit\n", sig)
 		writeDomainSet()
@@ -72,10 +73,7 @@ func main() {
 
 	runtime.GOMAXPROCS(config.Core)
 
-	signal.Notify(sigChan, syscall.SIGINT)
-	signal.Notify(sigChan, syscall.SIGTERM)
 	go sigHandler()
-
 	go runSSH()
 
 	py := NewProxy(config.ListenAddr)
