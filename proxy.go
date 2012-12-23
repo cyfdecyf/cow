@@ -263,6 +263,9 @@ func (c *clientConn) serve() {
 	retry:
 		if r.tryCnt > 5 {
 			debug.Println("Retry too many times, abort")
+			if r.isConnect {
+				return
+			}
 			sendErrorPage(c, "502 retry failed", "Can't finish HTTP request",
 				genErrMsg(r, "Has retried several times."))
 			continue
