@@ -13,7 +13,8 @@ import (
 
 func sigHandler() {
 	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM,
+		syscall.SIGHUP)
 
 	for sig := range sigChan {
 		info.Printf("%v caught, exit\n", sig)
