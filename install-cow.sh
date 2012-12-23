@@ -1,6 +1,6 @@
 #!/bin/bash
 
-version=0.3.4
+version=0.3.5
 
 cpu=`uname -m`
 case $cpu in
@@ -71,7 +71,7 @@ fi
 
 # Download COW binary
 tmpbin=/tmp/cow
-binary_url="https://github.com/downloads/cyfdecyf/cow/cow-$binary-$cpu-$version"
+binary_url="https://cow-proxy.googlecode.com/files/cow-$binary-$cpu-$version"
 echo "Downloading cow binary $binary_url to $tmpbin"
 curl -L "$binary_url" -o $tmpbin || \
     exit_on_fail "Downloading cow binary failed"

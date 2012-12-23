@@ -32,7 +32,7 @@ For OS X and Linux, run the following command to install pre-compiled binary (re
 
     curl -s -L https://github.com/cyfdecyf/cow/raw/master/install-cow.sh | bash
 
-Experimental windows binary is also provided, look at the [downloads page](https://github.com/cyfdecyf/cow/downloads).
+Experimental windows binary is also provided, look at the [downloads page on Google Code](http://code.google.com/p/cow-proxy/downloads/list).
 
 The install script will do the following:
 

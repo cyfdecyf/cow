@@ -18,7 +18,7 @@ var (
 )
 
 const (
-	version           = "0.3.4"
+	version           = "0.3.5"
 	defaultListenAddr = "127.0.0.1:7777"
 )
 
