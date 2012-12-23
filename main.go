@@ -29,6 +29,11 @@ var hasParentProxy = false
 func main() {
 	// Parse flags after load config to allow override options in config
 	cmdLineConfig := parseCmdLineConfig()
+	if cmdLineConfig.PrintVer {
+		printVersion()
+		os.Exit(0)
+	}
+
 	parseConfig(cmdLineConfig.RcFile)
 	// need to update config
 	updateConfig(cmdLineConfig)
@@ -46,11 +51,6 @@ func main() {
 	}
 
 	setSelfURL()
-
-	if config.PrintVer {
-		printVersion()
-		os.Exit(0)
-	}
 
 	loadDomainSet()
 	/*
