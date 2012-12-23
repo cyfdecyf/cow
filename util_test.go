@@ -73,3 +73,29 @@ func TestCopyN(t *testing.T) {
 		t.Error("copy len(pre)+size+len(end)<bufLen failed, got:", dst.String())
 	}
 }
+
+func TestIsFileExists(t *testing.T) {
+	exists, err := isFileExists("testdata")
+	if err == nil {
+		t.Error("should return error is path is directory")
+	}
+	if exists {
+		t.Error("directory should return false")
+	}
+
+	exists, err = isFileExists("testdata/none")
+	if exists {
+		t.Error("BOOM! You've found a non-existing file!")
+	}
+	if err != nil {
+		t.Error("Not existing file should just return false, on error")	
+	}
+
+	exists, err = isFileExists("testdata/file")
+	if !exists {
+		t.Error("testdata/file exists, but returns false")
+	}
+	if err != nil {
+		t.Error("Why error for existing file?")	
+	}
+}
