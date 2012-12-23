@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -8,7 +9,14 @@ import (
 	"text/template"
 )
 
-const pacRawTmpl = `var direct = 'DIRECT';
+var pac struct {
+	template        *template.Template
+	topLevelDomain  string
+	proxyServerAddr string
+}
+
+func init() {
+	const pacRawTmpl = `var direct = 'DIRECT';
 var httpProxy = '{{.ProxyAddr}}';
 
 var directList = [
@@ -22,11 +30,7 @@ for (var i = 0; i < directList.length; i += 1) {
 }
 
 var topLevel = {
-	"co":  true,
-	"org": true,
-	"com": true,
-	"net": true,
-	"edu": true
+{{.TopLevel}}
 };
 
 function host2domain(host) {
@@ -53,22 +57,22 @@ function FindProxyForURL(url, host) {
 	return directAcc[host2domain(host)] ? direct : httpProxy;
 };
 `
-
-var pacTmpl *template.Template
-
-func init() {
 	var err error
-	pacTmpl, err = template.New("pac").Parse(pacRawTmpl)
+	pac.template, err = template.New("pac").Parse(pacRawTmpl)
 	if err != nil {
 		fmt.Println("Internal error on generating pac file template")
 		os.Exit(1)
 	}
+
+	var buf bytes.Buffer
+	for k, _ := range topLevelDomain {
+		buf.WriteString(fmt.Sprintf("\t\"%s\": true,\n", k))
+	}
+	pac.topLevelDomain = buf.String()[:buf.Len()-2] // remove the final comma
 }
 
-var proxyServerAddr string
-
 func initProxyServerAddr() {
-	listen, port := splitHostPort(config.listenAddr)
+	listen, port := splitHostPort(config.ListenAddr)
 	if listen == "0.0.0.0" {
 		addrs, err := hostIP()
 		if err != nil {
@@ -77,13 +81,13 @@ func initProxyServerAddr() {
 		}
 
 		for _, ip := range addrs {
-			proxyServerAddr += fmt.Sprintf("PROXY %s:%s; ", ip, port)
+			pac.proxyServerAddr += fmt.Sprintf("PROXY %s:%s; ", ip, port)
 		}
-		proxyServerAddr += "DIRECT"
+		pac.proxyServerAddr += "DIRECT"
 		info.Printf("proxy listen address is %s, PAC will have proxy address: %s\n",
-			config.listenAddr, proxyServerAddr)
+			config.ListenAddr, pac.proxyServerAddr)
 	} else {
-		proxyServerAddr = fmt.Sprintf("PROXY %s; DIRECT", config.listenAddr)
+		pac.proxyServerAddr = fmt.Sprintf("PROXY %s; DIRECT", config.ListenAddr)
 	}
 }
 
@@ -94,8 +98,8 @@ var pacDirect = []byte("function FindProxyForURL(url, host) { return 'DIRECT'; }
 
 func sendPAC(w io.Writer) {
 	// domains in PAC file needs double quote
-	ds1 := strings.Join(alwaysDirectDs.toArray(), "\",\n\"")
-	ds2 := strings.Join(directDs.toArray(), "\",\n\"")
+	ds1 := strings.Join(alwaysDirectDs.toSlice(), "\",\n\"")
+	ds2 := strings.Join(directDs.toSlice(), "\",\n\"")
 	var ds string
 	if ds1 == "" {
 		ds = ds2
@@ -114,9 +118,11 @@ func sendPAC(w io.Writer) {
 	data := struct {
 		ProxyAddr     string
 		DirectDomains string
+		TopLevel      string
 	}{
-		proxyServerAddr,
+		pac.proxyServerAddr,
 		",\n\"" + ds + "\"",
+		pac.topLevelDomain,
 	}
 
 	if _, err := w.Write(pacHeader); err != nil {
@@ -124,8 +130,11 @@ func sendPAC(w io.Writer) {
 		return
 	}
 	// debug.Println("direct:", data.DirectDomains)
-	if err := pacTmpl.Execute(w, data); err != nil {
+	buf := new(bytes.Buffer)
+	if err := pac.template.Execute(buf, data); err != nil {
 		errl.Println("Error generating pac file:", err)
-		return
+	}
+	if _, err := w.Write(buf.Bytes()); err != nil {
+		debug.Println("Error writing pac content:", err)
 	}
 }

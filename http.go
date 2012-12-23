@@ -37,6 +37,7 @@ type Request struct {
 	raw     bytes.Buffer
 	contBuf *bytes.Buffer // will be non nil when retrying request
 	state   rqState
+	tryCnt  int
 }
 
 func (r *Request) String() (s string) {
@@ -55,6 +56,15 @@ type Response struct {
 	Header
 
 	raw bytes.Buffer
+}
+
+func (rp *Response) genStatusLine() (res string) {
+	if rp.Reason == "" {
+		res = fmt.Sprintf("HTTP/1.1 %s", rp.Status)
+	} else {
+		res = fmt.Sprintf("HTTP/1.1 %s %s", rp.Status, rp.Reason)
+	}
+	return
 }
 
 func (rp *Response) String() string {
@@ -308,9 +318,8 @@ func (r *Request) responseNotSent() bool {
 	return r.state <= rsSent
 }
 
-var crlfBuf = make([]byte, 2)
-
 func readCheckCRLF(reader *bufio.Reader) error {
+	crlfBuf := make([]byte, 2)
 	if _, err := io.ReadFull(reader, crlfBuf); err != nil {
 		return err
 	}
@@ -363,8 +372,14 @@ START:
 		rp.Reason = f[2]
 	}
 
-	rp.raw.WriteString(s)
-	rp.raw.WriteString("\r\n")
+	if f[0] == "HTTP/1.0" {
+		// Should return HTTP version as 1.1 to client since closed connection
+		// will be converted to chunked encoding
+		rp.raw.WriteString(rp.genStatusLine())
+	} else {
+		rp.raw.WriteString(s)
+	}
+	rp.raw.Write(CRLFbytes)
 
 	if err = rp.parseHeader(reader, &rp.raw, "Connection: Keep-Alive\r\n", r.URL); err != nil {
 		errl.Printf("Reading response header: %v %v\n", err, r)

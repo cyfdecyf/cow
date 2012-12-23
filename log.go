@@ -36,7 +36,7 @@ var (
 
 func init() {
 	flag.BoolVar((*bool)(&info), "info", true, "info log")
-	flag.BoolVar((*bool)(&debug), "debug", false, "debug log")
+	flag.BoolVar((*bool)(&debug), "debug", false, "debug log, with this option, log goes to stdout with color")
 	flag.BoolVar((*bool)(&errl), "err", true, "error log")
 	flag.BoolVar((*bool)(&dbgRq), "request", false, "request log")
 	flag.BoolVar((*bool)(&dbgRep), "reply", false, "reply log")
@@ -46,12 +46,12 @@ func init() {
 
 func initLog() {
 	logFile = os.Stdout
-	if config.logFile != "" {
-		if config.logFile[0] == '~' {
-			config.logFile = homeDir + config.logFile[1:]
-		}
-
-		if f, err := os.OpenFile(config.logFile,
+	if bool(debug) && !isWindows() {
+		// On windows, we don't know if the terminal supports ANSI color, so
+		// does not turn color by default in debug mode
+		colorize = true
+	} else if config.LogFile != "" {
+		if f, err := os.OpenFile(expandTilde(config.LogFile),
 			os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600); err != nil {
 			fmt.Printf("Can't open log file, logging to stdout: %v\n", err)
 		} else {

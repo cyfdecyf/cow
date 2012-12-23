@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"errors"
 	"io"
 	"log"
 	"os"
@@ -43,7 +42,7 @@ func (ds domainSet) loadDomainList(fpath string) (lst []string, err error) {
 	return
 }
 
-func (ds domainSet) toArray() []string {
+func (ds domainSet) toSlice() []string {
 	l := len(ds)
 	lst := make([]string, l, l)
 
@@ -183,16 +182,9 @@ func delBlockedDomain(dm string) {
 	}
 }
 
-func addDirectDomain(dm string) {
-	if !config.updateDirect {
-		return
-	}
-}
-
 func addDirectHost(host string) (added bool) {
 	dm := host2Domain(host)
-	if !config.updateDirect || isHostInAlwaysDs(host) || chouDs[dm] ||
-		dm == "localhost" || hostIsIP(host) {
+	if isHostInAlwaysDs(host) || chouDs[dm] || dm == "localhost" || hostIsIP(host) {
 		return
 	}
 	if !directDs.has(dm) {
@@ -213,17 +205,17 @@ func delDirectDomain(dm string) {
 }
 
 func writeBlockedDs() {
-	if !config.updateBlocked || !blockedDomainChanged {
+	if !config.UpdateBlocked || !blockedDomainChanged {
 		return
 	}
-	writeDomainList(config.blockedFile, blockedDs.toArray())
+	writeDomainList(dsFile.blocked, blockedDs.toSlice())
 }
 
 func writeDirectDs() {
-	if !config.updateDirect || !directDomainChanged {
+	if !config.UpdateDirect || !directDomainChanged {
 		return
 	}
-	writeDomainList(config.directFile, directDs.toArray())
+	writeDomainList(dsFile.direct, directDs.toSlice())
 }
 
 // filter out domain in blocked and direct domain set.
@@ -267,8 +259,16 @@ func writeDomainSet() {
 }
 
 func loadDomainList(fpath string) (lst []string, err error) {
-	f, err := openFile(fpath)
-	if f == nil || err != nil {
+	var exists bool
+	if exists, err = isFileExists(fpath); err != nil {
+		errl.Printf("Error loading domaint list: %v\n", err)
+	}
+	if !exists {
+		return
+	}
+	f, err := os.Open(fpath)
+	if err != nil {
+		errl.Printf("Error opening domain list %s: %v\n", fpath)
 		return
 	}
 	defer f.Close()
@@ -281,7 +281,7 @@ func loadDomainList(fpath string) (lst []string, err error) {
 		if err == io.EOF {
 			return lst, nil
 		} else if err != nil {
-			errl.Println("Error reading domain list from:", fpath, err)
+			errl.Printf("Error reading domain list %s: %v\n", fpath, err)
 			return
 		}
 		if domain == "" {
@@ -293,19 +293,19 @@ func loadDomainList(fpath string) (lst []string, err error) {
 }
 
 func mkConfigDir() (err error) {
-	stat, err := os.Stat(config.dir)
-	if err == nil {
-		if stat.IsDir() {
-			return
-		}
-		log.Printf("%s is not directory, can't write domain list\n", config.dir)
-		return errors.New("config.dir is not directory")
+	if dsFile.dir == "" {
+		return
 	}
-	if os.IsNotExist(err) {
-		err = os.Mkdir(config.dir, 0755)
-	}
+	exists, err := isDirExists(dsFile.dir)
 	if err != nil {
-		log.Printf("Config directory %s: %v\n", config.dir, err)
+		errl.Printf("Error creating config directory: %v\n", err)
+		return
+	}
+	if exists {
+		return
+	}
+	if err = os.Mkdir(dsFile.dir, 0755); err != nil {
+		log.Printf("Error create config directory %s: %v\n", dsFile.dir, err)
 	}
 	return
 }
@@ -314,27 +314,34 @@ func writeDomainList(fpath string, lst []string) (err error) {
 	if err = mkConfigDir(); err != nil {
 		return
 	}
-	tmpPath := path.Join(config.dir, "tmp-domain")
+	tmpPath := path.Join(dsFile.dir, "tmpdomain")
 	f, err := os.Create(tmpPath)
 	if err != nil {
-		errl.Println("Error creating tmp domain list file:", err)
+		errl.Println("Error creating tmp domain list:", err)
 		return
 	}
 
 	sort.Sort(sort.StringSlice(lst))
 
-	all := strings.Join(lst, "\n")
+	all := strings.Join(lst, newLine)
 	f.WriteString(all)
 	f.Close()
 
-	// On windows, can't rename to a file which already exists.
 	if isWindows() {
-		if err = os.Remove(fpath); err != nil {
-			errl.Println("Can't remove domain list", fpath, "for update")
+		// On windows, can't rename to a file which already exists.
+		var exists bool
+		if exists, err = isFileExists(fpath); err != nil {
+			errl.Printf("Error removing domain list: %v\n", err)
+			return
+		}
+		if exists {
+			if err = os.Remove(fpath); err != nil {
+				errl.Printf("Error removing domain list %s for update: %v\n", fpath, err)
+			}
 		}
 	}
 	if err = os.Rename(tmpPath, fpath); err != nil {
-		errl.Printf("Error moving tmp domain list file to %s: %v\n", fpath, err)
+		errl.Printf("Error renaming tmp domain list file to %s: %v\n", fpath, err)
 	}
 	return
 }
@@ -382,11 +389,11 @@ func host2Domain(host string) (domain string) {
 // Domain set reference changing should be atomic.
 
 func loadDomainSet() {
-	blockedDs.loadDomainList(config.blockedFile)
-	directDs.loadDomainList(config.directFile)
-	alwaysBlockedDs.loadDomainList(config.alwaysBlockedFile)
-	alwaysDirectDs.loadDomainList(config.alwaysDirectFile)
-	chouDs.loadDomainList(config.chouFile)
+	blockedDs.loadDomainList(dsFile.blocked)
+	directDs.loadDomainList(dsFile.direct)
+	alwaysBlockedDs.loadDomainList(dsFile.alwaysBlocked)
+	alwaysDirectDs.loadDomainList(dsFile.alwaysDirect)
+	chouDs.loadDomainList(dsFile.chou)
 
 	filterOutDs(chouDs)
 	filterOutDs(alwaysDirectDs)

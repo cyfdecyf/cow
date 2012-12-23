@@ -7,7 +7,7 @@ import (
 )
 
 func SshRunning() bool {
-	c, err := net.Dial("tcp", config.socksAddr)
+	c, err := net.Dial("tcp", config.SocksAddr)
 	if err != nil {
 		return false
 	}
@@ -16,16 +16,16 @@ func SshRunning() bool {
 }
 
 func runSSH() {
-	if config.sshServer == "" {
+	if config.SshServer == "" {
 		return
 	}
-	if config.socksAddr == "" {
+	if config.SocksAddr == "" {
 		errl.Println("Missing option: ssh server given without socks address")
 		return
 	}
 
-	_, port := splitHostPort(config.socksAddr)
-	sshServer, sshPort := splitHostPort(config.sshServer)
+	_, port := splitHostPort(config.SocksAddr)
+	sshServer, sshPort := splitHostPort(config.SshServer)
 	if sshPort == "" {
 		sshPort = "22"
 	}
@@ -35,7 +35,7 @@ func runSSH() {
 		if SshRunning() {
 			if !alreadyRunPrinted {
 				debug.Println("ssh socks server maybe already running, as cow can connect to",
-					config.socksAddr)
+					config.SocksAddr)
 				alreadyRunPrinted = true
 			}
 			// check server liveness in 1 minute

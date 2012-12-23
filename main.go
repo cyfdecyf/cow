@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"os"
 	"os/signal"
 	"runtime"
@@ -10,11 +9,13 @@ import (
 	// "runtime/pprof"
 )
 
-var sigChan = make(chan os.Signal, 1)
-
 // var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
 
 func sigHandler() {
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM,
+		syscall.SIGHUP)
+
 	for sig := range sigChan {
 		info.Printf("%v caught, exit\n", sig)
 		writeDomainSet()
@@ -27,8 +28,16 @@ var hasParentProxy = false
 
 func main() {
 	// Parse flags after load config to allow override options in config
-	loadConfig()
-	flag.Parse()
+	cmdLineConfig := parseCmdLineConfig()
+	if cmdLineConfig.PrintVer {
+		printVersion()
+		os.Exit(0)
+	}
+
+	parseConfig(cmdLineConfig.RcFile)
+	// need to update config
+	updateConfig(cmdLineConfig)
+
 	initLog()
 
 	initProxyServerAddr()
@@ -42,11 +51,6 @@ func main() {
 	}
 
 	setSelfURL()
-
-	if config.printVer {
-		printVersion()
-		os.Exit(0)
-	}
 
 	loadDomainSet()
 	/*
@@ -68,14 +72,11 @@ func main() {
 		}
 	*/
 
-	runtime.GOMAXPROCS(config.numProc)
+	runtime.GOMAXPROCS(config.Core)
 
-	signal.Notify(sigChan, syscall.SIGINT)
-	signal.Notify(sigChan, syscall.SIGTERM)
 	go sigHandler()
-
 	go runSSH()
 
-	py := NewProxy(config.listenAddr)
+	py := NewProxy(config.ListenAddr)
 	py.Serve()
 }
