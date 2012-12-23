@@ -5,9 +5,10 @@ version=0.3.5
 cpu=`uname -m`
 case $cpu in
     "x86_64")
+        cpu="64"
         ;;
     "i386" | "i486" | "i686")
-        cpu="i386"
+        cpu="32"
         ;;
     *)
         echo "$cpu currently has no precompiled binary"
@@ -71,7 +72,7 @@ fi
 
 # Download COW binary
 tmpbin=/tmp/cow
-binary_url="https://cow-proxy.googlecode.com/files/cow-$binary-$cpu-$version"
+binary_url="https://cow-proxy.googlecode.com/files/cow-$binary$cpu-$version"
 echo "Downloading cow binary $binary_url to $tmpbin"
 curl -L "$binary_url" -o $tmpbin || \
     exit_on_fail "Downloading cow binary failed"
