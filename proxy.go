@@ -274,7 +274,10 @@ func (c *clientConn) serve() {
 		if sv, err = c.getServerConn(r); err != nil {
 			// Failed connection will send error page back to client
 			// debug.Printf("Failed to get serverConn for %s %v\n", c.RemoteAddr(), r)
-			continue
+			if err == errPageSent {
+				continue
+			}
+			return
 		}
 
 		if r.isConnect {
@@ -511,7 +514,7 @@ func (c *clientConn) getServerConn(r *Request) (sv *serverConn, err error) {
 		ok = false
 	}
 	if !ok {
-		sv, err = c.createserverConn(r)
+		sv, err = c.createServerConn(r)
 	}
 	return
 }
@@ -624,15 +627,16 @@ func (c *clientConn) createConnection(host string, r *Request) (srvconn conn, er
 	}
 
 fail:
-	debug.Printf("Failed to connect to %s %s", host, r)
-	if r.Method != "CONNECT" {
-		sendErrorPage(c, connFailedErrCode, err.Error(),
-			genErrMsg(r, "Connection failed."))
+	debug.Printf("Failed connect to %s %s", host, r)
+	if r.Method == "CONNECT" {
+		return zeroConn, errShouldClose
 	}
+	sendErrorPage(c, connFailedErrCode, err.Error(),
+		genErrMsg(r, "Connection failed."))
 	return zeroConn, errPageSent
 }
 
-func (c *clientConn) createserverConn(r *Request) (*serverConn, error) {
+func (c *clientConn) createServerConn(r *Request) (*serverConn, error) {
 	srvconn, err := c.createConnection(r.URL.Host, r)
 	if err != nil {
 		return nil, err
