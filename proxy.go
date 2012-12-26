@@ -877,7 +877,9 @@ func (sv *serverConn) doRequest(r *Request, c *clientConn) (err error) {
 			r.contBuf = nil // let gc recycle memory earlier
 			return errPageSent
 		}
-	} else if r.Method == "POST" {
+	} else if r.Chunking || r.ContLen > 0 {
+		// Message body in request is signaled by the inclusion of a Content-
+		// Length or Transfer-Encoding header. Refer to http://stackoverflow.com/a/299696/306935
 		// The server connection may have been closed, need to retry request in that case.
 		r.contBuf = new(bytes.Buffer)
 		if err = sendBody(c, sv, r, nil); err != nil {
@@ -902,9 +904,6 @@ func (sv *serverConn) doRequest(r *Request, c *clientConn) (err error) {
 // Send response body if header specifies content length
 func sendBodyWithContLen(c *clientConn, r io.Reader, w, contBuf io.Writer, contLen int) (err error) {
 	// debug.Println("Sending body with content length", contLen)
-	if contLen == 0 {
-		return
-	}
 	if err = copyN(r, w, contBuf, contLen, c.buf, nil, nil); err != nil {
 		debug.Println("sendBodyWithContLen error:", err)
 	}
@@ -1014,7 +1013,7 @@ func sendBody(c *clientConn, sv *serverConn, req *Request, rp *Response) (err er
 
 	if chunk {
 		err = sendBodyChunked(c, bufRd, w, contBuf)
-	} else if contLen >= 0 {
+	} else if contLen > 0 {
 		err = sendBodyWithContLen(c, bufRd, w, contBuf, contLen)
 	} else {
 		if req != nil {
