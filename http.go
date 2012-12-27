@@ -213,7 +213,7 @@ var headerParser = map[string]HeaderParserFunc{
 }
 
 // Only add headers that are of interest for a proxy into request's header map.
-func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, addHeader string, url *URL) (err error) {
+func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, url *URL) (err error) {
 	// Read request header and body
 	var s, name, val string
 	for {
@@ -221,14 +221,6 @@ func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, addHeader 
 			return
 		}
 		if s == "" {
-			// Connection close, no content length specification
-			// Use chunked encoding to pass content back to client
-			if !h.KeepAlive && !h.Chunking && h.ContLen == -1 {
-				raw.WriteString("Transfer-Encoding: chunked\r\n")
-			}
-
-			raw.WriteString(addHeader)
-			raw.Write(CRLFbytes)
 			return
 		}
 		if s[0] == ' ' || s[0] == '\t' {
@@ -302,16 +294,18 @@ func parseRequest(reader *bufio.Reader) (r *Request, err error) {
 	r.genRequestLine()
 
 	// Read request header
-	if err = r.parseHeader(reader, &r.raw, "", r.URL); err != nil {
+	if err = r.parseHeader(reader, &r.raw, r.URL); err != nil {
 		errl.Printf("Parsing request header: %v\n", err)
 		return nil, err
 	}
+	r.raw.Write(headerKeepAliveByte)
+	r.raw.Write(CRLFbytes)
 	return
 }
 
 func (r *Request) genRequestLine() {
 	r.raw.WriteString(r.Method + " " + r.URL.Path)
-	r.raw.WriteString(" HTTP/1.1\r\nConnection: Keep-Alive\r\n")
+	r.raw.WriteString(" HTTP/1.1\r\n")
 }
 
 func (r *Request) responseNotSent() bool {
@@ -339,6 +333,9 @@ func (rp *Response) hasBody(method string) bool {
 }
 
 var malformedHTTPResponseErr = errors.New("malformed HTTP response")
+
+var headerKeepAliveByte = []byte("Connection: Keep-Alive\r\n")
+var headerConnCloseByte = []byte("Connection: close\r\n")
 
 // Parse response status and headers.
 func parseResponse(reader *bufio.Reader, r *Request) (rp *Response, err error) {
@@ -381,10 +378,21 @@ START:
 	}
 	rp.raw.Write(CRLFbytes)
 
-	if err = rp.parseHeader(reader, &rp.raw, "Connection: Keep-Alive\r\n", r.URL); err != nil {
+	if err = rp.parseHeader(reader, &rp.raw, r.URL); err != nil {
 		errl.Printf("Reading response header: %v %v\n", err, r)
 		return nil, err
 	}
+	// Connection close, no content length specification
+	// Use chunked encoding to pass content back to client
+	if !rp.KeepAlive && !rp.Chunking && rp.ContLen == -1 {
+		rp.raw.WriteString("Transfer-Encoding: chunked\r\n")
+	}
+	if r.KeepAlive {
+		rp.raw.Write(headerKeepAliveByte)
+	} else {
+		rp.raw.Write(headerConnCloseByte)
+	}
+	rp.raw.Write(CRLFbytes)
 
 	return rp, nil
 }
