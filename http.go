@@ -96,6 +96,7 @@ func (url *URL) toURI() string {
 // Note RFC2616 only says about "Connection", no "Proxy-Connection", but firefox
 // send this header.
 // See more at http://homepage.ntlworld.com/jonathan.deboynepollard/FGA/web-proxy-connection-header.html
+// TODO: parse Keep-Alive header so we know when the server will close connection
 const (
 	headerContentLength    = "content-length"
 	headerTransferEncoding = "transfer-encoding"

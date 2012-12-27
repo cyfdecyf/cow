@@ -305,6 +305,11 @@ func (c *clientConn) serve() {
 			}
 			return
 		}
+
+		if !r.KeepAlive {
+			// debug.Println("close client connection because request has no keep-alive")
+			return
+		}
 	}
 }
 
