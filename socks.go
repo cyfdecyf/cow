@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/binary"
 	"errors"
 	"io"
 	"net"
@@ -93,8 +94,7 @@ func createctSocksConnection(hostFull string) (cn conn, err error) {
 	reqBuf[3] = 3 // atyp: domain name
 	reqBuf[4] = byte(hostLen)
 	copy(reqBuf[5:], host)
-	reqBuf[5+hostLen] = byte(port >> 8 & 0xFF)
-	reqBuf[5+hostLen+1] = byte(port) & 0xFF
+	binary.BigEndian.PutUint16(reqBuf[5+hostLen:5+hostLen+2], uint16(port))
 
 	/*
 		if debug {
