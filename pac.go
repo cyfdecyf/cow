@@ -94,7 +94,6 @@ func initProxyServerAddr() {
 // No need for content-length as we are closing connection
 var pacHeader = []byte("HTTP/1.1 200 OK\r\nServer: cow-proxy\r\n" +
 	"Content-Type: application/x-ns-proxy-autoconfig\r\nConnection: close\r\n\r\n")
-var pacDirect = []byte("function FindProxyForURL(url, host) { return 'DIRECT'; };")
 
 func sendPAC(w io.Writer) {
 	// domains in PAC file needs double quote
@@ -111,7 +110,9 @@ func sendPAC(w io.Writer) {
 	if ds == "" {
 		// Empty direct domain list
 		w.Write(pacHeader)
-		w.Write(pacDirect)
+		pacproxy := fmt.Sprintf("function FindProxyForURL(url, host) { return '%s'; };",
+			pac.proxyServerAddr)
+		w.Write([]byte(pacproxy))
 		return
 	}
 
