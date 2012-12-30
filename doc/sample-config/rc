@@ -16,23 +16,37 @@ shadowsocks = 1.1.1.1:8838
 # shadowsocks password
 shadowPasswd = barfoo!
 
-# Nubmer of cores to use
-core = 2
+# empty path means stdout
+logFile =
+
+# always use parent proxy
+alwaysProxy = false
+
+# Automatically retry timeout request using parent proxy if enabled (treated
+# as temporarily blocked)
+# If disabled, timeout error will send error page and let user decide what to do
+
+autoRetry = true
+
+# The following 2 options tell COW to write visited blocked/direct sites to
+# file upon exit. Enabling them can record the sites you often visit and thus
+# let the browser use direct access for non blocked sites through PAC, and COW
+# will not wait 5 seconds of timeout before trying parent proxy for unknown
+# blocked sites. But as blocked sites detection is not reliable, you may need
+# to manually examine the recorded site lists.
+# So if you care about performance very much, it's recommend to enable them
+# and use COW for a while to get your frequently visited sites recorded. After
+# fixing uncorrectly recorded direct/blocked sites, disable updateDirect and 
+# updateBlocked to avoid recording too much (and possibly wrong) sites in
+# auto-direct/blocked.
 
 # Update blocked domain list (~/.cow/auto-blocked)
 updateBlocked = false
-
 # Update directly accessable domain list (~/.cow/auto-direct)
 updateDirect = false
-
-# Automatically retry all potential blocked request instead of sending back error page
-autoRetry = true
 
 # detect SSL error based on how soon client closes connection, not reliable
 detectSSLErr = true
 
-# empty path means stdout, use /dev/null to disable output
-logFile = ~/.cow/log
-
-# always use parent proxy
-alwaysProxy = false
+# Nubmer of cores to use
+core = 2
