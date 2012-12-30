@@ -18,7 +18,7 @@ func sigHandler() {
 
 	for sig := range sigChan {
 		info.Printf("%v caught, exit\n", sig)
-		writeDomainSet()
+		domainSet.write()
 		break
 	}
 	os.Exit(0)
@@ -52,7 +52,7 @@ func main() {
 
 	setSelfURL()
 
-	loadDomainSet()
+	domainSet.load()
 	/*
 		if *cpuprofile != "" {
 			f, err := os.Create(*cpuprofile)

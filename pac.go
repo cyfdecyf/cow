@@ -98,8 +98,8 @@ var pacDirect = []byte("function FindProxyForURL(url, host) { return 'DIRECT'; }
 
 func sendPAC(w io.Writer) {
 	// domains in PAC file needs double quote
-	ds1 := strings.Join(alwaysDirectDs.toSlice(), "\",\n\"")
-	ds2 := strings.Join(directDs.toSlice(), "\",\n\"")
+	ds1 := strings.Join(domainSet.alwaysDirect.toSlice(), "\",\n\"")
+	ds2 := strings.Join(domainSet.direct.toSlice(), "\",\n\"")
 	var ds string
 	if ds1 == "" {
 		ds = ds2

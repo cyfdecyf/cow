@@ -176,15 +176,15 @@ func getHostFromQuery(query string) string {
 
 func (c *clientConn) serveSelfURLBlocked(r *Request) (err error) {
 	query := r.URL.Path[9:] // "/blocked?" has 9 characters
-	return c.serveSelfURLAddHost(r, query, "blocked", addBlockedHost)
+	return c.serveSelfURLAddHost(r, query, "blocked", (*DomainSet).addBlockedHost)
 }
 
 func (c *clientConn) serveSelfURLDirect(r *Request) (err error) {
 	query := r.URL.Path[8:] // "/direct?" has 9 characters
-	return c.serveSelfURLAddHost(r, query, "direct", addDirectHost)
+	return c.serveSelfURLAddHost(r, query, "direct", (*DomainSet).addDirectHost)
 }
 
-type addHostFunc func(string) bool
+type addHostFunc func(*DomainSet, string) bool
 
 func (c *clientConn) serveSelfURLAddHost(r *Request, query, listType string, addHost addHostFunc) (err error) {
 	// Adding blocked or direct site has side effects, so should use POST in
@@ -199,7 +199,7 @@ func (c *clientConn) serveSelfURLAddHost(r *Request, query, listType string, add
 			"COW can only record blocked site based on domain name.")
 		return errInternal
 	}
-	addHost(host)
+	addHost(domainSet, host)
 
 	// As there's no reliable way to convert an encoded URL back (you don't
 	// know whether a %2F should be converted to slash or not, conside Google
@@ -335,9 +335,9 @@ func (c *clientConn) handleBlockedRequest(r *Request, err error, errCode, msg st
 	// Domain in chou domain set is likely to be blocked, should automatically
 	// restart request using parent proxy.
 	// Reset is usually reliable in detecting blocked site, so retry for connection reset.
-	if errCode == errCodeReset || config.AutoRetry || isHostChouFeng(r.URL.Host) {
+	if errCode == errCodeReset || config.AutoRetry || domainSet.isHostChouFeng(r.URL.Host) {
 		debug.Printf("Blocked site %s detected for request %v error: %v\n", r.URL.Host, r, err)
-		if addBlockedHost(r.URL.Host) {
+		if domainSet.addBlockedHost(r.URL.Host) {
 			return errRetry
 		}
 		msg += genBlockedSiteMsg(r)
@@ -462,7 +462,7 @@ func (c *clientConn) readResponse(sv *serverConn, r *Request) (err error) {
 	}
 	if sv.state == svConnected {
 		if sv.connType == ctDirectConn {
-			addDirectHost(sv.host)
+			domainSet.addDirectHost(sv.host)
 		}
 		sv.state = svSendRecvResponse
 	}
@@ -591,12 +591,12 @@ func (c *clientConn) createConnection(host string, r *Request) (srvconn conn, er
 		}
 		goto fail
 	}
-	if isHostBlocked(host) && hasParentProxy {
+	if domainSet.isHostBlocked(host) && hasParentProxy {
 		// In case of connection error to socks server, fallback to direct connection
 		if srvconn, err = createParentProxyConnection(host); err == nil {
 			return
 		}
-		if isHostAlwaysBlocked(host) {
+		if domainSet.isHostAlwaysBlocked(host) {
 			goto fail
 		}
 		if srvconn, err = createctDirectConnection(host); err == nil {
@@ -607,7 +607,7 @@ func (c *clientConn) createConnection(host string, r *Request) (srvconn conn, er
 		if srvconn, err = createctDirectConnection(host); err == nil {
 			return
 		}
-		if isHostAlwaysDirect(host) || hostIsIP(host) || !hasParentProxy {
+		if domainSet.isHostAlwaysDirect(host) || hostIsIP(host) || !hasParentProxy {
 			goto fail
 		}
 		// debug.Printf("type of err %v\n", reflect.TypeOf(err))
@@ -619,8 +619,8 @@ func (c *clientConn) createConnection(host string, r *Request) (srvconn conn, er
 				// Connection reset is very likely caused by GFW, directly add
 				// to blocked list. Timeout error is not reliable detecting
 				// blocked site, ask the user unless autoRetry is enabled.
-				if config.AutoRetry || isHostChouFeng(host) || isErrConnReset(err) {
-					addBlockedHost(host)
+				if config.AutoRetry || domainSet.isHostChouFeng(host) || isErrConnReset(err) {
+					domainSet.addBlockedHost(host)
 					return srvconn, nil
 				}
 				srvconn.Close()
@@ -681,7 +681,7 @@ func copyServer2Client(sv *serverConn, c *clientConn, cliStopped notification, r
 		}
 		setConnReadTimeout(sv, readTimeout, "copyServer2Client")
 		if n, err = sv.Read(buf); err != nil {
-			if maybeBlocked(err) && sv.maybeFake() && addBlockedHost(r.URL.Host) {
+			if maybeBlocked(err) && sv.maybeFake() && domainSet.addBlockedHost(r.URL.Host) {
 				debug.Printf("copyServer2Client blocked site %s detected, retry\n", r.URL.Host)
 				return errRetry
 			} else if isErrTimeout(err) {
@@ -699,7 +699,7 @@ func copyServer2Client(sv *serverConn, c *clientConn, cliStopped notification, r
 		r.state = rsRecvBody
 		if sv.state == svConnected {
 			if sv.connType == ctDirectConn {
-				addDirectHost(sv.host)
+				domainSet.addDirectHost(sv.host)
 			}
 			sv.state = svSendRecvResponse
 		}
@@ -757,7 +757,7 @@ func copyClient2Server(c *clientConn, sv *serverConn, srvStopped notification, r
 			}
 			if config.DetectSSLErr && (isErrConnReset(err) || err == io.EOF) && sv.maybeSSLErr(start) {
 				debug.Println("client connection closed very soon, taken as SSL error:", r)
-				addBlockedHost(r.URL.Host)
+				domainSet.addBlockedHost(r.URL.Host)
 			}
 			debug.Printf("copyClient2Server read data: %v\n", err)
 			return
@@ -779,7 +779,7 @@ func copyClient2Server(c *clientConn, sv *serverConn, srvStopped notification, r
 		}
 		// Read is using buffer, so write what have been read directly
 		if _, err = sv.Write(buffered); err != nil {
-			if sv.maybeFake() && isErrConnReset(err) && addBlockedHost(r.URL.Host) {
+			if sv.maybeFake() && isErrConnReset(err) && domainSet.addBlockedHost(r.URL.Host) {
 				debug.Printf("copyClient2Server blocked site %d detected, retry\n", r.URL.Host)
 				return errRetry
 			}
@@ -794,7 +794,7 @@ func copyClient2Server(c *clientConn, sv *serverConn, srvStopped notification, r
 func (sv *serverConn) maybeFake() bool {
 	// GFW may return wrong DNS record, which we can connect to but block
 	// forever on read. (e.g. twitter.com)
-	return sv.connType == ctDirectConn && !isHostAlwaysDirect(sv.host)
+	return sv.connType == ctDirectConn && !domainSet.isHostAlwaysDirect(sv.host)
 }
 
 func (sv *serverConn) maybeSSLErr(cliStart time.Time) bool {

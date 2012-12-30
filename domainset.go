@@ -15,22 +15,22 @@ import (
 // Use direct connection after blocked for chouTimeout
 const chouTimeout = 2 * time.Minute
 
-type domainSet map[string]bool
+type dmSet map[string]bool
 
 // Basically a concurrent map. I don't want to use channels to implement
 // concurrent access to this as I'm comfortable to use locks for simple tasks
 // like this
-type paraDomainSet struct {
+type paraDmSet struct {
 	sync.RWMutex
-	domainSet
+	dmSet
 }
 
-func newDomainSet() domainSet {
+func newDmSet() dmSet {
 	return make(map[string]bool)
 }
 
-func (ds domainSet) loadDomainList(fpath string) (lst []string, err error) {
-	lst, err = loadDomainList(fpath)
+func (ds dmSet) load(fpath string) (err error) {
+	lst, err := loadDomainList(fpath)
 	if err != nil {
 		return
 	}
@@ -42,7 +42,7 @@ func (ds domainSet) loadDomainList(fpath string) (lst []string, err error) {
 	return
 }
 
-func (ds domainSet) toSlice() []string {
+func (ds dmSet) toSlice() []string {
 	l := len(ds)
 	lst := make([]string, l, l)
 
@@ -54,208 +54,251 @@ func (ds domainSet) toSlice() []string {
 	return lst
 }
 
-func newParaDomainSet() *paraDomainSet {
-	return &paraDomainSet{domainSet: newDomainSet()}
+func newParadmSet() *paraDmSet {
+	return &paraDmSet{dmSet: newDmSet()}
 }
 
-func (ds *paraDomainSet) add(dm string) {
+func (ds *paraDmSet) add(dm string) {
 	ds.Lock()
-	ds.domainSet[dm] = true
+	ds.dmSet[dm] = true
 	ds.Unlock()
 }
 
-func (ds *paraDomainSet) has(dm string) bool {
+func (ds *paraDmSet) has(dm string) bool {
 	ds.RLock()
-	_, ok := ds.domainSet[dm]
+	_, ok := ds.dmSet[dm]
 	ds.RUnlock()
 	return ok
 }
 
-func (ds *paraDomainSet) del(dm string) {
+func (ds *paraDmSet) del(dm string) {
 	ds.Lock()
-	delete(ds.domainSet, dm)
+	delete(ds.dmSet, dm)
 	ds.Unlock()
 }
 
-var blockedDs = newParaDomainSet()
-var directDs = newParaDomainSet()
+type DomainSet struct {
+	direct  *paraDmSet
+	blocked *paraDmSet
+	chou    *paraDmSet
 
-var blockedDomainChanged = false
-var directDomainChanged = false
+	blockedChanged bool
+	directChanged  bool
 
-var alwaysBlockedDs = newDomainSet()
-var alwaysDirectDs = newDomainSet()
-var chouDs = newDomainSet()
+	alwaysBlocked dmSet
+	alwaysDirect  dmSet
+
+	chouTime chouBlockTime
+}
+
+func newDomainSet() *DomainSet {
+	ds := new(DomainSet)
+	ds.direct = newParadmSet()
+	ds.blocked = newParadmSet()
+	ds.chou = newParadmSet()
+
+	ds.alwaysBlocked = newDmSet()
+	ds.alwaysDirect = newDmSet()
+
+	ds.chouTime = chouBlockTime{time: map[string]time.Time{}}
+	return ds
+}
+
+var domainSet = newDomainSet()
 
 // Record when is the domain added to chou domain set
 type chouBlockTime struct {
-	sync.Mutex
+	sync.RWMutex
 	time map[string]time.Time
 }
 
-var chou = chouBlockTime{time: map[string]time.Time{}}
-
-func isHostInAlwaysDs(host string) bool {
-	dm := host2Domain(host)
-	return alwaysBlockedDs[dm] || alwaysDirectDs[dm]
+func (cb *chouBlockTime) add(dm string) {
+	now := time.Now()
+	cb.Lock()
+	cb.time[dm] = now
+	cb.Unlock()
+	debug.Printf("chou domain %s blocked at %v\n", dm, now)
 }
 
-func isHostAlwaysDirect(host string) bool {
-	return alwaysDirectDs[host2Domain(host)]
-}
-
-func isHostAlwaysBlocked(host string) bool {
-	return alwaysBlockedDs[host2Domain(host)]
-}
-
-func isHostBlocked(host string) bool {
-	dm := host2Domain(host)
-	if alwaysDirectDs[dm] {
+func (cb *chouBlockTime) has(dm string) bool {
+	cb.RLock()
+	t, ok := cb.time[dm]
+	cb.RUnlock()
+	if !ok {
 		return false
 	}
-	if alwaysBlockedDs[dm] {
+	if time.Now().Sub(t) > chouTimeout {
+		cb.del(dm)
+		return false
+	}
+	return true
+}
+
+func (cb *chouBlockTime) del(dm string) {
+	cb.Lock()
+	delete(cb.time, dm)
+	cb.Unlock()
+	debug.Printf("chou domain %s block time unset\n", dm)
+}
+
+func (ds *DomainSet) isHostInAlwaysDs(host string) bool {
+	dm := host2Domain(host)
+	return ds.alwaysBlocked[dm] || ds.alwaysDirect[dm]
+}
+
+func (ds *DomainSet) isHostAlwaysDirect(host string) bool {
+	return ds.alwaysDirect[host2Domain(host)]
+}
+
+func (ds *DomainSet) isHostAlwaysBlocked(host string) bool {
+	return ds.alwaysBlocked[host2Domain(host)]
+}
+
+func (ds *DomainSet) isHostBlocked(host string) bool {
+	dm := host2Domain(host)
+	if ds.alwaysDirect[dm] {
+		return false
+	}
+	if ds.alwaysBlocked[dm] {
 		return true
 	}
-	if chouDs[dm] {
-		chou.Lock()
-		t, ok := chou.time[dm]
-		chou.Unlock()
-		if !ok {
-			return false
-		}
-		if time.Now().Sub(t) < chouTimeout {
-			return true
-		}
-		chou.Lock()
-		delete(chou.time, dm)
-		chou.Unlock()
-		debug.Printf("chou domain %s block time unset\n", dm)
-		return false
-	}
-	return blockedDs.has(dm)
-}
-
-func isHostDirect(host string) bool {
-	dm := host2Domain(host)
-	if alwaysDirectDs[dm] {
+	if ds.chouTime.has(dm) {
 		return true
 	}
-	if alwaysBlockedDs[dm] {
-		return false
-	}
-	return directDs.has(dm)
+	return ds.blocked.has(dm)
 }
 
-func isHostChouFeng(host string) bool {
-	return chouDs[host2Domain(host)]
+func (ds *DomainSet) isHostDirect(host string) bool {
+	dm := host2Domain(host)
+	if ds.alwaysDirect[dm] {
+		return true
+	}
+	if ds.alwaysBlocked[dm] {
+		return false
+	}
+	return ds.direct.has(dm)
+}
+
+func (ds *DomainSet) isHostChouFeng(host string) bool {
+	return ds.chou.has(host2Domain(host))
+}
+
+func (ds *DomainSet) addChouHost(host string) {
+	ds.chouTime.add(host2Domain(host))
 }
 
 // Return true if the host is taken as blocked later
-func addBlockedHost(host string) bool {
+func (ds *DomainSet) addBlockedHost(host string) bool {
 	dm := host2Domain(host)
-	if isHostAlwaysDirect(host) || hostIsIP(host) || dm == "localhost" {
+	if ds.isHostAlwaysDirect(host) || hostIsIP(host) || dm == "localhost" {
 		return false
 	}
-	if chouDs[dm] {
+	if ds.chou.has(dm) {
 		// Record blocked time for chou domain, this marks a chou domain as
 		// temporarily blocked
-		now := time.Now()
-		chou.Lock()
-		chou.time[dm] = now
-		chou.Unlock()
-		debug.Printf("chou domain %s blocked at %v\n", dm, now)
-	} else if !blockedDs.has(dm) {
-		blockedDs.add(dm)
-		blockedDomainChanged = true
+		ds.chouTime.add(dm)
+	} else if !ds.blocked.has(dm) {
+		ds.blocked.add(dm)
+		ds.blockedChanged = true
 		debug.Printf("%s added to blocked list\n", dm)
 		// Delete this domain from direct domain set
-		delDirectDomain(dm)
+		if ds.direct.has(dm) {
+			ds.direct.del(dm)
+			ds.directChanged = true
+		}
 	}
 	return true
 }
 
-func delBlockedDomain(dm string) {
-	if blockedDs.has(dm) {
-		blockedDs.del(dm)
-		blockedDomainChanged = true
-		debug.Printf("%s deleted from blocked list\n", dm)
-	}
-}
-
-func addDirectHost(host string) (added bool) {
+func (ds *DomainSet) addDirectHost(host string) (added bool) {
 	dm := host2Domain(host)
-	if isHostInAlwaysDs(host) || chouDs[dm] || dm == "localhost" || hostIsIP(host) {
+	if ds.isHostInAlwaysDs(host) || ds.chou.has(dm) || dm == "localhost" || hostIsIP(host) {
 		return
 	}
-	if !directDs.has(dm) {
-		directDs.add(dm)
-		directDomainChanged = true
+	if !ds.direct.has(dm) {
+		ds.direct.add(dm)
+		ds.directChanged = true
 		debug.Printf("%s added to direct list\n", dm)
 	}
 	// Delete this domain from blocked domain set
-	delBlockedDomain(dm)
+	if ds.blocked.has(dm) {
+		ds.blocked.del(dm)
+		ds.blockedChanged = true
+		debug.Printf("%s deleted from blocked list\n", dm)
+	}
 	return true
 }
 
-func delDirectDomain(dm string) {
-	if directDs.has(dm) {
-		directDs.del(dm)
-		directDomainChanged = true
-	}
-}
-
-func writeBlockedDs() {
-	if !config.UpdateBlocked || !blockedDomainChanged {
+func (ds *DomainSet) writeBlockedDs() {
+	if !config.UpdateBlocked || !ds.blockedChanged {
 		return
 	}
-	writeDomainList(dsFile.blocked, blockedDs.toSlice())
+	writeDomainList(dsFile.blocked, ds.blocked.toSlice())
 }
 
-func writeDirectDs() {
-	if !config.UpdateDirect || !directDomainChanged {
+func (ds *DomainSet) writeDirectDs() {
+	if !config.UpdateDirect || !ds.directChanged {
 		return
 	}
-	writeDomainList(dsFile.direct, directDs.toSlice())
+	writeDomainList(dsFile.direct, ds.direct.toSlice())
 }
 
 // filter out domain in blocked and direct domain set.
-func filterOutDs(ds domainSet) {
-	for k, _ := range ds {
-		if blockedDs.domainSet[k] {
-			delete(blockedDs.domainSet, k)
-			blockedDomainChanged = true
+func (ds *DomainSet) filterOutDs(dmset dmSet) {
+	for k, _ := range dmset {
+		if ds.blocked.dmSet[k] {
+			delete(ds.blocked.dmSet, k)
+			ds.blockedChanged = true
 		}
-		if directDs.domainSet[k] {
-			delete(directDs.domainSet, k)
-			directDomainChanged = true
+		if ds.direct.dmSet[k] {
+			delete(ds.direct.dmSet, k)
+			ds.directChanged = true
 		}
 	}
 }
 
 // If a domain name appears in both blocked and direct domain set, only keep
 // it in the blocked set.
-func filterOutBlockedDsInDirectDs() {
-	for k, _ := range blockedDs.domainSet {
-		if directDs.domainSet[k] {
-			delete(directDs.domainSet, k)
-			directDomainChanged = true
+func (ds *DomainSet) filterOutBlockedInDirect() {
+	for k, _ := range ds.blocked.dmSet {
+		if ds.direct.dmSet[k] {
+			delete(ds.direct.dmSet, k)
+			ds.directChanged = true
 		}
 	}
-	for k, _ := range alwaysBlockedDs {
-		if alwaysDirectDs[k] {
+	for k, _ := range ds.alwaysBlocked {
+		if ds.alwaysDirect[k] {
 			errl.Printf("%s in both always blocked and direct domain lists, taken as blocked.\n", k)
-			delete(alwaysDirectDs, k)
+			delete(ds.alwaysDirect, k)
 		}
 	}
 }
 
-func writeDomainSet() {
+func (ds *DomainSet) write() {
 	// chou domain set maybe added to blocked site during execution,
 	// filter them out before writing back to disk.
-	filterOutDs(chouDs)
+	ds.filterOutDs(ds.chou.dmSet)
+	ds.writeBlockedDs()
+	ds.writeDirectDs()
+}
 
-	writeBlockedDs()
-	writeDirectDs()
+// TODO reload domain list when receives SIGUSR1
+// one difficult here is that we may concurrently access maps which is not
+// safe.
+// Can we create a new domain set first, then change the reference of the original one?
+// Domain set reference changing should be atomic.
+
+func (ds *DomainSet) load() {
+	ds.blocked.load(dsFile.blocked)
+	ds.direct.load(dsFile.direct)
+	ds.alwaysBlocked.load(dsFile.alwaysBlocked)
+	ds.alwaysDirect.load(dsFile.alwaysDirect)
+	ds.chou.load(dsFile.chou)
+
+	ds.filterOutDs(ds.chou.dmSet)
+	ds.filterOutDs(ds.alwaysDirect)
+	ds.filterOutDs(ds.alwaysBlocked)
+	ds.filterOutBlockedInDirect()
 }
 
 func loadDomainList(fpath string) (lst []string, err error) {
@@ -380,23 +423,4 @@ func host2Domain(host string) (domain string) {
 		return host[dot3rdLast+1:]
 	}
 	return host[dot2ndLast+1:]
-}
-
-// TODO reload domain list when receives SIGUSR1
-// one difficult here is that we may concurrently access maps which is not
-// safe.
-// Can we create a new domain set first, then change the reference of the original one?
-// Domain set reference changing should be atomic.
-
-func loadDomainSet() {
-	blockedDs.loadDomainList(dsFile.blocked)
-	directDs.loadDomainList(dsFile.direct)
-	alwaysBlockedDs.loadDomainList(dsFile.alwaysBlocked)
-	alwaysDirectDs.loadDomainList(dsFile.alwaysDirect)
-	chouDs.loadDomainList(dsFile.chou)
-
-	filterOutDs(chouDs)
-	filterOutDs(alwaysDirectDs)
-	filterOutDs(alwaysBlockedDs)
-	filterOutBlockedDsInDirectDs()
 }
