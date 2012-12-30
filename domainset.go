@@ -185,15 +185,19 @@ func (ds *DomainSet) isHostChouFeng(host string) bool {
 
 func (ds *DomainSet) addChouHost(host string) bool {
 	dm := host2Domain(host)
-	if ds.chouTime.has(dm) {
+	if ds.isHostAlwaysDirect(host) || dm == "localhost" ||
+		hostIsIP(host) || ds.chouTime.has(dm) {
 		return false
 	}
 	ds.chouTime.add(dm)
 	return true
 }
 
-// Return true if the host is taken as blocked later
+// Return true if the host is taken as blocked
 func (ds *DomainSet) addBlockedHost(host string) bool {
+	if !config.UpdateBlocked {
+		return ds.addChouHost(host)
+	}
 	dm := host2Domain(host)
 	if ds.isHostAlwaysDirect(host) || ds.chou.has(dm) || dm == "localhost" ||
 		hostIsIP(host) || ds.blocked.has(dm) {
@@ -212,6 +216,9 @@ func (ds *DomainSet) addBlockedHost(host string) bool {
 }
 
 func (ds *DomainSet) addDirectHost(host string) (added bool) {
+	if !config.UpdateDirect {
+		return
+	}
 	dm := host2Domain(host)
 	if ds.isHostInAlwaysDs(host) || ds.chou.has(dm) || dm == "localhost" ||
 		hostIsIP(host) || ds.direct.has(dm) {
