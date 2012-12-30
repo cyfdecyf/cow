@@ -66,8 +66,8 @@ func init() {
 	dsFile.alwaysDirect = path.Join(dsFile.dir, alwaysDirectFname)
 	dsFile.chou = path.Join(dsFile.dir, chouFname)
 
-	config.UpdateBlocked = true
-	config.UpdateDirect = true
+	config.UpdateBlocked = false
+	config.UpdateDirect = false
 	config.AutoRetry = true
 	config.DetectSSLErr = true
 	config.AlwaysProxy = false
