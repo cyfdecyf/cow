@@ -16,8 +16,8 @@ import (
 )
 
 // What value is appropriate?
-const readTimeout = 15 * time.Second
-const dialTimeout = 10 * time.Second
+const readTimeout = 5 * time.Second
+const dialTimeout = 5 * time.Second
 const clientConnTimeout = 15 * time.Second
 const sslLeastDuration = time.Second
 
