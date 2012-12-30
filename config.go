@@ -68,7 +68,7 @@ func init() {
 
 	config.UpdateBlocked = true
 	config.UpdateDirect = true
-	config.AutoRetry = false
+	config.AutoRetry = true
 	config.DetectSSLErr = true
 	config.AlwaysProxy = false
 }

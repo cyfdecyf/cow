@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"os"
+	// "reflect"
 	"strconv"
 	"strings"
 	"syscall"
@@ -331,24 +332,31 @@ const (
 	errCodeTimeout = "504 time out reading response"
 )
 
-func (c *clientConn) handleBlockedRequest(r *Request, err error, errCode, msg string) error {
-	// Domain in chou domain set is likely to be blocked, should automatically
-	// restart request using parent proxy.
-	// Reset is usually reliable in detecting blocked site, so retry for connection reset.
-	if errCode == errCodeReset || config.AutoRetry || domainSet.isHostChouFeng(r.URL.Host) {
-		debug.Printf("Blocked site %s detected for request %v error: %v\n", r.URL.Host, r, err)
+func (c *clientConn) handleBlockedRequest(r *Request, err error, msg string) error {
+	var errCode string
+	if isErrConnReset(err) {
 		if domainSet.addBlockedHost(r.URL.Host) {
 			return errRetry
 		}
-		msg += genBlockedSiteMsg(r)
-		if r.responseNotSent() {
-			sendErrorPage(c, errCode, err.Error(), msg)
-			return errPageSent
+		errCode = errCodeReset
+	} else if domainSet.isHostChouFeng(r.URL.Host) || (isErrTimeout(err) && config.AutoRetry) {
+		// Domain in chou domain set is likely to be blocked, should automatically
+		// restart request using parent proxy.
+		// If autoRetry is enabled, treat timeout domain as chou and retry.
+		if domainSet.addChouHost(r.URL.Host) {
+			return errRetry
 		}
+		errCode = errCodeTimeout
+	}
+
+	msg += genBlockedSiteMsg(r)
+	// Let user decide what to do with with timeout error if autoRetry is not enabled
+	if !config.AutoRetry && errCode == errCodeTimeout && r.responseNotSent() {
+		sendBlockedErrorPage(c, errCode, err.Error(), msg, r)
+		return errPageSent
 	}
 	if r.responseNotSent() {
-		// If autoRetry is not enabled, let the user decide whether add the domain to blocked list.
-		sendBlockedErrorPage(c, errCode, err.Error(), msg, r)
+		sendErrorPage(c, errCode, err.Error(), msg)
 		return errPageSent
 	}
 	errl.Printf("%s blocked request with partial response sent to client: %v %v\n", msg, err, r)
@@ -370,11 +378,8 @@ func (c *clientConn) handleServerReadError(r *Request, sv *serverConn, err error
 		// GFW may connection reset when reading from  server, may also make
 		// it time out. But timeout is also normal if network condition is
 		// bad, so should treate timeout separately.
-		if isErrConnReset(err) {
-			return c.handleBlockedRequest(r, err, errCodeReset, errMsg)
-		}
-		if isErrTimeout(err) {
-			return c.handleBlockedRequest(r, err, errCodeTimeout, errMsg)
+		if maybeBlocked(err) {
+			return c.handleBlockedRequest(r, err, errMsg)
 		}
 		// fall through to send general error message
 	}
@@ -391,12 +396,10 @@ func (c *clientConn) handleServerWriteError(r *Request, sv *serverConn, err erro
 	// So if visiting blocked site, can always retry request.
 	if sv.maybeFake() || isErrConnReset(err) {
 		errMsg := genErrMsg(r, msg)
-		if ne, ok := err.(*net.OpError); ok {
-			if ne.Err == syscall.ECONNRESET {
-				return c.handleBlockedRequest(r, err, errCodeReset, errMsg)
-			}
-			// TODO What about broken PIPE?
+		if isErrConnReset(err) {
+			return c.handleBlockedRequest(r, err, errMsg)
 		}
+		// TODO What about broken PIPE?
 		sendErrorPage(c, "502 write error", err.Error(), errMsg)
 		return errPageSent
 	}
@@ -611,22 +614,20 @@ func (c *clientConn) createConnection(host string, r *Request) (srvconn conn, er
 			goto fail
 		}
 		// debug.Printf("type of err %v\n", reflect.TypeOf(err))
-		// GFW may cause dns lookup fail, may also cause connection time out or reset
+		// GFW may cause dns lookup fail (net.DNSError),
+		// may also cause connection time out or reset (net.OpError)
 		if _, ok := err.(*net.DNSError); ok || maybeBlocked(err) {
 			// Try to create socks connection
 			var socksErr error
 			if srvconn, socksErr = createParentProxyConnection(host); socksErr == nil {
-				// Connection reset is very likely caused by GFW, directly add
-				// to blocked list. Timeout error is not reliable detecting
-				// blocked site, ask the user unless autoRetry is enabled.
-				if config.AutoRetry || domainSet.isHostChouFeng(host) || isErrConnReset(err) {
-					domainSet.addBlockedHost(host)
+				handRes := c.handleBlockedRequest(r, err,
+					genErrMsg(r, "create direct connection")+genBlockedSiteMsg(r))
+				if handRes == errRetry {
+					debug.Println("direct connection failed, use socks connection for ", r)
 					return srvconn, nil
 				}
 				srvconn.Close()
-				sendBlockedErrorPage(c, connFailedErrCode, err.Error(),
-					genErrMsg(r, "Connection failed.")+genBlockedSiteMsg(r), r)
-				return zeroConn, errPageSent
+				return zeroConn, handRes
 			}
 		}
 	}

@@ -183,43 +183,43 @@ func (ds *DomainSet) isHostChouFeng(host string) bool {
 	return ds.chou.has(host2Domain(host))
 }
 
-func (ds *DomainSet) addChouHost(host string) {
-	ds.chouTime.add(host2Domain(host))
+func (ds *DomainSet) addChouHost(host string) bool {
+	dm := host2Domain(host)
+	if ds.chouTime.has(dm) {
+		return false
+	}
+	ds.chouTime.add(dm)
+	return true
 }
 
 // Return true if the host is taken as blocked later
 func (ds *DomainSet) addBlockedHost(host string) bool {
 	dm := host2Domain(host)
-	if ds.isHostAlwaysDirect(host) || hostIsIP(host) || dm == "localhost" {
+	if ds.isHostAlwaysDirect(host) || ds.chou.has(dm) || dm == "localhost" ||
+		hostIsIP(host) || ds.blocked.has(dm) {
 		return false
 	}
-	if ds.chou.has(dm) {
-		// Record blocked time for chou domain, this marks a chou domain as
-		// temporarily blocked
-		ds.chouTime.add(dm)
-	} else if !ds.blocked.has(dm) {
-		ds.blocked.add(dm)
-		ds.blockedChanged = true
-		debug.Printf("%s added to blocked list\n", dm)
-		// Delete this domain from direct domain set
-		if ds.direct.has(dm) {
-			ds.direct.del(dm)
-			ds.directChanged = true
-		}
+	ds.blocked.add(dm)
+	ds.blockedChanged = true
+	debug.Printf("%s added to blocked list\n", dm)
+	// Delete this domain from direct domain set
+	if ds.direct.has(dm) {
+		ds.direct.del(dm)
+		ds.directChanged = true
+		debug.Printf("%s deleted from direct list\n", dm)
 	}
 	return true
 }
 
 func (ds *DomainSet) addDirectHost(host string) (added bool) {
 	dm := host2Domain(host)
-	if ds.isHostInAlwaysDs(host) || ds.chou.has(dm) || dm == "localhost" || hostIsIP(host) {
-		return
+	if ds.isHostInAlwaysDs(host) || ds.chou.has(dm) || dm == "localhost" ||
+		hostIsIP(host) || ds.direct.has(dm) {
+		return false
 	}
-	if !ds.direct.has(dm) {
-		ds.direct.add(dm)
-		ds.directChanged = true
-		debug.Printf("%s added to direct list\n", dm)
-	}
+	ds.direct.add(dm)
+	ds.directChanged = true
+	debug.Printf("%s added to direct list\n", dm)
 	// Delete this domain from blocked domain set
 	if ds.blocked.has(dm) {
 		ds.blocked.del(dm)
