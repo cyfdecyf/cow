@@ -20,14 +20,13 @@ shadowPasswd = barfoo!
 core = 2
 
 # Update blocked domain list (~/.cow/auto-blocked)
-updateBlocked = true
+updateBlocked = false
 
 # Update directly accessable domain list (~/.cow/auto-direct)
-updateDirect = true
+updateDirect = false
 
-# Automatically retry timeout request instead of sending back error page
-# Don't enable this under bad network condition
-autoRetry = false
+# Automatically retry all potential blocked request instead of sending back error page
+autoRetry = true
 
 # detect SSL error based on how soon client closes connection, not reliable
 detectSSLErr = true

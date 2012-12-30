@@ -126,7 +126,7 @@ func sendBlockedErrorPage(w io.Writer, codeReason, h1, msg string, r *Request) {
 	// If host is IP or in always DS, we can't add it to blocked or direct domain list. Just
 	// return ordinary error page.
 	h, _ := splitHostPort(r.URL.Host)
-	if hostIsIP(r.URL.Host) || isHostInAlwaysDs(h) {
+	if hostIsIP(r.URL.Host) || domainSet.isHostInAlwaysDs(h) {
 		sendErrorPage(w, codeReason, h1, msg)
 		return
 	}
@@ -145,7 +145,7 @@ func sendBlockedErrorPage(w io.Writer, codeReason, h1, msg string, r *Request) {
 		errl.Println("Error generating blocked form:", err)
 		return
 	}
-	if !isHostDirect(h) {
+	if !domainSet.isHostDirect(h) {
 		if err := directFormTmpl.Execute(buf, data); err != nil {
 			errl.Println("Error generating direct form:", err)
 			return
