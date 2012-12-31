@@ -339,19 +339,22 @@ func (c *clientConn) handleBlockedRequest(r *Request, err error, msg string) err
 			return errRetry
 		}
 		errCode = errCodeReset
-	} else if domainSet.isHostChouFeng(r.URL.Host) || (isErrTimeout(err) && config.AutoRetry) {
+	} else if domainSet.isHostChouFeng(r.URL.Host) || config.AutoRetry {
+		// err must be timeout here
 		// Domain in chou domain set is likely to be blocked, should automatically
 		// restart request using parent proxy.
 		// If autoRetry is enabled, treat timeout domain as chou and retry.
 		if domainSet.addChouHost(r.URL.Host) {
 			return errRetry
 		}
-		errCode = errCodeTimeout
 	}
 
+	if errCode == "" {
+		errCode = errCodeTimeout
+	}
 	msg += genBlockedSiteMsg(r)
 	// Let user decide what to do with with timeout error if autoRetry is not enabled
-	if !config.AutoRetry && errCode == errCodeTimeout && r.responseNotSent() {
+	if !config.AutoRetry && isErrTimeout(err) && r.responseNotSent() {
 		sendBlockedErrorPage(c, errCode, err.Error(), msg, r)
 		return errPageSent
 	}
@@ -621,7 +624,7 @@ func (c *clientConn) createConnection(host string, r *Request) (srvconn conn, er
 			var socksErr error
 			if srvconn, socksErr = createParentProxyConnection(host); socksErr == nil {
 				handRes := c.handleBlockedRequest(r, err,
-					genErrMsg(r, "create direct connection")+genBlockedSiteMsg(r))
+					genErrMsg(r, "Create direct connection."))
 				if handRes == errRetry {
 					debug.Println("direct connection failed, use socks connection for ", r)
 					return srvconn, nil
