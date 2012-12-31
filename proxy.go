@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"os"
 	// "reflect"
 	"strconv"
 	"strings"
@@ -86,6 +85,7 @@ type clientConn struct {
 	bufRd      *bufio.Reader
 	serverConn map[string]*serverConn // request serverConn, host:port as key
 	buf        []byte                 // buffer for reading request, avoids repeatedly allocating buffer
+	proxy      *Proxy
 }
 
 var (
@@ -108,7 +108,7 @@ func (py *Proxy) Serve() {
 	ln, err := net.Listen("tcp", py.addr)
 	if err != nil {
 		fmt.Println("Server creation failed:", err)
-		os.Exit(1)
+		return
 	}
 	info.Printf("COW proxy address %s, PAC url %s\n", py.addr, "http://"+py.addr+"/pac")
 
@@ -121,7 +121,7 @@ func (py *Proxy) Serve() {
 		if debug {
 			debug.Println("New Client:", conn.RemoteAddr())
 		}
-		c := newClientConn(conn)
+		c := newClientConn(conn, py)
 		go c.serve()
 	}
 }
@@ -130,11 +130,12 @@ func (py *Proxy) Serve() {
 // bufio.Reader's Read
 const bufSize = 4096
 
-func newClientConn(rwc net.Conn) *clientConn {
+func newClientConn(rwc net.Conn, proxy *Proxy) *clientConn {
 	c := &clientConn{
 		Conn:       rwc,
 		serverConn: map[string]*serverConn{},
 		bufRd:      bufio.NewReaderSize(rwc, bufSize),
+		proxy:      proxy,
 	}
 	return c
 }
@@ -151,7 +152,7 @@ func (c *clientConn) close() {
 }
 
 func isSelfURL(url string) bool {
-	return url == "" || url == selfURLLH || url == selfURL127
+	return url == ""
 }
 
 func (c *clientConn) getRequest() (r *Request) {

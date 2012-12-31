@@ -5,16 +5,12 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"path"
 	"reflect"
 	"strconv"
 	"strings"
-)
-
-var (
-	selfURL127 string // 127.0.0.1:listenAddr
-	selfURLLH  string // localhost:listenAddr
 )
 
 const (
@@ -24,7 +20,7 @@ const (
 
 type Config struct {
 	RcFile        string // config file
-	ListenAddr    string
+	ListenAddr    []string
 	SocksAddr     string
 	Core          int
 	SshServer     string
@@ -75,8 +71,9 @@ func init() {
 
 func parseCmdLineConfig() *Config {
 	var c Config
+	var listenAddr string
 	flag.StringVar(&c.RcFile, "rc", path.Join(dsFile.dir, rcFname), "configuration file")
-	flag.StringVar(&c.ListenAddr, "listen", "", "proxy server listen address, default to "+defaultListenAddr)
+	flag.StringVar(&listenAddr, "listen", "", "proxy server listen address, default to "+defaultListenAddr)
 	flag.StringVar(&c.SocksAddr, "socks", "", "socks proxy address")
 	flag.IntVar(&c.Core, "core", 2, "number of cores to use")
 	flag.StringVar(&c.SshServer, "sshServer", "", "remote server which will ssh to and provide sock server")
@@ -97,6 +94,9 @@ func parseCmdLineConfig() *Config {
 	// flag.BoolVar(&c.AlwaysProxy, "alwaysProxy", false, "always use parent proxy")
 
 	flag.Parse()
+	if listenAddr != "" {
+		c.ListenAddr = []string{listenAddr}
+	}
 	return &c
 }
 
@@ -116,7 +116,30 @@ func parseBool(v string, msg string) bool {
 type configParser struct{}
 
 func (p configParser) ParseListen(val string) {
-	config.ListenAddr = val
+	arr := strings.Split(val, ",")
+	config.ListenAddr = make([]string, 0, len(arr))
+	for _, s := range arr {
+		s = strings.TrimSpace(s)
+		h, port := splitHostPort(s)
+		if port == "" {
+			fmt.Printf("listen address %s has no port\n", s)
+			os.Exit(1)
+		}
+		if h == "" || h == "0.0.0.0" {
+			addrs, err := hostIP()
+			if err != nil {
+				fmt.Println("Can't determine host IP address")
+				fmt.Println("Specify specific host IP address or correct network settings.")
+				os.Exit(1)
+			}
+			for _, ad := range addrs {
+				// fmt.Println("host addr:", ad)
+				config.ListenAddr = append(config.ListenAddr, net.JoinHostPort(ad, port))
+			}
+		} else {
+			config.ListenAddr = append(config.ListenAddr, s)
+		}
+	}
 }
 
 func isServerAddrValid(val string) bool {
@@ -271,13 +294,10 @@ func updateConfig(new *Config) {
 			}
 		}
 	}
-	if config.ListenAddr == "" {
-		config.ListenAddr = defaultListenAddr
+	if new.ListenAddr != nil {
+		config.ListenAddr = new.ListenAddr
 	}
-}
-
-func setSelfURL() {
-	_, port := splitHostPort(config.ListenAddr)
-	selfURL127 = "127.0.0.1:" + port
-	selfURLLH = "localhost:" + port
+	if config.ListenAddr == nil {
+		config.ListenAddr = []string{defaultListenAddr}
+	}
 }

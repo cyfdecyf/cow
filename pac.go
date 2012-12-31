@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"io"
 	"os"
 	"strings"
 	"text/template"
@@ -12,12 +11,11 @@ import (
 var pac struct {
 	template        *template.Template
 	topLevelDomain  string
-	proxyServerAddr string
 }
 
 func init() {
 	const pacRawTmpl = `var direct = 'DIRECT';
-var httpProxy = '{{.ProxyAddr}}';
+var httpProxy = 'PROXY {{.ProxyAddr}}; DIRECT';
 
 var directList = [
 "localhost",
@@ -71,31 +69,11 @@ function FindProxyForURL(url, host) {
 	pac.topLevelDomain = buf.String()[:buf.Len()-2] // remove the final comma
 }
 
-func initProxyServerAddr() {
-	listen, port := splitHostPort(config.ListenAddr)
-	if listen == "0.0.0.0" {
-		addrs, err := hostIP()
-		if err != nil {
-			errl.Println("Either change listen address to specific IP, or correct your host network settings.")
-			os.Exit(1)
-		}
-
-		for _, ip := range addrs {
-			pac.proxyServerAddr += fmt.Sprintf("PROXY %s:%s; ", ip, port)
-		}
-		pac.proxyServerAddr += "DIRECT"
-		info.Printf("proxy listen address is %s, PAC will have proxy address: %s\n",
-			config.ListenAddr, pac.proxyServerAddr)
-	} else {
-		pac.proxyServerAddr = fmt.Sprintf("PROXY %s; DIRECT", config.ListenAddr)
-	}
-}
-
 // No need for content-length as we are closing connection
 var pacHeader = []byte("HTTP/1.1 200 OK\r\nServer: cow-proxy\r\n" +
 	"Content-Type: application/x-ns-proxy-autoconfig\r\nConnection: close\r\n\r\n")
 
-func sendPAC(w io.Writer) {
+func sendPAC(c *clientConn) {
 	// domains in PAC file needs double quote
 	ds1 := strings.Join(domainSet.alwaysDirect.toSlice(), "\",\n\"")
 	ds2 := strings.Join(domainSet.direct.toSlice(), "\",\n\"")
@@ -109,10 +87,10 @@ func sendPAC(w io.Writer) {
 	}
 	if ds == "" {
 		// Empty direct domain list
-		w.Write(pacHeader)
-		pacproxy := fmt.Sprintf("function FindProxyForURL(url, host) { return '%s'; };",
-			pac.proxyServerAddr)
-		w.Write([]byte(pacproxy))
+		c.Write(pacHeader)
+		pacproxy := fmt.Sprintf("function FindProxyForURL(url, host) { return 'PROXY %s; DIRECT'; };",
+			c.proxy.addr)
+		c.Write([]byte(pacproxy))
 		return
 	}
 
@@ -121,12 +99,12 @@ func sendPAC(w io.Writer) {
 		DirectDomains string
 		TopLevel      string
 	}{
-		pac.proxyServerAddr,
+		c.proxy.addr,
 		",\n\"" + ds + "\"",
 		pac.topLevelDomain,
 	}
 
-	if _, err := w.Write(pacHeader); err != nil {
+	if _, err := c.Write(pacHeader); err != nil {
 		debug.Println("Error writing pac header")
 		return
 	}
@@ -135,7 +113,7 @@ func sendPAC(w io.Writer) {
 	if err := pac.template.Execute(buf, data); err != nil {
 		errl.Println("Error generating pac file:", err)
 	}
-	if _, err := w.Write(buf.Bytes()); err != nil {
+	if _, err := c.Write(buf.Bytes()); err != nil {
 		debug.Println("Error writing pac content:", err)
 	}
 }

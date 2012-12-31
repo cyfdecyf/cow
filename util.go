@@ -2,8 +2,8 @@ package main
 
 import (
 	"bufio"
-	// "fmt"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -93,13 +93,13 @@ func isDirExists(path string) (bool, error) {
 func hostIP() (addrs []string, err error) {
 	name, err := os.Hostname()
 	if err != nil {
-		errl.Printf("Error get host name: %v\n", err)
+		fmt.Printf("Error get host name: %v\n", err)
 		return
 	}
 
 	addrs, err = net.LookupHost(name)
 	if err != nil {
-		errl.Printf("Error getting host IP address: %v\n", err)
+		fmt.Printf("Error getting host IP address: %v\n", err)
 		return
 	}
 	return

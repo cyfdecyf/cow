@@ -40,7 +40,6 @@ func main() {
 
 	initLog()
 
-	initProxyServerAddr()
 	initSocksServer()
 	initShadowSocks()
 
@@ -49,8 +48,6 @@ func main() {
 	} else {
 		hasParentProxy = true
 	}
-
-	setSelfURL()
 
 	domainSet.load()
 	/*
@@ -77,6 +74,10 @@ func main() {
 	go sigHandler()
 	go runSSH()
 
-	py := NewProxy(config.ListenAddr)
-	py.Serve()
+	if len(config.ListenAddr) > 1 {
+		for _, addr := range config.ListenAddr[1:] {
+			go NewProxy(addr).Serve()
+		}
+	}
+	NewProxy(config.ListenAddr[0]).Serve()
 }

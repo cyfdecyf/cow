@@ -24,14 +24,14 @@ var errPageRawTmpl = `<!DOCTYPE html>
 
 var blockedFormRawTmpl = `<p></p>
 		<b>Refresh to retry</b> or add <b>{{.Domain}}</b> to
-		<form action="http://{{.ListenAddr}}/blocked" method="get">
+		<form action="http://{{.ProxyAddr}}/blocked" method="get">
 		<input type="hidden" name="host" value={{.Host}}>
 		<b>blocked sites</b>
 		<input type="submit" name="submit" value="blocked">
 		</form>
 `
 
-var directFormRawTmpl = `<form action="http://{{.ListenAddr}}/direct" method="get">
+var directFormRawTmpl = `<form action="http://{{.ProxyAddr}}/direct" method="get">
 		<input type="hidden" name="host" value={{.Host}}>
 		<b>direct accessible sites</b>
 		<input type="submit" name="submit" value="direct">
@@ -122,21 +122,21 @@ func sendRedirectPage(w io.Writer, location string) {
 		"", fmt.Sprintf("Location: %s\r\n", location))
 }
 
-func sendBlockedErrorPage(w io.Writer, codeReason, h1, msg string, r *Request) {
+func sendBlockedErrorPage(c *clientConn, codeReason, h1, msg string, r *Request) {
 	// If host is IP or in always DS, we can't add it to blocked or direct domain list. Just
 	// return ordinary error page.
 	h, _ := splitHostPort(r.URL.Host)
 	if hostIsIP(r.URL.Host) || domainSet.isHostInAlwaysDs(h) {
-		sendErrorPage(w, codeReason, h1, msg)
+		sendErrorPage(c, codeReason, h1, msg)
 		return
 	}
 
 	data := struct {
-		ListenAddr string
-		Host       string
-		Domain     string
+		ProxyAddr string
+		Host      string
+		Domain    string
 	}{
-		config.ListenAddr,
+		c.proxy.addr,
 		h,
 		host2Domain(r.URL.Host),
 	}
@@ -151,5 +151,5 @@ func sendBlockedErrorPage(w io.Writer, codeReason, h1, msg string, r *Request) {
 			return
 		}
 	}
-	sendPageGeneric(w, codeReason, "[Error] "+h1, msg, buf.String(), "")
+	sendPageGeneric(c, codeReason, "[Error] "+h1, msg, buf.String(), "")
 }
