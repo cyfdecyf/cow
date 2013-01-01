@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"net"
 	"errors"
 	"fmt"
 	"io"
@@ -163,9 +164,9 @@ func ParseRequestURI(rawurl string) (*URL, error) {
 	_, port := splitHostPort(host)
 	if port == "" {
 		if len(scheme) == 4 {
-			host += ":80"
+			host = net.JoinHostPort(host, "80")
 		} else {
-			host += ":443"
+			host = net.JoinHostPort(host, "443")
 		}
 	}
 
