@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"net"
 	"strings"
 	"text/template"
 )
@@ -94,12 +95,15 @@ func sendPAC(c *clientConn) {
 		return
 	}
 
+	host, _ := splitHostPort(c.LocalAddr().String())
+	_, port := splitHostPort(c.proxy.addr)
+
 	data := struct {
 		ProxyAddr     string
 		DirectDomains string
 		TopLevel      string
 	}{
-		c.proxy.addr,
+		net.JoinHostPort(host, port),
 		",\n\"" + ds + "\"",
 		pac.topLevelDomain,
 	}

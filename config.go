@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"net"
 	"os"
 	"path"
 	"reflect"
@@ -117,28 +116,22 @@ type configParser struct{}
 
 func (p configParser) ParseListen(val string) {
 	arr := strings.Split(val, ",")
-	config.ListenAddr = make([]string, 0, len(arr))
-	for _, s := range arr {
+	config.ListenAddr = make([]string, len(arr), len(arr))
+	for i, s := range arr {
 		s = strings.TrimSpace(s)
-		h, port := splitHostPort(s)
+		host, port := splitHostPort(s)
 		if port == "" {
 			fmt.Printf("listen address %s has no port\n", s)
 			os.Exit(1)
 		}
-		if h == "" || h == "0.0.0.0" {
-			addrs, err := hostIP()
-			if err != nil {
-				fmt.Println("Can't determine host IP address")
-				fmt.Println("Specify specific host IP address or correct network settings.")
+		if host == "" || host == "0.0.0.0" {
+			if len(arr) > 1 {
+				fmt.Printf("Too much listen addresses: "+
+					"%s represents all ip addresses on this host.\n", s)
 				os.Exit(1)
 			}
-			for _, ad := range addrs {
-				// fmt.Println("host addr:", ad)
-				config.ListenAddr = append(config.ListenAddr, net.JoinHostPort(ad, port))
-			}
-		} else {
-			config.ListenAddr = append(config.ListenAddr, s)
 		}
+		config.ListenAddr[i] = s
 	}
 }
 

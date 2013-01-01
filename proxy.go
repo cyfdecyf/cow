@@ -110,7 +110,12 @@ func (py *Proxy) Serve() {
 		fmt.Println("Server creation failed:", err)
 		return
 	}
-	info.Printf("COW proxy address %s, PAC url %s\n", py.addr, "http://"+py.addr+"/pac")
+	host, port := splitHostPort(py.addr)
+	if host == "" || host == "0.0.0.0" {
+		info.Printf("COW proxy address %s, PAC url http://<hostip>:%s/pac\n", py.addr, port)
+	} else {
+		info.Printf("COW proxy address %s, PAC url http://%s/pac\n", py.addr, py.addr)
+	}
 
 	for {
 		conn, err := ln.Accept()
