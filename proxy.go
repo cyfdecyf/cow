@@ -251,6 +251,7 @@ func (c *clientConn) serve() {
 	var r *Request
 	var err error
 	var sv *serverConn
+	authed := false
 
 	// Refer to implementation.md for the design choices on parsing the request
 	// and response.
@@ -268,6 +269,14 @@ func (c *clientConn) serve() {
 				return
 			}
 			continue
+		}
+
+		if !authed {
+			if auth.required && !authenticate(c, r) {
+				debug.Println("Authentication failed for client", c.RemoteAddr())
+				// return
+			}
+			authed = true
 		}
 
 	retry:
