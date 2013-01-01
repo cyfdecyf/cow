@@ -104,7 +104,10 @@ func NewProxy(addr string) *Proxy {
 	return &Proxy{addr: addr}
 }
 
-func (py *Proxy) Serve() {
+func (py *Proxy) Serve(done chan byte) {
+	defer func() {
+		done <- 1
+	}()
 	ln, err := net.Listen("tcp", py.addr)
 	if err != nil {
 		fmt.Println("Server creation failed:", err)

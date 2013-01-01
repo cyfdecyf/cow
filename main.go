@@ -74,10 +74,15 @@ func main() {
 	go sigHandler()
 	go runSSH()
 
+	done := make(chan byte, 1)
+	// save 1 goroutine (a few KB) for the common case with only 1 listen address
 	if len(config.ListenAddr) > 1 {
 		for _, addr := range config.ListenAddr[1:] {
-			go NewProxy(addr).Serve()
+			go NewProxy(addr).Serve(done)
 		}
 	}
-	NewProxy(config.ListenAddr[0]).Serve()
+	NewProxy(config.ListenAddr[0]).Serve(done)
+	for i := 0; i < len(config.ListenAddr); i++ {
+		<-done
+	}
 }
