@@ -88,7 +88,7 @@ type DomainSet struct {
 	alwaysBlocked dmSet
 	alwaysDirect  dmSet
 
-	chouTime chouBlockTime
+	chouSet *TimeoutSet
 }
 
 func newDomainSet() *DomainSet {
@@ -100,46 +100,11 @@ func newDomainSet() *DomainSet {
 	ds.alwaysBlocked = newDmSet()
 	ds.alwaysDirect = newDmSet()
 
-	ds.chouTime = chouBlockTime{time: map[string]time.Time{}}
+	ds.chouSet = NewTimeoutSet(chouTimeout)
 	return ds
 }
 
 var domainSet = newDomainSet()
-
-// Record when is the domain added to chou domain set
-type chouBlockTime struct {
-	sync.RWMutex
-	time map[string]time.Time
-}
-
-func (cb *chouBlockTime) add(dm string) {
-	now := time.Now()
-	cb.Lock()
-	cb.time[dm] = now
-	cb.Unlock()
-	debug.Printf("chou domain %s blocked at %v\n", dm, now)
-}
-
-func (cb *chouBlockTime) has(dm string) bool {
-	cb.RLock()
-	t, ok := cb.time[dm]
-	cb.RUnlock()
-	if !ok {
-		return false
-	}
-	if time.Now().Sub(t) > chouTimeout {
-		cb.del(dm)
-		return false
-	}
-	return true
-}
-
-func (cb *chouBlockTime) del(dm string) {
-	cb.Lock()
-	delete(cb.time, dm)
-	cb.Unlock()
-	debug.Printf("chou domain %s block time unset\n", dm)
-}
 
 func (ds *DomainSet) isHostInAlwaysDs(host string) bool {
 	dm := host2Domain(host)
@@ -162,7 +127,7 @@ func (ds *DomainSet) isHostBlocked(host string) bool {
 	if ds.alwaysBlocked[dm] {
 		return true
 	}
-	if ds.chouTime.has(dm) {
+	if ds.chouSet.has(dm) {
 		return true
 	}
 	return ds.blocked.has(dm)
@@ -186,10 +151,11 @@ func (ds *DomainSet) isHostChouFeng(host string) bool {
 func (ds *DomainSet) addChouHost(host string) bool {
 	dm := host2Domain(host)
 	if ds.isHostAlwaysDirect(host) || dm == "localhost" ||
-		hostIsIP(host) || ds.chouTime.has(dm) {
+		hostIsIP(host) || ds.chouSet.has(dm) {
 		return false
 	}
-	ds.chouTime.add(dm)
+	ds.chouSet.add(dm)
+	debug.Printf("domain %s blocked\n", dm)
 	return true
 }
 
