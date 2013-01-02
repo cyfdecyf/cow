@@ -3,19 +3,20 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"net"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"strconv"
 	"strings"
 )
 
 type Header struct {
-	ContLen   int64
-	Chunking  bool
-	KeepAlive bool
-	Referer   string
+	ContLen            int64
+	Chunking           bool
+	KeepAlive          bool
+	Referer            string
+	ProxyAuthorization string
 }
 
 type rqState byte
@@ -99,11 +100,12 @@ func (url *URL) toURI() string {
 // See more at http://homepage.ntlworld.com/jonathan.deboynepollard/FGA/web-proxy-connection-header.html
 // TODO: parse Keep-Alive header so we know when the server will close connection
 const (
-	headerContentLength    = "content-length"
-	headerTransferEncoding = "transfer-encoding"
-	headerConnection       = "connection"
-	headerProxyConnection  = "proxy-connection"
-	headerReferer          = "referer"
+	headerContentLength      = "content-length"
+	headerTransferEncoding   = "transfer-encoding"
+	headerConnection         = "connection"
+	headerProxyConnection    = "proxy-connection"
+	headerReferer            = "referer"
+	headerProxyAuthorization = "proxy-authorization"
 )
 
 // For port, return empty string if no port specified.
@@ -201,15 +203,21 @@ func (h *Header) parseReferer(s string) error {
 	return nil
 }
 
+func (h *Header) parseProxyAuthorization(s string) error {
+	h.ProxyAuthorization = strings.TrimSpace(s)
+	return nil
+}
+
 type HeaderParserFunc func(*Header, string) error
 
 // Using Go's method expression
 var headerParser = map[string]HeaderParserFunc{
-	headerConnection:       (*Header).parseConnection,
-	headerProxyConnection:  (*Header).parseConnection,
-	headerContentLength:    (*Header).parseContentLength,
-	headerTransferEncoding: (*Header).parseTransferEncoding,
-	headerReferer:          (*Header).parseReferer,
+	headerConnection:         (*Header).parseConnection,
+	headerProxyConnection:    (*Header).parseConnection,
+	headerContentLength:      (*Header).parseContentLength,
+	headerTransferEncoding:   (*Header).parseTransferEncoding,
+	headerReferer:            (*Header).parseReferer,
+	headerProxyAuthorization: (*Header).parseProxyAuthorization,
 }
 
 // Only add headers that are of interest for a proxy into request's header map.
