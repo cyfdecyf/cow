@@ -215,29 +215,32 @@ var headerParser = map[string]HeaderParserFunc{
 // Only add headers that are of interest for a proxy into request's header map.
 func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, url *URL) (err error) {
 	// Read request header and body
-	var s, name, val string
+	var s, name, val, lastLine string
 	for {
 		if s, err = ReadLine(reader); err != nil {
 			return
 		}
-		if s == "" {
+		if s == "" { // end of headers
 			return
 		}
-		if s[0] == ' ' || s[0] == '\t' {
-			// TODO multiple line header, should append to last line value if
-			// it's of interest to proxy
-			errl.Println("Encounter multi-line header:", url)
+		if (s[0] == ' ' || s[0] == '\t') && lastLine != "" { // multi-line header
+			s = lastLine + " " + s // combine previous line with current line
+			errl.Printf("Encounter multi-line header: %v %s", url, s)
+		}
+		if name, val, err = splitHeader(s); err != nil {
+			return
+		}
+		if parseFunc, ok := headerParser[name]; ok {
+			lastLine = s
+			parseFunc(h, val)
+			if name == headerConnection ||
+				name == headerProxyConnection ||
+				name == headerProxyAuthorization {
+				continue
+			}
 		} else {
-			if name, val, err = splitHeader(s); err != nil {
-				return
-			}
-			if parseFunc, ok := headerParser[name]; ok {
-				parseFunc(h, val)
-				if name == headerConnection || name == headerProxyConnection {
-					// Don't pass connection header to server or client
-					continue
-				}
-			}
+			// mark this header as not of interest to proxy
+			lastLine = ""
 		}
 		raw.WriteString(s)
 		raw.Write(CRLFbytes)
