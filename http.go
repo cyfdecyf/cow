@@ -283,7 +283,7 @@ func parseRequest(reader *bufio.Reader) (r *Request, err error) {
 	// debug.Printf("Request initial line %s", s)
 
 	var f []string
-	if f = strings.SplitN(s, " ", 3); len(f) < 3 {
+	if f = strings.SplitN(s, " ", 3); len(f) < 3 { // request line are separated by SP
 		return nil, errors.New(fmt.Sprintf("malformed HTTP request: %s", s))
 	}
 	var requestURI string
@@ -363,7 +363,7 @@ START:
 		return nil, err
 	}
 	var f []string
-	if f = strings.SplitN(s, " ", 3); len(f) < 2 {
+	if f = strings.SplitN(s, " ", 3); len(f) < 2 { // status line are separated by SP
 		errl.Printf("Malformed HTTP response status line: %s %v\n", s, r)
 		return nil, malformedHTTPResponseErr
 	}
@@ -406,4 +406,26 @@ START:
 	rp.raw.Write(CRLFbytes)
 
 	return rp, nil
+}
+
+func unquote(s string) string {
+	return strings.Trim(s, "\"")
+}
+
+func parseKeyValueList(str string) map[string]string {
+	res := make(map[string]string)
+	list := strings.Split(str, ",")
+	if len(list) == 1 && list[0] == "" {
+		return res
+	}
+	for _, ele := range list {
+		kv := strings.SplitN(strings.TrimSpace(ele), "=", 2)
+		if len(kv) != 2 {
+			errl.Println("no equal sign in key value list element:", ele)
+			return nil
+		}
+		key, val := kv[0], unquote(kv[1])
+		res[key] = val
+	}
+	return res
 }
