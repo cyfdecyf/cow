@@ -155,9 +155,7 @@ func authUserPasswd(conn *clientConn, r *Request, nonce string) (string, error) 
 		}
 	}
 
-	if nonce == "" {
-		nonce = genNonce()
-	}
+	nonce = genNonce()
 	data := struct {
 		Nonce string
 	}{
@@ -168,8 +166,7 @@ func authUserPasswd(conn *clientConn, r *Request, nonce string) (string, error) 
 		errl.Println("Error generating auth response:", err)
 		return "", errInternal
 	}
-	debug.Println("auth response:")
-	debug.Printf(buf.String())
+	debug.Printf("authorization response:", buf.String())
 	if _, err := conn.Write(buf.Bytes()); err != nil {
 		errl.Println("Sending auth response error:", err)
 		return "", errShouldClose
