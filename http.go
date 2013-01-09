@@ -413,11 +413,11 @@ func unquote(s string) string {
 }
 
 func parseKeyValueList(str string) map[string]string {
-	res := make(map[string]string)
 	list := strings.Split(str, ",")
 	if len(list) == 1 && list[0] == "" {
-		return res
+		return nil
 	}
+	res := make(map[string]string)
 	for _, ele := range list {
 		kv := strings.SplitN(strings.TrimSpace(ele), "=", 2)
 		if len(kv) != 2 {
