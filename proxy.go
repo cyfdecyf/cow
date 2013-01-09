@@ -98,6 +98,8 @@ var (
 
 	errChunkedEncode = errors.New("Invalid chunked encoding")
 	errMalformHeader = errors.New("Malformed HTTP header")
+	errBadRequest    = errors.New("Bad request")
+	errAuthRequired  = errors.New("Authentication requried")
 )
 
 func NewProxy(addr string) *Proxy {
@@ -248,9 +250,14 @@ end:
 
 func (c *clientConn) serve() {
 	defer c.close()
+
 	var r *Request
 	var err error
 	var sv *serverConn
+
+	var authed bool
+	var authCnt int
+	var nonce string
 
 	// Refer to implementation.md for the design choices on parsing the request
 	// and response.
@@ -263,11 +270,25 @@ func (c *clientConn) serve() {
 		}
 
 		if isSelfURL(r.URL.Host) {
-			// Send PAC file if requesting self
 			if err = c.serveSelfURL(r); err != nil {
 				return
 			}
 			continue
+		}
+
+		if auth.required && !authed {
+			if authCnt > 5 {
+				return
+			}
+			if nonce, err = authenticate(c, r, nonce); err != nil {
+				if err == errAuthRequired {
+					authCnt++
+					continue
+				} else {
+					return
+				}
+			}
+			authed = true
 		}
 
 	retry:
@@ -339,6 +360,7 @@ func genBlockedSiteMsg(r *Request) string {
 const (
 	errCodeReset   = "502 connection reset"
 	errCodeTimeout = "504 time out reading response"
+	errCodeBadReq  = "400 bad request"
 )
 
 func (c *clientConn) handleBlockedRequest(r *Request, err error, msg string) error {

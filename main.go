@@ -35,11 +35,10 @@ func main() {
 	}
 
 	parseConfig(cmdLineConfig.RcFile)
-	// need to update config
 	updateConfig(cmdLineConfig)
 
 	initLog()
-
+	initAuth()
 	initSocksServer()
 	initShadowSocks()
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"crypto/md5"
 	"errors"
 	"fmt"
 	"io"
@@ -189,4 +190,12 @@ func copyN(r io.Reader, w, contBuf io.Writer, n int, buf, pre, end []byte) (err 
 		}
 	}
 	return
+}
+
+func md5sum(ss ...string) string {
+	h := md5.New()
+	for _, s := range ss {
+		io.WriteString(h, s)
+	}
+	return fmt.Sprintf("%x", h.Sum(nil))
 }

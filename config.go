@@ -31,6 +31,8 @@ type Config struct {
 	AlwaysProxy   bool
 	ShadowSocks   string
 	ShadowPasswd  string
+	UserPasswd    string
+	AuthTimeout   int // in hour
 
 	// not configurable in config file
 	PrintVer bool
@@ -79,6 +81,8 @@ func parseCmdLineConfig() *Config {
 	flag.StringVar(&c.LogFile, "logFile", "", "write output to file, empty means stdout")
 	flag.StringVar(&c.ShadowSocks, "shadowSocks", "", "shadowsocks server address")
 	flag.StringVar(&c.ShadowPasswd, "shadowPasswd", "", "shadowsocks password")
+	flag.StringVar(&c.UserPasswd, "userPasswd", "", "user name and password for authentication")
+	flag.IntVar(&c.AuthTimeout, "authTimeout", 2, "authentication timeout, in hour")
 	flag.BoolVar(&c.PrintVer, "version", false, "print version")
 
 	// Bool options can't be specified on command line because the flag
@@ -96,6 +100,7 @@ func parseCmdLineConfig() *Config {
 	if listenAddr != "" {
 		c.ListenAddr = []string{listenAddr}
 	}
+	checkUserPasswd(c.UserPasswd)
 	return &c
 }
 
@@ -204,6 +209,33 @@ func (p configParser) ParseShadowSocks(val string) {
 
 func (p configParser) ParseShadowPasswd(val string) {
 	config.ShadowPasswd = val
+}
+
+func checkUserPasswd(val string) {
+	if val == "" {
+		return
+	}
+	arr := strings.SplitN(val, ":", 2)
+	if len(arr) != 2 || arr[0] == "" || arr[1] == "" {
+		fmt.Println("User password syntax wrong, should be in the form of user:passwd")
+		os.Exit(1)
+	}
+}
+
+func (p configParser) ParseUserPasswd(val string) {
+	checkUserPasswd(val)
+}
+
+func (p configParser) ParseAuthTimeout(val string) {
+	if val == "" {
+		return
+	}
+	var err error
+	config.AuthTimeout, err = strconv.Atoi(val)
+	if err != nil {
+		fmt.Printf("Config error: authTimeout %s %v", val, err)
+		os.Exit(1)
+	}
 }
 
 func parseConfig(path string) {

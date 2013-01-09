@@ -3,19 +3,20 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"net"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"strconv"
 	"strings"
 )
 
 type Header struct {
-	ContLen   int64
-	Chunking  bool
-	KeepAlive bool
-	Referer   string
+	ContLen            int64
+	Chunking           bool
+	KeepAlive          bool
+	Referer            string
+	ProxyAuthorization string
 }
 
 type rqState byte
@@ -99,11 +100,12 @@ func (url *URL) toURI() string {
 // See more at http://homepage.ntlworld.com/jonathan.deboynepollard/FGA/web-proxy-connection-header.html
 // TODO: parse Keep-Alive header so we know when the server will close connection
 const (
-	headerContentLength    = "content-length"
-	headerTransferEncoding = "transfer-encoding"
-	headerConnection       = "connection"
-	headerProxyConnection  = "proxy-connection"
-	headerReferer          = "referer"
+	headerContentLength      = "content-length"
+	headerTransferEncoding   = "transfer-encoding"
+	headerConnection         = "connection"
+	headerProxyConnection    = "proxy-connection"
+	headerReferer            = "referer"
+	headerProxyAuthorization = "proxy-authorization"
 )
 
 // For port, return empty string if no port specified.
@@ -201,43 +203,52 @@ func (h *Header) parseReferer(s string) error {
 	return nil
 }
 
+func (h *Header) parseProxyAuthorization(s string) error {
+	h.ProxyAuthorization = strings.TrimSpace(s)
+	return nil
+}
+
 type HeaderParserFunc func(*Header, string) error
 
 // Using Go's method expression
 var headerParser = map[string]HeaderParserFunc{
-	headerConnection:       (*Header).parseConnection,
-	headerProxyConnection:  (*Header).parseConnection,
-	headerContentLength:    (*Header).parseContentLength,
-	headerTransferEncoding: (*Header).parseTransferEncoding,
-	headerReferer:          (*Header).parseReferer,
+	headerConnection:         (*Header).parseConnection,
+	headerProxyConnection:    (*Header).parseConnection,
+	headerContentLength:      (*Header).parseContentLength,
+	headerTransferEncoding:   (*Header).parseTransferEncoding,
+	headerReferer:            (*Header).parseReferer,
+	headerProxyAuthorization: (*Header).parseProxyAuthorization,
 }
 
 // Only add headers that are of interest for a proxy into request's header map.
 func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, url *URL) (err error) {
 	// Read request header and body
-	var s, name, val string
+	var s, name, val, lastLine string
 	for {
 		if s, err = ReadLine(reader); err != nil {
 			return
 		}
-		if s == "" {
+		if s == "" { // end of headers
 			return
 		}
-		if s[0] == ' ' || s[0] == '\t' {
-			// TODO multiple line header, should append to last line value if
-			// it's of interest to proxy
-			errl.Println("Encounter multi-line header:", url)
+		if (s[0] == ' ' || s[0] == '\t') && lastLine != "" { // multi-line header
+			s = lastLine + " " + s // combine previous line with current line
+			errl.Printf("Encounter multi-line header: %v %s", url, s)
+		}
+		if name, val, err = splitHeader(s); err != nil {
+			return
+		}
+		if parseFunc, ok := headerParser[name]; ok {
+			lastLine = s
+			parseFunc(h, val)
+			if name == headerConnection ||
+				name == headerProxyConnection ||
+				name == headerProxyAuthorization {
+				continue
+			}
 		} else {
-			if name, val, err = splitHeader(s); err != nil {
-				return
-			}
-			if parseFunc, ok := headerParser[name]; ok {
-				parseFunc(h, val)
-				if name == headerConnection || name == headerProxyConnection {
-					// Don't pass connection header to server or client
-					continue
-				}
-			}
+			// mark this header as not of interest to proxy
+			lastLine = ""
 		}
 		raw.WriteString(s)
 		raw.Write(CRLFbytes)
@@ -272,7 +283,7 @@ func parseRequest(reader *bufio.Reader) (r *Request, err error) {
 	// debug.Printf("Request initial line %s", s)
 
 	var f []string
-	if f = strings.SplitN(s, " ", 3); len(f) < 3 {
+	if f = strings.SplitN(s, " ", 3); len(f) < 3 { // request line are separated by SP
 		return nil, errors.New(fmt.Sprintf("malformed HTTP request: %s", s))
 	}
 	var requestURI string
@@ -352,7 +363,7 @@ START:
 		return nil, err
 	}
 	var f []string
-	if f = strings.SplitN(s, " ", 3); len(f) < 2 {
+	if f = strings.SplitN(s, " ", 3); len(f) < 2 { // status line are separated by SP
 		errl.Printf("Malformed HTTP response status line: %s %v\n", s, r)
 		return nil, malformedHTTPResponseErr
 	}
@@ -395,4 +406,26 @@ START:
 	rp.raw.Write(CRLFbytes)
 
 	return rp, nil
+}
+
+func unquote(s string) string {
+	return strings.Trim(s, "\"")
+}
+
+func parseKeyValueList(str string) map[string]string {
+	list := strings.Split(str, ",")
+	if len(list) == 1 && list[0] == "" {
+		return nil
+	}
+	res := make(map[string]string)
+	for _, ele := range list {
+		kv := strings.SplitN(strings.TrimSpace(ele), "=", 2)
+		if len(kv) != 2 {
+			errl.Println("no equal sign in key value list element:", ele)
+			return nil
+		}
+		key, val := kv[0], unquote(kv[1])
+		res[key] = val
+	}
+	return res
 }

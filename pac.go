@@ -3,15 +3,15 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"os"
 	"net"
+	"os"
 	"strings"
 	"text/template"
 )
 
 var pac struct {
-	template        *template.Template
-	topLevelDomain  string
+	template       *template.Template
+	topLevelDomain string
 }
 
 func init() {
@@ -59,7 +59,7 @@ function FindProxyForURL(url, host) {
 	var err error
 	pac.template, err = template.New("pac").Parse(pacRawTmpl)
 	if err != nil {
-		fmt.Println("Internal error on generating pac file template")
+		fmt.Println("Internal error on generating pac file template:", err)
 		os.Exit(1)
 	}
 

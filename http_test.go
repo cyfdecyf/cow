@@ -78,3 +78,25 @@ func TestURLToURI(t *testing.T) {
 		}
 	}
 }
+
+func TestParseKeyValueList(t *testing.T) {
+	var testData = []struct {
+		str string
+		kvm map[string]string
+	}{
+		{"\tk1=\"v1\", k2=\"v2\",  \tk3=\"v3\"", map[string]string{"k1": "v1", "k2": "v2", "k3": "v3"}},
+		{"k1=\"v1\"", map[string]string{"k1": "v1"}},
+		{"", map[string]string{}},
+	}
+	for _, td := range testData {
+		kvm := parseKeyValueList(td.str)
+		if len(kvm) != len(td.kvm) {
+			t.Error("key value list parse error, element count not equal:", td.str, td.kvm)
+		}
+		for k, v := range td.kvm {
+			if kvm[k] != v {
+				t.Error("key value list parse error:", td.str, "for element:", k, v, "got:", kvm[k])
+			}
+		}
+	}
+}
