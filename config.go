@@ -31,6 +31,7 @@ type Config struct {
 	AlwaysProxy   bool
 	ShadowSocks   string
 	ShadowPasswd  string
+	ShadowMethod  string // shadowsocks encryption method
 	UserPasswd    string
 	AuthTimeout   int // in hour
 
@@ -81,6 +82,7 @@ func parseCmdLineConfig() *Config {
 	flag.StringVar(&c.LogFile, "logFile", "", "write output to file, empty means stdout")
 	flag.StringVar(&c.ShadowSocks, "shadowSocks", "", "shadowsocks server address")
 	flag.StringVar(&c.ShadowPasswd, "shadowPasswd", "", "shadowsocks password")
+	flag.StringVar(&c.ShadowMethod, "shadowMethod", "", "shadowsocks encryption method, empty string or rc4")
 	flag.StringVar(&c.UserPasswd, "userPasswd", "", "user name and password for authentication")
 	flag.IntVar(&c.AuthTimeout, "authTimeout", 2, "authentication timeout, in hour")
 	flag.BoolVar(&c.PrintVer, "version", false, "print version")
@@ -209,6 +211,10 @@ func (p configParser) ParseShadowSocks(val string) {
 
 func (p configParser) ParseShadowPasswd(val string) {
 	config.ShadowPasswd = val
+}
+
+func (p configParser) ParseShadowMethod(val string) {
+	config.ShadowMethod = val
 }
 
 func checkUserPasswd(val string) {
