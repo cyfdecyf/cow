@@ -125,16 +125,16 @@ func initAuth() {
 
 // Return err = nil if authentication succeed. nonce would be not empty if
 // authentication is needed, and should be passed back on subsequent call.
-func Authenticate(conn *clientConn, r *Request, nonce string) (nc string, err error) {
+func Authenticate(conn *clientConn, r *Request) (err error) {
 	clientIP, _ := splitHostPort(conn.RemoteAddr().String())
 	if auth.authed.has(clientIP) {
 		debug.Printf("%s has already authed\n", clientIP)
 		return
 	}
 	if authIP(clientIP) { // IP is allowed
-		return "", nil
+		return
 	}
-	nc, err = authUserPasswd(conn, r, nonce)
+	err = authUserPasswd(conn, r)
 	if err == nil {
 		auth.authed.add(clientIP)
 	}
@@ -161,7 +161,6 @@ func authIP(clientIP string) bool {
 func genNonce() string {
 	buf := new(bytes.Buffer)
 	fmt.Fprintf(buf, "%x", time.Now().Unix())
-	fmt.Fprintf(buf, "%x", rand.Int63())
 	return buf.String()
 }
 
@@ -182,8 +181,8 @@ func calcRequestDigest(kv map[string]string, ha1, method string) string {
 	return md5sum(buf.String())
 }
 
-func checkProxyAuthorization(r *Request, nonce string) error {
-	errl.Println("authorization:", r.ProxyAuthorization)
+func checkProxyAuthorization(r *Request) error {
+	debug.Println("authorization:", r.ProxyAuthorization)
 	arr := strings.SplitN(r.ProxyAuthorization, " ", 2)
 	if len(arr) != 2 {
 		errl.Println("auth: malformed ProxyAuthorization header:", r.ProxyAuthorization)
@@ -198,8 +197,17 @@ func checkProxyAuthorization(r *Request, nonce string) error {
 		errl.Println("auth: empty authorization list")
 		return errBadRequest
 	}
-	if authHeader["nonce"] != nonce || authHeader["username"] != auth.user {
-		errl.Println("auth: nonce or username mismatch:", nonce, authHeader["username"])
+	nonceTime, err := strconv.ParseInt(authHeader["nonce"], 16, 64)
+	if err != nil {
+		return err
+	}
+	// If nonce time too early, reject. iOS will create a new connection to do
+	// authenticate.
+	if time.Now().Sub(time.Unix(nonceTime, 0)) > time.Minute {
+		return errAuthRequired
+	}
+	if authHeader["username"] != auth.user {
+		errl.Println("auth: username mismatch:", authHeader["username"])
 		return errAuthRequired
 	}
 	if authHeader["qop"] != "auth" {
@@ -220,19 +228,19 @@ func checkProxyAuthorization(r *Request, nonce string) error {
 	return errAuthRequired
 }
 
-func authUserPasswd(conn *clientConn, r *Request, nonce string) (string, error) {
+func authUserPasswd(conn *clientConn, r *Request) (err error) {
 	if r.ProxyAuthorization != "" {
 		// client has sent authorization header
-		err := checkProxyAuthorization(r, nonce)
+		err = checkProxyAuthorization(r)
 		if err == nil {
-			return "", nil
+			return
 		} else if err != errAuthRequired {
 			sendErrorPage(conn, errCodeBadReq, "Bad authorization request", "")
-			return nonce, err
+			return
 		}
 	}
 
-	nonce = genNonce()
+	nonce := genNonce()
 	data := struct {
 		Nonce string
 	}{
@@ -241,12 +249,12 @@ func authUserPasswd(conn *clientConn, r *Request, nonce string) (string, error) 
 	buf := new(bytes.Buffer)
 	if err := auth.template.Execute(buf, data); err != nil {
 		errl.Println("Error generating auth response:", err)
-		return "", errInternal
+		return errInternal
 	}
-	debug.Printf("authorization response:", buf.String())
+	debug.Println("authorization response:", buf.String())
 	if _, err := conn.Write(buf.Bytes()); err != nil {
 		errl.Println("Sending auth response error:", err)
-		return "", errShouldClose
+		return errShouldClose
 	}
-	return nonce, errAuthRequired
+	return errAuthRequired
 }

@@ -267,7 +267,6 @@ func (c *clientConn) serve() {
 
 	var authed bool
 	var authCnt int
-	var nonce string
 
 	// Refer to implementation.md for the design choices on parsing the request
 	// and response.
@@ -290,7 +289,7 @@ func (c *clientConn) serve() {
 			if authCnt > 5 {
 				return
 			}
-			if nonce, err = Authenticate(c, r, nonce); err != nil {
+			if err = Authenticate(c, r); err != nil {
 				if err == errAuthRequired {
 					authCnt++
 					continue
