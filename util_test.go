@@ -88,7 +88,7 @@ func TestIsFileExists(t *testing.T) {
 		t.Error("BOOM! You've found a non-existing file!")
 	}
 	if err != nil {
-		t.Error("Not existing file should just return false, on error")	
+		t.Error("Not existing file should just return false, on error")
 	}
 
 	exists, err = isFileExists("testdata/file")
@@ -96,6 +96,31 @@ func TestIsFileExists(t *testing.T) {
 		t.Error("testdata/file exists, but returns false")
 	}
 	if err != nil {
-		t.Error("Why error for existing file?")	
+		t.Error("Why error for existing file?")
+	}
+}
+
+func TestNewNbitIPv4Mask(t *testing.T) {
+	mask := []byte(NewNbitIPv4Mask(32))
+	for i := 0; i < 4; i++ {
+		if mask[i] != 0xff {
+			t.Error("NewNbitIPv4Mask with 32 error")
+		}
+	}
+	mask = []byte(NewNbitIPv4Mask(5))
+	if mask[0] != 0xf8 || mask[1] != 0 || mask[2] != 0 {
+		t.Error("NewNbitIPv4Mask with 5 error:", mask)
+	}
+	mask = []byte(NewNbitIPv4Mask(9))
+	if mask[0] != 0xff || mask[1] != 0x80 || mask[2] != 0 {
+		t.Error("NewNbitIPv4Mask with 9 error:", mask)
+	}
+	mask = []byte(NewNbitIPv4Mask(23))
+	if mask[0] != 0xff || mask[1] != 0xff || mask[2] != 0xfe || mask[3] != 0 {
+		t.Error("NewNbitIPv4Mask with 23 error:", mask)
+	}
+	mask = []byte(NewNbitIPv4Mask(28))
+	if mask[0] != 0xff || mask[1] != 0xff || mask[2] != 0xff || mask[3] != 0xf0 {
+		t.Error("NewNbitIPv4Mask with 28 error:", mask)
 	}
 }

@@ -199,3 +199,21 @@ func md5sum(ss ...string) string {
 	}
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
+
+// NetNbitIPv4Mask returns a IPMask with highest n bit set.
+func NewNbitIPv4Mask(n int) net.IPMask {
+	if n > 32 {
+		panic("NewNbitIPv4Mask: bit number > 32")
+	}
+	mask := []byte{0, 0, 0, 0}
+	for id := 0; id < 4; id++ {
+		if n >= 8 {
+			mask[id] = 0xff
+		} else {
+			mask[id] = ^byte(1<<(uint8(8-n)) - 1)
+			break
+		}
+		n -= 8
+	}
+	return net.IPMask(mask)
+}
