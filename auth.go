@@ -251,7 +251,9 @@ func authUserPasswd(conn *clientConn, r *Request) (err error) {
 		errl.Println("Error generating auth response:", err)
 		return errInternal
 	}
-	debug.Println("authorization response:", buf.String())
+	if debug {
+		debug.Println("authorization response:", buf.String())
+	}
 	if _, err := conn.Write(buf.Bytes()); err != nil {
 		errl.Println("Sending auth response error:", err)
 		return errShouldClose

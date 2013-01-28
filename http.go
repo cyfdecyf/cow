@@ -257,19 +257,6 @@ func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, url *URL) 
 	return
 }
 
-// Consume all http header. Used for CONNECT method.
-func drainHeader(reader *bufio.Reader) (err error) {
-	// Read request header and body
-	var s string
-	for {
-		s, err = ReadLine(reader)
-		if s == "" || err != nil {
-			return
-		}
-	}
-	return
-}
-
 // Parse the initial line and header, does not touch body
 func parseRequest(reader *bufio.Reader) (r *Request, err error) {
 	r = new(Request)
@@ -298,8 +285,6 @@ func parseRequest(reader *bufio.Reader) (r *Request, err error) {
 		// Consume remaining header and just return. Headers are not used for
 		// CONNECT method.
 		r.isConnect = true
-		err = drainHeader(reader)
-		return
 	}
 
 	r.genRequestLine()
