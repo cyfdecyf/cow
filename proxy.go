@@ -14,10 +14,20 @@ import (
 	"time"
 )
 
-// What value is appropriate?
-const readTimeout = 5 * time.Second
+// With GFW's DNS pollution/hijacking, the returned address will block on
+// net.Dial. So we set a short dial timeout value.
 const dialTimeout = 5 * time.Second
-const clientConnTimeout = 15 * time.Second
+
+// For read timeout, set it to a relatively large value to avoid incorrectly
+// using parent socks proxy in case of bad network connection.
+const readTimeout = 15 * time.Second
+
+// Close client connection it no new request received in 1 minute.
+const clientConnTimeout = 60 * time.Second
+
+// If client closed connection for HTTP CONNECT method in less then 1 second,
+// consider it as an ssl error. This is only effective for Chrome which will
+// drop connection immediately upon SSL error.
 const sslLeastDuration = time.Second
 
 // Some code are learnt from the http package
@@ -573,7 +583,7 @@ func createctDirectConnection(host string) (conn, error) {
 		debug.Printf("Connecting to: %s %v\n", host, err)
 		return conn{nil, ctNilConn}, err
 	}
-	// debug.Println("Connected to", host)
+	debug.Println("Connected to", host)
 	return conn{c, ctDirectConn}, nil
 }
 
@@ -657,7 +667,7 @@ func (c *clientConn) createConnection(host string, r *Request) (srvconn conn, er
 				handRes := c.handleBlockedRequest(r, err,
 					genErrMsg(r, "Create direct connection."))
 				if handRes == errRetry {
-					debug.Println("direct connection failed, use socks connection for ", r)
+					debug.Println("direct connection failed, use socks connection for", r)
 					return srvconn, nil
 				}
 				srvconn.Close()
