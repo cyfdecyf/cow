@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"fmt"
 	"math/rand"
+	"net"
 	"os"
+	"strconv"
 	"strings"
 	"text/template"
 	"time"
@@ -24,43 +26,98 @@ const (
 `
 )
 
+type netAddr struct {
+	ip   net.IP
+	mask net.IPMask
+}
+
 var auth struct {
+	required bool
+
 	user   string
 	passwd string
+	ha1    string // used in request digest
 
-	ha1 string // used in request digest
+	allowedClient []netAddr
 
-	required bool
-	authed   *TimeoutSet // cache authentication based on client i
+	authed *TimeoutSet // cache authentication based on client i
 
 	template *template.Template
 }
 
+func parseAllowedClient(val string) {
+	if val == "" {
+		return
+	}
+	auth.required = true
+	arr := strings.Split(val, ",")
+	auth.allowedClient = make([]netAddr, len(arr), len(arr))
+	for i, v := range arr {
+		s := strings.TrimSpace(v)
+		ipAndMask := strings.Split(s, "/")
+		if len(ipAndMask) > 2 {
+			fmt.Println("allowedClient syntax error: client should be the form ip/nbitmask")
+			os.Exit(1)
+		}
+		ip := net.ParseIP(ipAndMask[0])
+		if ip == nil {
+			fmt.Printf("allowedClient syntax error %s: ip address not valid\n", s)
+			os.Exit(1)
+		}
+		var mask net.IPMask
+		if len(ipAndMask) == 2 {
+			nbit, err := strconv.Atoi(ipAndMask[1])
+			if err != nil {
+				fmt.Printf("allowedClient syntax error %s: %v\n", s, err)
+				os.Exit(1)
+			}
+			if nbit > 32 {
+				fmt.Println("allowedClient error: mask number should <= 32")
+				os.Exit(1)
+			}
+			mask = NewNbitIPv4Mask(nbit)
+		} else {
+			mask = NewNbitIPv4Mask(32)
+		}
+		auth.allowedClient[i] = netAddr{ip.Mask(mask), mask}
+	}
+}
+
+func parseUserPasswd(val string) {
+	if val == "" {
+		return
+	}
+	auth.required = true
+	arr := strings.SplitN(val, ":", 2)
+	if len(arr) != 2 || arr[0] == "" || arr[1] == "" {
+		fmt.Println("User password syntax wrong, should be in the form of user:passwd")
+		os.Exit(1)
+	}
+	auth.user, auth.passwd = arr[0], arr[1]
+}
+
 func initAuth() {
-	if config.UserPasswd == "" {
+	parseUserPasswd(config.UserPasswd)
+	parseAllowedClient(config.AllowedClient)
+
+	if !auth.required {
 		return
 	}
 
-	// userPasswd validated in config/cmdline parsing
-	arr := strings.SplitN(config.UserPasswd, ":", 2)
-	auth.user, auth.passwd = arr[0], arr[1]
-
-	debug.Println("requires auth")
-	auth.required = true
+	rand.Seed(time.Now().Unix())
 	auth.authed = NewTimeoutSet(time.Duration(config.AuthTimeout) * time.Hour)
 
+	if auth.user == "" {
+		return
+	}
 	auth.ha1 = md5sum(auth.user + ":" + authRealm + ":" + auth.passwd)
-
-	rand.Seed(time.Now().Unix())
-
-	var err error
 	rawTemplate := "HTTP/1.1 407 Proxy Authentication Required\r\n" +
 		"Proxy-Authenticate: Digest realm=\"" + authRealm + "\", nonce=\"{{.Nonce}}\", qop=\"auth\"\r\n" +
 		"Content-Type: text/html\r\n" +
 		"Cache-Control: no-cache\r\n" +
 		"Content-Length: " + fmt.Sprintf("%d", len(authRawBodyTmpl)) + "\r\n\r\n" + authRawBodyTmpl
-	auth.template, err = template.New("auth").Parse(rawTemplate)
-	if err != nil {
+	var err error
+	if auth.template, err = template.New("auth").Parse(rawTemplate); err != nil {
 		errl.Println("Internal error generating auth template:", err)
 		os.Exit(1)
 	}
@@ -68,7 +125,7 @@ func initAuth() {
 
 // Return err = nil if authentication succeed. nonce would be not empty if
 // authentication is needed, and should be passed back on subsequent call.
-func authenticate(conn *clientConn, r *Request, nonce string) (nc string, err error) {
+func Authenticate(conn *clientConn, r *Request, nonce string) (nc string, err error) {
 	clientIP, _ := splitHostPort(conn.RemoteAddr().String())
 	if auth.authed.has(clientIP) {
 		debug.Printf("%s has already authed\n", clientIP)

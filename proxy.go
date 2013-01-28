@@ -290,7 +290,7 @@ func (c *clientConn) serve() {
 			if authCnt > 5 {
 				return
 			}
-			if nonce, err = authenticate(c, r, nonce); err != nil {
+			if nonce, err = Authenticate(c, r, nonce); err != nil {
 				if err == errAuthRequired {
 					authCnt++
 					continue

@@ -33,6 +33,7 @@ type Config struct {
 	ShadowPasswd  string
 	ShadowMethod  string // shadowsocks encryption method
 	UserPasswd    string
+	AllowedClient string
 	AuthTimeout   int // in hour
 
 	// not configurable in config file
@@ -84,6 +85,7 @@ func parseCmdLineConfig() *Config {
 	flag.StringVar(&c.ShadowPasswd, "shadowPasswd", "", "shadowsocks password")
 	flag.StringVar(&c.ShadowMethod, "shadowMethod", "", "shadowsocks encryption method, empty string or rc4")
 	flag.StringVar(&c.UserPasswd, "userPasswd", "", "user name and password for authentication")
+	flag.StringVar(&c.AllowedClient, "allowedClient", "", "clients that need no authentication, list of ip/#maskbit")
 	flag.IntVar(&c.AuthTimeout, "authTimeout", 2, "authentication timeout, in hour")
 	flag.BoolVar(&c.PrintVer, "version", false, "print version")
 
@@ -102,7 +104,6 @@ func parseCmdLineConfig() *Config {
 	if listenAddr != "" {
 		c.ListenAddr = []string{listenAddr}
 	}
-	checkUserPasswd(c.UserPasswd)
 	return &c
 }
 
@@ -217,19 +218,15 @@ func (p configParser) ParseShadowMethod(val string) {
 	config.ShadowMethod = val
 }
 
-func checkUserPasswd(val string) {
-	if val == "" {
-		return
-	}
-	arr := strings.SplitN(val, ":", 2)
-	if len(arr) != 2 || arr[0] == "" || arr[1] == "" {
-		fmt.Println("User password syntax wrong, should be in the form of user:passwd")
-		os.Exit(1)
-	}
-}
+// Put actual authentication related config parsing in auth.go, so config.go
+// doesn't need to know the details of authentication implementation.
 
 func (p configParser) ParseUserPasswd(val string) {
-	checkUserPasswd(val)
+	config.UserPasswd = val
+}
+
+func (p configParser) ParseAllowedClient(val string) {
+	config.AllowedClient = val
 }
 
 func (p configParser) ParseAuthTimeout(val string) {
@@ -237,8 +234,7 @@ func (p configParser) ParseAuthTimeout(val string) {
 		return
 	}
 	var err error
-	config.AuthTimeout, err = strconv.Atoi(val)
-	if err != nil {
+	if config.AuthTimeout, err = strconv.Atoi(val); err != nil {
 		fmt.Printf("Config error: authTimeout %s %v", val, err)
 		os.Exit(1)
 	}
