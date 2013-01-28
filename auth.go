@@ -131,11 +131,31 @@ func Authenticate(conn *clientConn, r *Request, nonce string) (nc string, err er
 		debug.Printf("%s has already authed\n", clientIP)
 		return
 	}
+	if authIP(clientIP) { // IP is allowed
+		return "", nil
+	}
 	nc, err = authUserPasswd(conn, r, nonce)
 	if err == nil {
 		auth.authed.add(clientIP)
 	}
 	return
+}
+
+// authIP checks whether the client ip address matches one in allowedClient.
+// It uses a sequential search.
+func authIP(clientIP string) bool {
+	ip := net.ParseIP(clientIP)
+	if ip == nil {
+		panic("authIP should always get IP address")
+	}
+
+	for _, na := range auth.allowedClient {
+		if ip.Mask(na.mask).Equal(na.ip) {
+			debug.Printf("client ip %s allowed\n", clientIP)
+			return true
+		}
+	}
+	return false
 }
 
 func genNonce() string {
