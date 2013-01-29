@@ -29,16 +29,20 @@ func newDmSet() dmSet {
 	return make(map[string]bool)
 }
 
-func (ds dmSet) loadFromFile(fpath string) (err error) {
-	lst, err := loadDomainList(fpath)
-	if err != nil {
-		return
-	}
+func (ds dmSet) addList(lst []string) {
 	// This executes in single goroutine, so no need to use lock
 	for _, v := range lst {
 		// debug.Println("loaded domain:", v)
 		ds[v] = true
 	}
+}
+
+func (ds dmSet) loadFromFile(fpath string) (err error) {
+	lst, err := loadDomainList(fpath)
+	if err != nil {
+		return
+	}
+	ds.addList(lst)
 	return
 }
 
@@ -56,10 +60,6 @@ func (ds dmSet) toSlice() []string {
 
 func newParaDmSet() *paraDmSet {
 	return &paraDmSet{dmSet: newDmSet()}
-}
-
-func newParaDmSetFromDmSet(ds dmSet) *paraDmSet {
-	return &paraDmSet{dmSet: ds}
 }
 
 func (ds *paraDmSet) add(dm string) {
@@ -97,8 +97,8 @@ type DomainSet struct {
 
 func newDomainSet() *DomainSet {
 	ds := new(DomainSet)
-	ds.direct = newParaDmSetFromDmSet(directDomainSet)
-	ds.blocked = newParaDmSetFromDmSet(blockedDomainSet)
+	ds.direct = newParaDmSet()
+	ds.blocked = newParaDmSet()
 	ds.chou = newParaDmSet()
 
 	ds.alwaysBlocked = newDmSet()
@@ -266,6 +266,10 @@ func (ds *DomainSet) write() {
 // Domain set reference changing should be atomic.
 
 func (ds *DomainSet) load() {
+	ds.blocked.addList(blockedDomainList)
+	blockedDomainList = nil
+	ds.direct.addList(directDomainList)
+	directDomainList = nil
 	ds.blocked.loadFromFile(dsFile.blocked)
 	ds.direct.loadFromFile(dsFile.direct)
 	ds.alwaysBlocked.loadFromFile(dsFile.alwaysBlocked)
