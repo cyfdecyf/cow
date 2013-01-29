@@ -29,7 +29,7 @@ func newDmSet() dmSet {
 	return make(map[string]bool)
 }
 
-func (ds dmSet) load(fpath string) (err error) {
+func (ds dmSet) loadFromFile(fpath string) (err error) {
 	lst, err := loadDomainList(fpath)
 	if err != nil {
 		return
@@ -54,8 +54,12 @@ func (ds dmSet) toSlice() []string {
 	return lst
 }
 
-func newParadmSet() *paraDmSet {
+func newParaDmSet() *paraDmSet {
 	return &paraDmSet{dmSet: newDmSet()}
+}
+
+func newParaDmSetFromDmSet(ds dmSet) *paraDmSet {
+	return &paraDmSet{dmSet: ds}
 }
 
 func (ds *paraDmSet) add(dm string) {
@@ -93,9 +97,9 @@ type DomainSet struct {
 
 func newDomainSet() *DomainSet {
 	ds := new(DomainSet)
-	ds.direct = newParadmSet()
-	ds.blocked = newParadmSet()
-	ds.chou = newParadmSet()
+	ds.direct = newParaDmSetFromDmSet(directDomainSet)
+	ds.blocked = newParaDmSetFromDmSet(blockedDomainSet)
+	ds.chou = newParaDmSet()
 
 	ds.alwaysBlocked = newDmSet()
 	ds.alwaysDirect = newDmSet()
@@ -262,11 +266,11 @@ func (ds *DomainSet) write() {
 // Domain set reference changing should be atomic.
 
 func (ds *DomainSet) load() {
-	ds.blocked.load(dsFile.blocked)
-	ds.direct.load(dsFile.direct)
-	ds.alwaysBlocked.load(dsFile.alwaysBlocked)
-	ds.alwaysDirect.load(dsFile.alwaysDirect)
-	ds.chou.load(dsFile.chou)
+	ds.blocked.loadFromFile(dsFile.blocked)
+	ds.direct.loadFromFile(dsFile.direct)
+	ds.alwaysBlocked.loadFromFile(dsFile.alwaysBlocked)
+	ds.alwaysDirect.loadFromFile(dsFile.alwaysDirect)
+	ds.chou.loadFromFile(dsFile.chou)
 
 	ds.filterOutDs(ds.chou.dmSet)
 	ds.filterOutDs(ds.alwaysDirect)
