@@ -258,16 +258,19 @@ func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, url *URL) 
 }
 
 // Parse the initial line and header, does not touch body
-func parseRequest(reader *bufio.Reader) (r *Request, err error) {
-	r = new(Request)
-	r.ContLen = -1
+func parseRequest(c *clientConn) (r *Request, err error) {
 	var s string
-
+	reader := c.bufRd
+	setConnReadTimeout(c, clientConnTimeout, "BEFORE receiving client request")
 	// parse initial request line
 	if s, err = ReadLine(reader); err != nil {
 		return nil, err
 	}
+	unsetConnReadTimeout(c, "AFTER receiving client request")
 	// debug.Printf("Request initial line %s", s)
+
+	r = new(Request)
+	r.ContLen = -1
 
 	var f []string
 	if f = strings.SplitN(s, " ", 3); len(f) < 3 { // request line are separated by SP
@@ -334,18 +337,25 @@ var headerKeepAliveByte = []byte("Connection: Keep-Alive\r\n")
 var headerConnCloseByte = []byte("Connection: close\r\n")
 
 // Parse response status and headers.
-func parseResponse(reader *bufio.Reader, r *Request) (rp *Response, err error) {
+func parseResponse(sv *serverConn, r *Request) (rp *Response, err error) {
 	rp = new(Response)
 	rp.ContLen = -1
 
 	var s string
+	reader := sv.bufRd
 START:
+	if sv.state == svConnected && sv.maybeFake() {
+		setConnReadTimeout(sv, readTimeout, "BEFORE receiving the first response")
+	}
 	if s, err = ReadLine(reader); err != nil {
 		if err != io.EOF {
 			// err maybe timeout caused by explicity setting deadline
 			debug.Printf("Reading Response status line: %v %v\n", err, r)
 		}
 		return nil, err
+	}
+	if sv.state == svConnected && sv.maybeFake() {
+		unsetConnReadTimeout(sv, "AFTER receiving the first response")
 	}
 	var f []string
 	if f = strings.SplitN(s, " ", 3); len(f) < 2 { // status line are separated by SP

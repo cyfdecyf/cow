@@ -178,12 +178,10 @@ func isSelfURL(url string) bool {
 func (c *clientConn) getRequest() (r *Request) {
 	var err error
 
-	setConnReadTimeout(c, clientConnTimeout, "BEFORE receiving client request")
-	if r, err = parseRequest(c.bufRd); err != nil {
+	if r, err = parseRequest(c); err != nil {
 		c.handleClientReadError(r, err, "parse client request")
 		return nil
 	}
-	unsetConnReadTimeout(c, "AFTER receiving client request")
 	return r
 }
 
@@ -494,18 +492,12 @@ func isErrOpWrite(err error) bool {
 func (c *clientConn) readResponse(sv *serverConn, r *Request) (err error) {
 	var rp *Response
 
-	if sv.state == svConnected && sv.maybeFake() {
-		setConnReadTimeout(sv, readTimeout, "BEFORE receiving the first response")
-	}
-	if rp, err = parseResponse(sv.bufRd, r); err != nil {
+	if rp, err = parseResponse(sv, r); err != nil {
 		return c.handleServerReadError(r, sv, err, "Parse response from server.")
 	}
 	// After have received the first reponses from the server, we consider
 	// ther server as real instead of fake one caused by wrong DNS reply. So
 	// don't time out later.
-	if sv.state == svConnected && sv.maybeFake() {
-		unsetConnReadTimeout(sv, "AFTER receiving the first response")
-	}
 	if sv.state == svConnected {
 		if sv.connType == ctDirectConn {
 			domainSet.addDirectHost(sv.host)
