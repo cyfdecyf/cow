@@ -164,11 +164,10 @@ func (c *clientConn) close() {
 	for _, sv := range c.serverConn {
 		sv.Close()
 	}
-	c.Close()
+	c.Conn.Close()
 	if debug {
 		debug.Printf("Client %v connection closed\n", c.RemoteAddr())
 	}
-	c.buf = nil
 }
 
 func isSelfURL(url string) bool {
@@ -705,26 +704,23 @@ func unsetConnReadTimeout(cn net.Conn, msg string) {
 	}
 }
 
-func copyServer2Client(sv *serverConn, c *clientConn, cliStopped notification, r *Request) (err error) {
+func copyServer2Client(sv *serverConn, c *clientConn, r *Request) (err error) {
 	buf := make([]byte, bufSize)
 	sv.bufRd = nil
 	var n int
 
 	for {
-		if cliStopped.hasNotified() {
-			debug.Println("copyServer2Client client has stopped")
-			return
+		if sv.state == svConnected && sv.maybeFake() {
+			setConnReadTimeout(sv, readTimeout, "copyServer2Client")
 		}
-		setConnReadTimeout(sv, readTimeout, "copyServer2Client")
 		if n, err = sv.Read(buf); err != nil {
 			if maybeBlocked(err) && sv.maybeFake() && domainSet.addBlockedHost(r.URL.Host) {
 				debug.Printf("copyServer2Client blocked site %s detected, retry\n", r.URL.Host)
 				return errRetry
-			} else if isErrTimeout(err) {
-				// copyClient2Server will close the connection and notify cliStopped
-				continue
 			}
-			debug.Printf("copyServer2Client read data: %v\n", err)
+			// Expected error: "use of closed network connection",
+			// this is to make blocking read return.
+			// debug.Printf("copyServer2Client read data: %v\n", err)
 			return
 		}
 		if _, err = c.Write(buf[0:n]); err != nil {
@@ -734,6 +730,9 @@ func copyServer2Client(sv *serverConn, c *clientConn, cliStopped notification, r
 		// set state to rsRecvBody to indicate the request has partial response sent to client
 		r.state = rsRecvBody
 		if sv.state == svConnected {
+			if sv.maybeFake() {
+				unsetConnReadTimeout(sv, "copyServer2Client")
+			}
 			if sv.connType == ctDirectConn {
 				domainSet.addDirectHost(sv.host)
 			}
@@ -743,7 +742,7 @@ func copyServer2Client(sv *serverConn, c *clientConn, cliStopped notification, r
 	return
 }
 
-func copyClient2Server(c *clientConn, sv *serverConn, srvStopped notification, r *Request) (err error) {
+func copyClient2Server(c *clientConn, sv *serverConn, r *Request) (err error) {
 	// TODO this is complicated, simplify it.
 	buf := make([]byte, bufSize)
 	var buffered []byte
@@ -760,7 +759,6 @@ func copyClient2Server(c *clientConn, sv *serverConn, srvStopped notification, r
 		c.bufRd = nil
 	}
 
-	var timeout time.Duration
 	if r.contBuf != nil {
 		debug.Println("copyClient2Server retry request:", r)
 		if _, err = sv.Write(r.contBuf.Bytes()); err != nil {
@@ -770,32 +768,15 @@ func copyClient2Server(c *clientConn, sv *serverConn, srvStopped notification, r
 	}
 	start := time.Now()
 	for {
-		if srvStopped.hasNotified() {
-			debug.Println("copyClient2Server server stopped")
-			return
-		}
 		if buffered != nil {
 			goto writeBuf
 		}
-		if sv.maybeFake() && sv.state == svConnected {
-			timeout = 2 * time.Second
-		} else {
-			timeout = readTimeout
-		}
-		setConnReadTimeout(c, timeout, "copyClient2Server")
 		if n, err = c.Read(buf); err != nil {
-			if isErrTimeout(err) {
-				// Applications like Twitter for Mac needs long connection for
-				// live stream. So should not close connection here. But this
-				// will have the risk that socks server will report too many
-				// open connections.
-				continue
-			}
 			if config.DetectSSLErr && (isErrConnReset(err) || err == io.EOF) && sv.maybeSSLErr(start) {
 				debug.Println("client connection closed very soon, taken as SSL error:", r)
 				domainSet.addBlockedHost(r.URL.Host)
 			}
-			debug.Printf("copyClient2Server read data: %v\n", err)
+			// debug.Printf("copyClient2Server read data: %v\n", err)
 			return
 		}
 		buffered = buf[:n]
@@ -855,44 +836,29 @@ var connEstablished = []byte("HTTP/1.0 200 Connection established\r\nProxy-agent
 // Do HTTP CONNECT
 func (sv *serverConn) doConnect(r *Request, c *clientConn) (err error) {
 	r.state = rsCreated
-	defer sv.Close()
 	if debug {
 		debug.Printf("%v 200 Connection established to %s\n", c.RemoteAddr(), r.URL.Host)
 	}
 	if _, err = c.Write(connEstablished); err != nil {
 		errl.Printf("%v Error sending 200 Connecion established\n", c.RemoteAddr())
+		sv.Close()
 		return err
 	}
 
-	// Notify the destination has stopped in copyData is important. If the
-	// client has stopped connection, while the server->client is blocked
-	// reading data from the server, the server connection will not get chance
-	// to stop (unless there's timeout in read). This may result too many open
-	// connection error from the socks server.
-	srvStopped := newNotification()
-	cliStopped := newNotification()
-
-	// Must wait this goroutine finish before returning from this function.
-	// Otherwise, the server/client may have been closed and thus cause nil
-	// pointer deference
+	// Both copy functions may block on read. When one finishes, close the
+	// destination (which the other copy function is reading) to cause
+	// blocking read return.
 	var srv2CliErr error
-	doneChan := make(chan byte)
 	go func() {
-		srv2CliErr = copyServer2Client(sv, c, cliStopped, r)
-		srvStopped.notify()
-		doneChan <- 1
+		srv2CliErr = copyServer2Client(sv, c, r)
+		c.Conn.Close()
 	}()
-
-	err = copyClient2Server(c, sv, srvStopped, r)
-	cliStopped.notify()
-
-	<-doneChan
+	err = copyClient2Server(c, sv, r)
+	sv.Close()
 	// maybeFake is needed here. If server has sent response to client, should not retry.
 	if r.contBuf != nil && (err == errRetry || srv2CliErr == errRetry) && sv.maybeFake() {
 		return errRetry
 	}
-	// Because this is in doConnect, there's no way reporting error to the client.
-	// Just return and close connectino.
 	return
 }
 

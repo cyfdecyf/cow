@@ -261,12 +261,12 @@ func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, url *URL) 
 func parseRequest(c *clientConn) (r *Request, err error) {
 	var s string
 	reader := c.bufRd
-	setConnReadTimeout(c, clientConnTimeout, "BEFORE receiving client request")
+	setConnReadTimeout(c, clientConnTimeout, "parseRequest")
 	// parse initial request line
 	if s, err = ReadLine(reader); err != nil {
 		return nil, err
 	}
-	unsetConnReadTimeout(c, "AFTER receiving client request")
+	unsetConnReadTimeout(c, "parseRequest")
 	// debug.Printf("Request initial line %s", s)
 
 	r = new(Request)
@@ -345,7 +345,7 @@ func parseResponse(sv *serverConn, r *Request) (rp *Response, err error) {
 	reader := sv.bufRd
 START:
 	if sv.state == svConnected && sv.maybeFake() {
-		setConnReadTimeout(sv, readTimeout, "BEFORE receiving the first response")
+		setConnReadTimeout(sv, readTimeout, "parseResponse")
 	}
 	if s, err = ReadLine(reader); err != nil {
 		if err != io.EOF {
@@ -355,7 +355,7 @@ START:
 		return nil, err
 	}
 	if sv.state == svConnected && sv.maybeFake() {
-		unsetConnReadTimeout(sv, "AFTER receiving the first response")
+		unsetConnReadTimeout(sv, "parseResponse")
 	}
 	var f []string
 	if f = strings.SplitN(s, " ", 3); len(f) < 2 { // status line are separated by SP
