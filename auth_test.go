@@ -44,3 +44,29 @@ func TestParseAllowedClient(t *testing.T) {
 		t.Error("ParseAllowedClient 192.169.1.2 mask error")
 	}
 }
+
+func TestAuthIP(t *testing.T) {
+	parseAllowedClient("192.168.0.0/16, 192.169.2.1, 10.0.0.0/8, 8.8.8.8")
+
+	var testData = []struct {
+		ip      string
+		allowed bool
+	}{
+		{"10.1.2.3", true},
+		{"192.168.1.2", true},
+		{"192.169.2.1", true},
+		{"192.169.2.2", false},
+		{"8.8.8.8", true},
+		{"1.2.3.4", false},
+	}
+
+	for _, td := range testData {
+		if authIP(td.ip) != td.allowed {
+			if td.allowed {
+				t.Errorf("%s should be allowed\n", td.ip)
+			} else {
+				t.Errorf("%s should NOT be allowed\n", td.ip)
+			}
+		}
+	}
+}
