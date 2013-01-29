@@ -1,52 +1,87 @@
-# proxy listen address
-# 0.0.0.0 can be used if host IP address can be detected
+# 代理服务器监听地址，用逗号分隔多个地址
+# 0.0.0.0 代表监听本机所有 IP 地址
 listen = 127.0.0.1:7777
 
-# parent socks proxy address, COW will use this to access blocked sites
-socks = 127.0.0.1:1080
-# ssh to the server to start socks proxy (requires public key authentication)
-# If option is not empty, COW will run the following command:
-#     ssh -n -N -D <port in socks option> -p <port in sshServer> <sshServer>
-# port in sshServer is optional, defaults to 22
-# for other ssh options, please specify them in ~/.ssh/config
-#sshServer = user@server[:port]
-
-# shadowsocks server address
-shadowsocks = 1.1.1.1:8838
-# shadowsocks password
-shadowPasswd = barfoo!
-
-# empty path means stdout
+# 日志文件路径，空字符串表示 stdout
 logFile =
 
-# always use parent proxy
+# COW 默认仅对被墙网站使用二级代理（可以是 SOCKS5 或 shadowsocks 代理）
+# 总使用二级代理设置为 true 后，所有网站都通过二级代理访问
 alwaysProxy = false
 
-# Automatically retry timeout request using parent proxy if enabled (treated
-# as temporarily blocked)
-# If disabled, timeout error will send error page and let user decide what to do
+#############################
+# SOCKS5 代理
+#############################
 
+# SOCKS5 代理地址
+socks = 127.0.0.1:1080
+
+# 你可以注释掉下面的选项，自己启动 socks 代理
+# 或者让 COW 执行 ssh 命令创建本地 socks 代理，并在 ssh 断开后重连
+# 注意这一功能需要配置好 ssh public key authentication
+#
+# 若指定该选项，COW 将执行以下命令：
+#     ssh -n -N -D <socks 选项中的端口> -p <sshServer 选项中的端口> <sshServer>
+# sshServer 端口默认为 22。如果要指定其他 ssh 选项，请修改 ~/.ssh/config
+#sshServer = user@server[:port]
+
+#############################
+# shadowsocks 代理
+#############################
+
+# 若你有自己的 VPS，推荐使用 shadowsocks。服务器端部署完成后本机无需 socks 代理
+# 若同时指定 shadowsocks 和 SOCKS5 代理，优先使用 shadowsocks
+
+# shadowsocks 服务器地址，一定要指定端口
+#shadowsocks = 1.1.1.1:8838
+# shadowsocks 密码
+#shadowPasswd = barfoo!
+# shadowsocks 加密方法, 空字符串或者 rc4
+#shadowMethod = 
+
+#############################
+# 认证
+#############################
+
+# 指定允许的 IP 或者网段。网段仅支持 IPv4，IP 可以指定 v6 地址，用逗号分隔多个项
+#allowedClient = 192.168.1.0/24, 10.0.0.0/8, 8.8.8.8
+
+# 通过用户名密码认证
+#userPasswd = username:password
+
+# COW 总是先验证 IP 是否在 allowedClient 中，若不在其中再通过用户名密码认证
+
+#############################
+# 高级选项
+#############################
+
+# 如果你没有耐心，可以直接忽略下面的选项。
+
+# 遇到超时错误自动用二级代理重试（域名将处理为暂时被墙，2 分钟后再次尝试直接连接）
+# 如果禁用，超时错误返回错误页面让用户选择如何处理。由于有些网页包含来自不同 host 的内容，
+# 错误页面并不是总能显示，所以推荐设置为 true
 autoRetry = true
 
-# The following 2 options tell COW to write visited blocked/direct sites to
-# file upon exit. Enabling them can record the sites you often visit and thus
-# let the browser use direct access for non blocked sites through PAC, and COW
-# will not wait 5 seconds of timeout before trying parent proxy for unknown
-# blocked sites. But as blocked sites detection is not reliable, you may need
-# to manually examine the recorded site lists.
-# So if you care about performance very much, it's recommend to enable them
-# and use COW for a while to get your frequently visited sites recorded. After
-# fixing uncorrectly recorded direct/blocked sites, disable updateDirect and 
-# updateBlocked to avoid recording too much (and possibly wrong) sites in
-# auto-direct/blocked.
+# 以下两个选项开启后，COW 在退出时会更新被墙和可直连域名列表，因此可以记录你经常访问的网站
+# 这样做可以提高性能：
+# - 可直连网站会出现在 PAC 文件中，浏览器会直接访问而不通过 COW
+# - 被墙网站会直接通过二级代理访问，从而不需要等待超时或 reset
+# 但被墙网站的检测不够准确（尤其在网络环境差的情况下），所以记录中可能会有错误，
+# 而且总是更新会记录下过多的直连网站
+#
+# 推荐：关闭这两个选项，让 COW 完全自动化工作（COW 内置了一些常见的被墙和直连域名列表）
+#
+# 如果非常在意性能，打开这两个选项后使用 COW 一段时间，然后人工修正记录到的被墙和直连网站列表，
+# 再将这两个选项关闭以避免记录过多被墙和直连网站
 
-# Update blocked domain list (~/.cow/auto-blocked)
+# 更新被墙域名列表 (~/.cow/auto-blocked)
 updateBlocked = false
-# Update directly accessable domain list (~/.cow/auto-direct)
+# 更新直连网站列表 (~/.cow/auto-direct)
 updateDirect = false
 
-# detect SSL error based on how soon client closes connection, not reliable
+# 基于 client 是否很快关闭连接来检测 SSL 错误
+# 不可靠，且只对 Chrome 有效（Chrome 遇到 SSL 错误会直接关闭连接），开启几乎无坏处
 detectSSLErr = true
 
-# Nubmer of cores to use
+# 使用多少个 CPU core
 core = 2
