@@ -79,9 +79,10 @@ updateBlocked = false
 # 更新直连网站列表 (~/.cow/auto-direct)
 updateDirect = false
 
-# 基于 client 是否很快关闭连接来检测 SSL 错误
-# 不可靠，且只对 Chrome 有效（Chrome 遇到 SSL 错误会直接关闭连接），开启几乎无坏处
-detectSSLErr = true
+# 基于 client 是否很快关闭连接来检测 SSL 错误，只对 Chrome 有效
+# （Chrome 遇到 SSL 错误会直接关闭连接，而不是让用户选择是否继续）
+# 可能将可直连网站误判为被墙网站，当 GFW 进行 SSL 中间人攻击时可以考虑使用
+detectSSLErr = false
 
 # 使用多少个 CPU core
 core = 2
