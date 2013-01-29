@@ -86,24 +86,26 @@ func sendPAC(c *clientConn) {
 	} else {
 		ds = ds1 + "\",\n\"" + ds2
 	}
+
+	host, _ := splitHostPort(c.LocalAddr().String())
+	_, port := splitHostPort(c.proxy.addr)
+	proxyAddr := net.JoinHostPort(host, port)
+
 	if ds == "" {
 		// Empty direct domain list
 		c.Write(pacHeader)
 		pacproxy := fmt.Sprintf("function FindProxyForURL(url, host) { return 'PROXY %s; DIRECT'; };",
-			c.proxy.addr)
+			proxyAddr)
 		c.Write([]byte(pacproxy))
 		return
 	}
-
-	host, _ := splitHostPort(c.LocalAddr().String())
-	_, port := splitHostPort(c.proxy.addr)
 
 	data := struct {
 		ProxyAddr     string
 		DirectDomains string
 		TopLevel      string
 	}{
-		net.JoinHostPort(host, port),
+		proxyAddr,
 		",\n\"" + ds + "\"",
 		pac.topLevelDomain,
 	}
