@@ -6,10 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"os"
-	"os/user"
+	"path"
 	"runtime"
 )
 
@@ -35,27 +34,6 @@ func ReadLine(r *bufio.Reader) (string, error) {
 
 func IsDigit(b byte) bool {
 	return '0' <= b && b <= '9'
-}
-
-type notification chan byte
-
-func newNotification() notification {
-	// Notification channle has size 1, so sending a single one will not block
-	return make(chan byte, 1)
-}
-
-func (n notification) notify() {
-	n <- 1
-}
-
-func (n notification) hasNotified() bool {
-	select {
-	case <-n:
-		return true
-	default:
-		return false
-	}
-	return false
 }
 
 func isWindows() bool {
@@ -113,23 +91,20 @@ func trimLastDot(s string) string {
 	return s
 }
 
-func getUserHomeDir() (home string, err error) {
-	u, err := user.Current()
-	if err != nil {
-		return
+func getUserHomeDir() string {
+	home := os.Getenv("HOME")
+	if home == "" {
+		fmt.Println("HOME environment variable is empty")
 	}
-	return u.HomeDir, nil
+	return home
 }
 
-func expandTilde(path string) string {
-	if len(path) > 0 && path[0] == '~' {
-		home, err := getUserHomeDir()
-		if err != nil {
-			log.Println("expandTilde can't get user home directory:", err)
-		}
-		return home + path[1:]
+func expandTilde(pth string) string {
+	if len(pth) > 0 && pth[0] == '~' {
+		home := getUserHomeDir()
+		return path.Join(home, pth[1:])
 	}
-	return path
+	return pth
 }
 
 func hostIsIP(host string) bool {

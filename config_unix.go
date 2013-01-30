@@ -3,7 +3,6 @@
 package main
 
 import (
-	"log"
 	"path"
 )
 
@@ -19,10 +18,6 @@ const (
 )
 
 func initConfigDir() {
-	home, err := getUserHomeDir()
-	if err != nil {
-		log.Printf("initConfigDir can't get user home directory: %v", err)
-		return
-	}
+	home := getUserHomeDir()
 	dsFile.dir = path.Join(home, ".cow")
 }
