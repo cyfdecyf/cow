@@ -274,9 +274,7 @@ func (ds *DomainSet) load() {
 	ds.direct.loadFromFile(dsFile.direct)
 	ds.alwaysBlocked.loadFromFile(dsFile.alwaysBlocked)
 	ds.alwaysDirect.loadFromFile(dsFile.alwaysDirect)
-	ds.chou.loadFromFile(dsFile.chou)
 
-	ds.filterOutDs(ds.chou.dmSet)
 	ds.filterOutDs(ds.alwaysDirect)
 	ds.filterOutDs(ds.alwaysBlocked)
 	ds.filterOutBlockedInDirect()

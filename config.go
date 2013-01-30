@@ -48,7 +48,6 @@ var dsFile struct {
 	direct        string // contains sites that can be directly accessed
 	alwaysDirect  string
 	alwaysBlocked string
-	chou          string // chou feng, sites which will be temporary blocked
 }
 
 func printVersion() {
@@ -63,7 +62,6 @@ func init() {
 	dsFile.direct = path.Join(dsFile.dir, directFname)
 	dsFile.alwaysBlocked = path.Join(dsFile.dir, alwaysBlockedFname)
 	dsFile.alwaysDirect = path.Join(dsFile.dir, alwaysDirectFname)
-	dsFile.chou = path.Join(dsFile.dir, chouFname)
 
 	config.UpdateBlocked = false
 	config.UpdateDirect = false
