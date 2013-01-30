@@ -379,7 +379,7 @@ func (c *clientConn) handleBlockedRequest(r *Request, err error, msg string) err
 	} else if domainSet.isHostChouFeng(r.URL.Host) || config.AutoRetry {
 		// err must be timeout here
 		// Domain in chou domain set is likely to be blocked, should automatically
-		// restart request using parent proxy.
+		// retry request using parent proxy.
 		// If autoRetry is enabled, treat timeout domain as chou and retry.
 		if domainSet.addChouHost(r.URL.Host) {
 			return errRetry
@@ -414,14 +414,8 @@ func (c *clientConn) handleServerReadError(r *Request, sv *serverConn, err error
 		return errShouldClose
 	}
 	errMsg = genErrMsg(r, msg)
-	if sv.maybeFake() || isErrConnReset(err) {
-		// GFW may connection reset when reading from  server, may also make
-		// it time out. But timeout is also normal if network condition is
-		// bad, so should treate timeout separately.
-		if maybeBlocked(err) {
-			return c.handleBlockedRequest(r, err, errMsg)
-		}
-		// fall through to send general error message
+	if sv.maybeFake() && maybeBlocked(err) {
+		return c.handleBlockedRequest(r, err, errMsg)
 	}
 	if r.responseNotSent() {
 		sendErrorPage(c, "502 read error", err.Error(), errMsg)
@@ -451,7 +445,7 @@ func (c *clientConn) handleClientReadError(r *Request, err error, msg string) er
 		debug.Printf("%s client closed connection", msg)
 	} else if ne, ok := err.(*net.OpError); ok {
 		if debug {
-			if ne.Err == syscall.ECONNRESET {
+			if isErrConnReset(err) {
 				debug.Printf("%s connection reset", msg)
 			} else if ne.Timeout() {
 				debug.Printf("%s client read timeout, maybe has closed\n", msg)
@@ -470,7 +464,7 @@ func (c *clientConn) handleClientWriteError(r *Request, err error, msg string) e
 		if debug {
 			if ne.Err == syscall.EPIPE {
 				debug.Printf("%s broken pipe %v\n", msg, r)
-			} else if ne.Err == syscall.ECONNRESET {
+			} else if isErrConnReset(err) {
 				debug.Println("%s connection reset %v\n", msg, r)
 			}
 		}
@@ -577,14 +571,6 @@ func createctDirectConnection(host string) (conn, error) {
 	return conn{c, ctDirectConn}, nil
 }
 
-func isErrConnReset(err error) bool {
-	ne, ok := err.(*net.OpError)
-	if ok {
-		return ne.Err == syscall.ECONNRESET
-	}
-	return false
-}
-
 func isErrTimeout(err error) bool {
 	ne, ok := err.(*net.OpError)
 	if ok {
@@ -594,11 +580,7 @@ func isErrTimeout(err error) bool {
 }
 
 func maybeBlocked(err error) bool {
-	ne, ok := err.(*net.OpError)
-	if ok {
-		return ne.Timeout() || ne.Err == syscall.ECONNRESET
-	}
-	return false
+	return isErrTimeout(err) || isErrConnReset(err)
 }
 
 const connFailedErrCode = "504 Connection failed"

@@ -20,6 +20,7 @@ var directDomainList = []string{
 	"baidu.com",
 	"bankcomm.com",
 	"bankofchina.com",
+	"bdstatic.com",
 	"bing.com",
 	"bing.com.cn",
 	"boc.cn",
