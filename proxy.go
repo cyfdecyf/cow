@@ -20,7 +20,7 @@ const dialTimeout = 5 * time.Second
 
 // For read timeout, set it to a relatively large value to avoid incorrectly
 // using parent socks proxy in case of bad network connection.
-const readTimeout = 15 * time.Second
+const readTimeout = 8 * time.Second
 
 // Close client connection it no new request received in 1 minute.
 const clientConnTimeout = 60 * time.Second
@@ -840,7 +840,7 @@ func (sv *serverConn) doConnect(r *Request, c *clientConn) (err error) {
 		debug.Printf("%v 200 Connection established to %s\n", c.RemoteAddr(), r.URL.Host)
 	}
 	if _, err = c.Write(connEstablished); err != nil {
-		errl.Printf("%v Error sending 200 Connecion established\n", c.RemoteAddr())
+		debug.Printf("%v Error sending 200 Connecion established: %v\n", c.RemoteAddr(), err)
 		sv.Close()
 		return err
 	}
