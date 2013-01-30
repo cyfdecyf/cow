@@ -268,13 +268,8 @@ func parseConfig(path string) {
 			os.Exit(1)
 		}
 
-		if line == "" {
-			continue
-		}
-
 		line = strings.TrimSpace(line)
-		// Ignore comment
-		if line[0] == '#' {
+		if line == "" || line[0] == '#' {
 			continue
 		}
 

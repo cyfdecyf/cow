@@ -12,24 +12,22 @@ import (
 	"runtime"
 )
 
-// Almost same with net/textproto/reader.go ReadLine
-func ReadLine(r *bufio.Reader) (string, error) {
-	var line []byte
-	for {
-		l, more, err := r.ReadLine()
-		if err != nil {
-			return "", err
+// ReadLine read till '\n' is found or encounter error. The returned line does
+// not include ending '\r' and '\n'. If returns err != nil if and only if
+// len(line) == 0.
+func ReadLine(r *bufio.Reader) (line string, err error) {
+	line, err = r.ReadString('\n')
+	n := len(line)
+	if n > 0 && (err == nil || err == io.EOF) {
+		id := n - 1
+		if line[id] == '\n' {
+			id--
 		}
-
-		if line == nil && !more {
-			return string(l), nil
+		for ; id >= 0 && line[id] == '\r'; id-- {
 		}
-		line = append(line, l...)
-		if !more {
-			break
-		}
+		return line[:id+1], nil
 	}
-	return string(line), nil
+	return
 }
 
 func IsDigit(b byte) bool {

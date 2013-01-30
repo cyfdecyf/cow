@@ -1,9 +1,45 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
+	"io"
 	"testing"
 )
+
+func TestReadLine(t *testing.T) {
+	testData := []struct {
+		text  string
+		lines []string
+	}{
+		{"nihao\nwelcome\r", []string{"nihao", "welcome"}},
+		{"hello\r\nworld\n", []string{"hello", "world"}},
+		{"hello\r\r\nworld\r\r", []string{"hello", "world"}},
+		{"hello", []string{"hello"}},
+		{"hello\r\r", []string{"hello"}},
+		{"\r\n", []string{""}},
+		{"\r", []string{""}},
+		{"\n", []string{""}},
+		{"\r\r\n", []string{""}},
+	}
+	for _, td := range testData {
+		raw := bytes.NewBufferString(td.text)
+		rd := bufio.NewReader(raw)
+		for i, line := range td.lines {
+			l, err := ReadLine(rd)
+			if err != nil {
+				t.Fatalf("%d read error %v got: %s\ntext: %s\n", i+1, err, l, td.text)
+			}
+			if line != l {
+				t.Fatalf("%d read got: %s should be: %s\ntext: %s\n", i+1, l, line, td.text)
+			}
+		}
+		_, err := ReadLine(rd)
+		if err != io.EOF {
+			t.Error("ReadLine past end should return EOF")
+		}
+	}
+}
 
 func TestIsDigit(t *testing.T) {
 	for i := 0; i < 10; i++ {

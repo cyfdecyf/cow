@@ -178,6 +178,7 @@ func ParseRequestURI(rawurl string) (*URL, error) {
 func splitHeader(s string) (name, val string, err error) {
 	var f []string
 	if f = strings.SplitN(strings.ToLower(s), ":", 2); len(f) != 2 {
+		errl.Println("malformed header:", s)
 		return "", "", errMalformHeader
 	}
 	return f[0], f[1], nil
@@ -233,7 +234,7 @@ func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, url *URL) 
 		}
 		if (s[0] == ' ' || s[0] == '\t') && lastLine != "" { // multi-line header
 			s = lastLine + " " + s // combine previous line with current line
-			errl.Printf("Encounter multi-line header: %v %s", url, s)
+			info.Printf("Encounter multi-line header: %v %s", url, s)
 		}
 		if name, val, err = splitHeader(s); err != nil {
 			return
