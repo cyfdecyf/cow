@@ -13,3 +13,17 @@ func isErrConnReset(err error) bool {
 	}
 	return false
 }
+
+func isDNSError(err error) bool {
+	if _, ok := err.(*net.DNSError); ok {
+		return true
+	}
+	return false
+}
+
+func isErrTimeout(err error) bool {
+	if ne, ok := err.(*net.OpError); ok {
+		return ne.Timeout()
+	}
+	return false
+}

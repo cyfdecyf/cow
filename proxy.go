@@ -7,12 +7,14 @@ import (
 	"fmt"
 	"io"
 	"net"
-	// "reflect"
+	"reflect"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
 )
+
+var _ = reflect.TypeOf
 
 // With GFW's DNS pollution/hijacking, the returned address will block on
 // net.Dial. So we set a short dial timeout value.
@@ -443,17 +445,15 @@ func (c *clientConn) handleServerWriteError(r *Request, sv *serverConn, err erro
 func (c *clientConn) handleClientReadError(r *Request, err error, msg string) error {
 	if err == io.EOF {
 		debug.Printf("%s client closed connection", msg)
-	} else if ne, ok := err.(*net.OpError); ok {
-		if debug {
-			if isErrConnReset(err) {
-				debug.Printf("%s connection reset", msg)
-			} else if ne.Timeout() {
-				debug.Printf("%s client read timeout, maybe has closed\n", msg)
-			}
+	} else if debug {
+		if isErrConnReset(err) {
+			debug.Printf("%s connection reset", msg)
+		} else if isErrTimeout(err) {
+			debug.Printf("%s client read timeout, maybe has closed\n", msg)
+		} else {
+			// TODO is this possible?
+			debug.Printf("handleClientReadError: %s %v %v\n", msg, err, r)
 		}
-	} else {
-		// TODO is this possible?
-		errl.Printf("handleClientReadError: %s %v %v\n", msg, err, r)
 	}
 	return err
 }
@@ -571,14 +571,6 @@ func createctDirectConnection(host string) (conn, error) {
 	return conn{c, ctDirectConn}, nil
 }
 
-func isErrTimeout(err error) bool {
-	ne, ok := err.(*net.OpError)
-	if ok {
-		return ne.Timeout()
-	}
-	return false
-}
-
 func maybeBlocked(err error) bool {
 	return isErrTimeout(err) || isErrConnReset(err)
 }
@@ -632,7 +624,7 @@ func (c *clientConn) createConnection(host string, r *Request) (srvconn conn, er
 		// debug.Printf("type of err %v\n", reflect.TypeOf(err))
 		// GFW may cause dns lookup fail (net.DNSError),
 		// may also cause connection time out or reset (net.OpError)
-		if _, ok := err.(*net.DNSError); ok || maybeBlocked(err) {
+		if isDNSError(err) || maybeBlocked(err) {
 			// Try to create socks connection
 			var socksErr error
 			if srvconn, socksErr = createParentProxyConnection(host); socksErr == nil {
