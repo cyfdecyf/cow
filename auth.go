@@ -51,7 +51,7 @@ func parseAllowedClient(val string) {
 	}
 	auth.required = true
 	arr := strings.Split(val, ",")
-	auth.allowedClient = make([]netAddr, len(arr), len(arr))
+	auth.allowedClient = make([]netAddr, len(arr))
 	for i, v := range arr {
 		s := strings.TrimSpace(v)
 		ipAndMask := strings.Split(s, "/")

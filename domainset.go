@@ -48,7 +48,7 @@ func (ds dmSet) loadFromFile(fpath string) (err error) {
 
 func (ds dmSet) toSlice() []string {
 	l := len(ds)
-	lst := make([]string, l, l)
+	lst := make([]string, l)
 
 	i := 0
 	for k, _ := range ds {

@@ -723,7 +723,7 @@ func copyClient2Server(c *clientConn, sv *serverConn, r *Request, done chan byte
 	if c.bufRd != nil {
 		n = c.bufRd.Buffered()
 		if n > bufSize {
-			buf = make([]byte, n, n)
+			buf = make([]byte, n)
 		}
 		if n > 0 {
 			buffered, _ = c.bufRd.Peek(n) // should not return error
@@ -846,7 +846,7 @@ func (sv *serverConn) doConnect(r *Request, c *clientConn) (err error) {
 // Do HTTP request other that CONNECT
 func (sv *serverConn) doRequest(r *Request, c *clientConn) (err error) {
 	if c.buf == nil {
-		c.buf = make([]byte, bufSize*2, bufSize*2)
+		c.buf = make([]byte, bufSize*2)
 	}
 	r.state = rsCreated
 	// Send request to the server

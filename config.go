@@ -122,7 +122,7 @@ type configParser struct{}
 
 func (p configParser) ParseListen(val string) {
 	arr := strings.Split(val, ",")
-	config.ListenAddr = make([]string, len(arr), len(arr))
+	config.ListenAddr = make([]string, len(arr))
 	for i, s := range arr {
 		s = strings.TrimSpace(s)
 		host, port := splitHostPort(s)
