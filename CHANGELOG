@@ -1,9 +1,18 @@
-0.4 (not released)
+0.5 (not released)
 
     * Work more automatically: autoRetry is enabled by default, time out request
     will be treated as temporarily blocked instead of asking user what to do
+    * Builtin common blocked/direct site list
+    * Support specifying host in blocked/direct file
     * updateBlocked & updateDirect is disabled by default, these options
     are just a way to optimize access speed
+    * Periodically estimate timeout value to avoid considering direct site as
+    blocked with bad network connection
+    * Better windows support: connection reset, timeout and DNS error detection
+    tested and works on XP
+    * chou file is removed as it's not needed
+    * Support listening multiple addresses
+    * Support IP based and user password authentication
     * Bug fix: Support PUT request with message body
 
 0.3.5 (2012-12-23)
