@@ -379,12 +379,14 @@ var topLevelDomain = map[string]bool{
 	"edu": true,
 }
 
+// host2Domain returns the domain of a host. It will recognize domains like
+// google.com.hk. Returns empty string for simple host.
 func host2Domain(host string) (domain string) {
 	host, _ = splitHostPort(host)
 	host = trimLastDot(host)
 	lastDot := strings.LastIndex(host, ".")
 	if lastDot == -1 {
-		return host // simple host name, we should not hanlde this
+		return ""
 	}
 	// Find the 2nd last dot
 	dot2ndLast := strings.LastIndex(host[:lastDot], ".")

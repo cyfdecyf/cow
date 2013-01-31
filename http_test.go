@@ -29,17 +29,20 @@ func TestParseRequestURI(t *testing.T) {
 		rawurl string
 		url    *URL
 	}{
-		{"http://google.com", &URL{"google.com:80", "/", "http"}},
-		{"http://google.com/", &URL{"google.com:80", "/", "http"}},
-		{"https://google.com:80", &URL{"google.com:80", "/", "http"}},
-		{"http://google.com:80/", &URL{"google.com:80", "/", "http"}},
-		{"http://google.com:80/ncr", &URL{"google.com:80", "/ncr", "http"}},
-		{"https://google.com/ncr/tree", &URL{"google.com:443", "/ncr/tree", "http"}},
-		{"google.com:80/", &URL{"google.com:80", "/", "http"}},
-		{"google.com:80", &URL{"google.com:80", "/", "http"}},
-		{"google.com", &URL{"google.com:80", "/", "http"}},
-		{"google.com:80/ncr", &URL{"google.com:80", "/ncr", "http"}},
-		{"google.com/ncr/tree", &URL{"google.com:80", "/ncr/tree", "http"}},
+		// I'm really tired of typing google.com ...
+		{"http://www.g.com", &URL{"www.g.com:80", "www.g.com", "g.com", "/", "http"}},
+		{"http://plus.g.com/", &URL{"plus.g.com:80", "plus.g.com", "g.com", "/", "http"}},
+		{"https://g.com:80", &URL{"g.com:80", "g.com", "g.com", "/", "http"}},
+		{"http://mail.g.com:80/", &URL{"mail.g.com:80", "mail.g.com", "g.com", "/", "http"}},
+		{"http://g.com:80/ncr", &URL{"g.com:80", "g.com", "g.com", "/ncr", "http"}},
+		{"https://g.com/ncr/tree", &URL{"g.com:443", "g.com", "g.com", "/ncr/tree", "http"}},
+		{"www.g.com.hk:80/", &URL{"www.g.com.hk:80", "www.g.com.hk", "g.com.hk", "/", "http"}},
+		{"g.com.jp:80", &URL{"g.com.jp:80", "g.com.jp", "g.com.jp", "/", "http"}},
+		{"g.com", &URL{"g.com:80", "g.com", "g.com", "/", "http"}},
+		{"g.com:80/ncr", &URL{"g.com:80", "g.com", "g.com", "/ncr", "http"}},
+		{"g.com/ncr/tree", &URL{"g.com:80", "g.com", "g.com", "/ncr/tree", "http"}},
+		{"simplehost", &URL{"simplehost:80", "simplehost", "", "/", "http"}},
+		{"simplehost:8080", &URL{"simplehost:8080", "simplehost", "", "/", "http"}},
 	}
 	for _, td := range testData {
 		url, err := ParseRequestURI(td.rawurl)
@@ -56,7 +59,13 @@ func TestParseRequestURI(t *testing.T) {
 			t.Error(td.rawurl, "non nil URL should not report error")
 		}
 		if url.HostPort != td.url.HostPort {
-			t.Error(td.rawurl, "parsed host wrong:", td.url.HostPort, "got", url.HostPort)
+			t.Error(td.rawurl, "parsed hostPort wrong:", td.url.HostPort, "got", url.HostPort)
+		}
+		if url.Host != td.url.Host {
+			t.Error(td.rawurl, "parsed host wrong:", td.url.Host, "got", url.Host)
+		}
+		if url.Domain != td.url.Domain {
+			t.Error(td.rawurl, "parsed domain wrong:", td.url.Domain, "got", url.Domain)
 		}
 		if url.Path != td.url.Path {
 			t.Error(td.rawurl, "parsed path wrong:", td.url.Path, "got", url.Path)
@@ -69,8 +78,8 @@ func TestURLToURI(t *testing.T) {
 		url URL
 		uri string
 	}{
-		{URL{"google.com", "/ncr", "http"}, "http://google.com/ncr"},
-		{URL{"www.google.com", "/ncr", "https"}, "https://www.google.com/ncr"},
+		{URL{HostPort: "google.com", Path: "/ncr", Scheme: "http"}, "http://google.com/ncr"},
+		{URL{HostPort: "www.google.com", Path: "/ncr", Scheme: "https"}, "https://www.google.com/ncr"},
 	}
 	for _, td := range testData {
 		if td.url.toURI() != td.uri {

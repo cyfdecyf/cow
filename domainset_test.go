@@ -15,6 +15,7 @@ func TestHost2Domain(t *testing.T) {
 		{"sina.com.cn", "sina.com.cn"},
 		{"www.bbc.co.uk", "bbc.co.uk"},
 		{"apple.com.cn", "apple.com.cn"},
+		{"simplehost", ""},
 	}
 
 	for _, td := range testData {

@@ -81,6 +81,8 @@ func (rp *Response) String() string {
 
 type URL struct {
 	HostPort string // must contain port
+	Host     string // no port
+	Domain   string
 	Path     string
 	Scheme   string
 }
@@ -172,7 +174,8 @@ func ParseRequestURI(rawurl string) (*URL, error) {
 		}
 	}
 
-	return &URL{HostPort: hostport, Path: path, Scheme: scheme}, nil
+	return &URL{HostPort: hostport, Host: host, Domain: host2Domain(host),
+		Path: path, Scheme: scheme}, nil
 }
 
 func splitHeader(s string) (name, val string, err error) {
