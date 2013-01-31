@@ -105,11 +105,6 @@ func expandTilde(pth string) string {
 	return pth
 }
 
-func hostIsIP(host string) bool {
-	host, _ = splitHostPort(host)
-	return net.ParseIP(host) != nil
-}
-
 func copyN(r io.Reader, w, contBuf io.Writer, n int, buf, pre, end []byte) (err error) {
 	var nn int
 	bufLen := len(buf)

@@ -87,12 +87,25 @@ type URL struct {
 	Scheme   string
 }
 
+func NewURL(raw string) *URL {
+	hostport := raw
+	host, port := splitHostPort(raw)
+	if port == "" {
+		hostport = net.JoinHostPort(host, "80")
+	}
+	return &URL{hostport, host, host2Domain(host), "", ""}
+}
+
 func (url *URL) String() string {
 	return url.HostPort + url.Path
 }
 
 func (url *URL) toURI() string {
 	return url.Scheme + "://" + url.String()
+}
+
+func (url *URL) HostIsIP() bool {
+	return net.ParseIP(url.Host) != nil
 }
 
 // headers of interest to a proxy
@@ -130,8 +143,8 @@ func splitHostPort(s string) (host, port string) {
 	return s, ""
 }
 
-// net.ParseRequestURI will unescape encoded path, but the proxy don't need
-// Assumes the input rawurl valid. Even if rawurl is not valid, net.Dial
+// net.ParseRequestURI will unescape encoded path, but the proxy doesn't need
+// that. Assumes the input rawurl is valid. Even if rawurl is not valid, net.Dial
 // will check the correctness of the host.
 func ParseRequestURI(rawurl string) (*URL, error) {
 	if rawurl[0] == '/' {
@@ -174,8 +187,7 @@ func ParseRequestURI(rawurl string) (*URL, error) {
 		}
 	}
 
-	return &URL{HostPort: hostport, Host: host, Domain: host2Domain(host),
-		Path: path, Scheme: scheme}, nil
+	return &URL{hostport, host, host2Domain(host), path, scheme}, nil
 }
 
 func splitHeader(s string) (name, val string, err error) {

@@ -125,8 +125,7 @@ func sendRedirectPage(w io.Writer, location string) {
 func sendBlockedErrorPage(c *clientConn, codeReason, h1, msg string, r *Request) {
 	// If host is IP or in always DS, we can't add it to blocked or direct domain list. Just
 	// return ordinary error page.
-	h, _ := splitHostPort(r.URL.HostPort)
-	if hostIsIP(r.URL.HostPort) || domainSet.isHostInAlwaysDs(h) {
+	if r.URL.HostIsIP() || domainSet.isURLInAlwaysDs(r.URL) {
 		sendErrorPage(c, codeReason, h1, msg)
 		return
 	}
@@ -137,15 +136,15 @@ func sendBlockedErrorPage(c *clientConn, codeReason, h1, msg string, r *Request)
 		Domain    string
 	}{
 		c.proxy.addr,
-		h,
-		host2Domain(r.URL.HostPort),
+		r.URL.Host,
+		r.URL.Domain,
 	}
 	buf := new(bytes.Buffer)
 	if err := blockedFormTmpl.Execute(buf, data); err != nil {
 		errl.Println("Error generating blocked form:", err)
 		return
 	}
-	if !domainSet.isHostDirect(h) {
+	if !domainSet.isURLDirect(r.URL) {
 		if err := directFormTmpl.Execute(buf, data); err != nil {
 			errl.Println("Error generating direct form:", err)
 			return

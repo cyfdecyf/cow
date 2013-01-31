@@ -35,7 +35,7 @@ var topLevel = {
 function host2domain(host) {
 	var lastDot = host.lastIndexOf(".");
 	if (lastDot === -1)
-		return host;
+		return ""; // simple host name has no domain
 	// Find the second last dot
 	dot2ndLast = host.lastIndexOf(".", lastDot-1);
 	if (dot2ndLast === -1)

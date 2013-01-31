@@ -110,100 +110,124 @@ func newDomainSet() *DomainSet {
 
 var domainSet = newDomainSet()
 
-func (ds *DomainSet) isHostInAlwaysDs(host string) bool {
-	dm := host2Domain(host)
-	return ds.alwaysBlocked[dm] || ds.alwaysDirect[dm]
+func (ds *DomainSet) isURLInAlwaysDs(url *URL) bool {
+	return url.Domain == "" || ds.alwaysDirect[url.Host] || ds.alwaysDirect[url.Domain] ||
+		ds.alwaysBlocked[url.Host] || ds.alwaysBlocked[url.Domain]
 }
 
-func (ds *DomainSet) isHostAlwaysDirect(host string) bool {
-	return ds.alwaysDirect[host2Domain(host)]
-}
-
-func (ds *DomainSet) isHostAlwaysBlocked(host string) bool {
-	return ds.alwaysBlocked[host2Domain(host)]
-}
-
-func (ds *DomainSet) isHostBlocked(host string) bool {
-	dm := host2Domain(host)
-	if ds.alwaysDirect[dm] {
-		return false
-	}
-	if ds.alwaysBlocked[dm] {
+func (ds *DomainSet) isURLAlwaysDirect(url *URL) bool {
+	if url.Domain == "" { // always use direct access for simple host name
 		return true
 	}
-	if ds.chouSet.has(dm) {
-		return true
-	}
-	return ds.blocked.has(dm)
+	return ds.alwaysDirect[url.Host] || ds.alwaysDirect[url.Domain]
 }
 
-func (ds *DomainSet) isHostDirect(host string) bool {
-	dm := host2Domain(host)
-	if ds.alwaysDirect[dm] {
-		return true
-	}
-	if ds.alwaysBlocked[dm] {
+func (ds *DomainSet) isURLAlwaysBlocked(url *URL) bool {
+	if url.Domain == "" {
 		return false
 	}
-	return ds.direct.has(dm)
+	return ds.alwaysBlocked[url.Host] || ds.alwaysBlocked[url.Domain]
 }
 
-func (ds *DomainSet) isHostChouFeng(host string) bool {
-	return ds.chou.has(host2Domain(host))
-}
-
-func (ds *DomainSet) addChouHost(host string) bool {
-	dm := host2Domain(host)
-	if ds.isHostAlwaysDirect(host) || dm == "localhost" || hostIsIP(host) {
+func (ds *DomainSet) lookupBlocked(s string) bool {
+	if debug {
+		if _, port := splitHostPort(s); port != "" {
+			panic("lookupBlocked got host with port")
+		}
+	}
+	if ds.alwaysDirect[s] {
 		return false
 	}
-	ds.chouSet.add(dm)
-	debug.Printf("domain %s blocked\n", dm)
+	if ds.alwaysBlocked[s] {
+		return true
+	}
+	if ds.chouSet.has(s) {
+		return true
+	}
+	return ds.blocked.has(s)
+}
+
+func (ds *DomainSet) isURLBlocked(url *URL) bool {
+	if url.Domain == "" {
+		return false
+	}
+	return ds.lookupBlocked(url.Host) || ds.lookupBlocked(url.Domain)
+}
+
+func (ds *DomainSet) lookupDirect(s string) bool {
+	if debug {
+		if _, port := splitHostPort(s); port != "" {
+			panic("lookupDirect got host with port")
+		}
+	}
+	if ds.alwaysDirect[s] {
+		return true
+	}
+	if ds.alwaysBlocked[s] {
+		return false
+	}
+	return ds.direct.has(s)
+}
+
+func (ds *DomainSet) isURLDirect(url *URL) bool {
+	if url.Domain == "" {
+		return true
+	}
+	return ds.lookupDirect(url.Host) || ds.lookupDirect(url.Domain)
+}
+
+func (ds *DomainSet) isURLChouFeng(url *URL) bool {
+	return ds.chou.has(url.Host) || ds.chou.has(url.Domain)
+}
+
+func (ds *DomainSet) addChouURL(url *URL) bool {
+	if ds.isURLAlwaysDirect(url) || url.Domain == "" || url.HostIsIP() {
+		return false
+	}
+	ds.chouSet.add(url.Domain)
+	debug.Printf("domain %s blocked\n", url.Domain)
 	return true
 }
 
 // Return true if the host is taken as blocked
-func (ds *DomainSet) addBlockedHost(host string) bool {
+func (ds *DomainSet) addBlockedURL(url *URL) bool {
 	if !config.UpdateBlocked {
-		return ds.addChouHost(host)
+		return ds.addChouURL(url)
 	}
-	dm := host2Domain(host)
-	if ds.isHostAlwaysDirect(host) || ds.chou.has(dm) || dm == "localhost" ||
-		hostIsIP(host) {
+	if ds.isURLAlwaysDirect(url) || url.Domain == "" || url.HostIsIP() {
 		return false
 	}
-	if ds.blocked.has(dm) {
+	if ds.blocked.has(url.Domain) {
 		return true
 	}
-	ds.blocked.add(dm)
+	ds.blocked.add(url.Domain)
 	ds.blockedChanged = true
-	debug.Printf("%s added to blocked list\n", dm)
+	debug.Printf("%s added to blocked list\n", url.Domain)
 	// Delete this domain from direct domain set
-	if ds.direct.has(dm) {
-		ds.direct.del(dm)
+	if ds.direct.has(url.Domain) {
+		ds.direct.del(url.Domain)
 		ds.directChanged = true
-		debug.Printf("%s deleted from direct list\n", dm)
+		debug.Printf("%s deleted from direct list\n", url.Domain)
 	}
 	return true
 }
 
-func (ds *DomainSet) addDirectHost(host string) (added bool) {
+func (ds *DomainSet) addDirectURL(url *URL) (added bool) {
 	if !config.UpdateDirect {
 		return
 	}
-	dm := host2Domain(host)
-	if ds.isHostInAlwaysDs(host) || ds.chou.has(dm) || dm == "localhost" ||
-		hostIsIP(host) || ds.direct.has(dm) {
+	if ds.isURLInAlwaysDs(url) || url.Domain == "" ||
+		url.HostIsIP() || ds.direct.has(url.Domain) {
 		return false
 	}
-	ds.direct.add(dm)
+	ds.direct.add(url.Domain)
 	ds.directChanged = true
-	debug.Printf("%s added to direct list\n", dm)
+	debug.Printf("%s added to direct list\n", url.Domain)
 	// Delete this domain from blocked domain set
-	if ds.blocked.has(dm) {
-		ds.blocked.del(dm)
+	if ds.blocked.has(url.Domain) {
+		ds.blocked.del(url.Domain)
 		ds.blockedChanged = true
-		debug.Printf("%s deleted from blocked list\n", dm)
+		debug.Printf("%s deleted from blocked list\n", url.Domain)
 	}
 	return true
 }
