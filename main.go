@@ -72,6 +72,7 @@ func main() {
 
 	go sigHandler()
 	go runSSH()
+	go runEstimateTimeout()
 
 	done := make(chan byte, 1)
 	// save 1 goroutine (a few KB) for the common case with only 1 listen address

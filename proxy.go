@@ -16,12 +16,12 @@ import (
 var _ = reflect.TypeOf
 
 // With GFW's DNS pollution/hijacking, the returned address will block on
-// net.Dial. So we set a short dial timeout value.
-const dialTimeout = 5 * time.Second
+// net.Dial.
+const minDialTimeout = 5 * time.Second
+const minReadTimeout = 5 * time.Second
 
-// For read timeout, set it to a relatively large value to avoid incorrectly
-// using parent socks proxy in case of bad network connection.
-const readTimeout = 8 * time.Second
+var dialTimeout = minDialTimeout
+var readTimeout = minReadTimeout
 
 // Close client connection it no new request received in 1 minute.
 const clientConnTimeout = 60 * time.Second
