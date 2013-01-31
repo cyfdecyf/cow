@@ -380,7 +380,7 @@ func (c *clientConn) handleBlockedRequest(r *Request, err error, msg string) err
 			return errRetry
 		}
 		errCode = errCodeReset
-	} else if domainSet.isURLChouFeng(r.URL) || config.AutoRetry {
+	} else if config.AutoRetry {
 		// err must be timeout here
 		// Domain in chou domain set is likely to be blocked, should automatically
 		// retry request using parent proxy.

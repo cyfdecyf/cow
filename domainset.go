@@ -84,7 +84,6 @@ func (ds *paraDmSet) del(dm string) {
 type DomainSet struct {
 	direct  *paraDmSet
 	blocked *paraDmSet
-	chou    *paraDmSet
 
 	blockedChanged bool
 	directChanged  bool
@@ -99,7 +98,6 @@ func newDomainSet() *DomainSet {
 	ds := new(DomainSet)
 	ds.direct = newParaDmSet()
 	ds.blocked = newParaDmSet()
-	ds.chou = newParaDmSet()
 
 	ds.alwaysBlocked = newDmSet()
 	ds.alwaysDirect = newDmSet()
@@ -174,10 +172,6 @@ func (ds *DomainSet) isURLDirect(url *URL) bool {
 		return true
 	}
 	return ds.lookupDirect(url.Host) || ds.lookupDirect(url.Domain)
-}
-
-func (ds *DomainSet) isURLChouFeng(url *URL) bool {
-	return ds.chou.has(url.Host) || ds.chou.has(url.Domain)
 }
 
 func (ds *DomainSet) addChouURL(url *URL) bool {
@@ -278,9 +272,6 @@ func (ds *DomainSet) filterOutBlockedInDirect() {
 }
 
 func (ds *DomainSet) write() {
-	// chou domain set maybe added to blocked site during execution,
-	// filter them out before writing back to disk.
-	ds.filterOutDs(ds.chou.dmSet)
 	ds.writeBlockedDs()
 	ds.writeDirectDs()
 }
