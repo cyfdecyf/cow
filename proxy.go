@@ -831,12 +831,16 @@ func (sv *serverConn) doConnect(r *Request, c *clientConn) (err error) {
 	}()
 
 	err = copyServer2Client(sv, c, r)
-	// close sv to force copyClient2Server got write error and stop
-	// may need to retry request, so do not close client connection here
-	sv.Close()
 	debug.Printf("doConnect: server(%s)->client(%s) err: %v\n", r.URL.HostPort, c.RemoteAddr(), err)
-	<-done
-	debug.Printf("doConnect: client(%s)->server(%s) stopped\n", c.RemoteAddr(), r.URL.HostPort)
+	if err == errRetry {
+		// close sv to force copyClient2Server got write error and stop
+		// need to retry request, so do not close client connection here
+		sv.Close()
+		<-done
+		debug.Printf("doConnect: client(%s)->server(%s) stopped\n", c.RemoteAddr(), r.URL.HostPort)
+	} else {
+		c.Conn.Close()
+	}
 	if cli2srvErr == errRetry || err == errRetry {
 		return errRetry
 	}
