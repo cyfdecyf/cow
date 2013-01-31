@@ -44,7 +44,7 @@ type Request struct {
 
 func (r *Request) String() (s string) {
 	s = fmt.Sprintf("%s %s%s", r.Method,
-		r.URL.Host, r.URL.Path)
+		r.URL.HostPort, r.URL.Path)
 	if verbose {
 		s += fmt.Sprintf("\n%v", r.raw.String())
 	}
@@ -80,13 +80,13 @@ func (rp *Response) String() string {
 }
 
 type URL struct {
-	Host   string // must contain port
-	Path   string
-	Scheme string
+	HostPort string // must contain port
+	Path     string
+	Scheme   string
 }
 
 func (url *URL) String() string {
-	return url.Host + url.Path
+	return url.HostPort + url.Path
 }
 
 func (url *URL) toURI() string {
@@ -133,7 +133,7 @@ func splitHostPort(s string) (host, port string) {
 // will check the correctness of the host.
 func ParseRequestURI(rawurl string) (*URL, error) {
 	if rawurl[0] == '/' {
-		return &URL{Host: "", Path: rawurl}, nil
+		return &URL{Path: rawurl}, nil
 	}
 
 	var f []string
@@ -152,9 +152,9 @@ func ParseRequestURI(rawurl string) (*URL, error) {
 		rest = f[1]
 	}
 
-	var host, path string
+	var hostport, host, port, path string
 	f = strings.SplitN(rest, "/", 2)
-	host = f[0]
+	hostport = f[0]
 	if len(f) == 1 || f[1] == "" {
 		path = "/"
 	} else {
@@ -163,16 +163,16 @@ func ParseRequestURI(rawurl string) (*URL, error) {
 	// Must add port in host so it can be used as key to find the correct
 	// server connection.
 	// e.g. google.com:80 and google.com:443 should use different connections.
-	_, port := splitHostPort(host)
+	host, port = splitHostPort(hostport)
 	if port == "" {
 		if len(scheme) == 4 {
-			host = net.JoinHostPort(host, "80")
+			hostport = net.JoinHostPort(host, "80")
 		} else {
-			host = net.JoinHostPort(host, "443")
+			hostport = net.JoinHostPort(host, "443")
 		}
 	}
 
-	return &URL{Host: host, Path: path, Scheme: scheme}, nil
+	return &URL{HostPort: hostport, Path: path, Scheme: scheme}, nil
 }
 
 func splitHeader(s string) (name, val string, err error) {

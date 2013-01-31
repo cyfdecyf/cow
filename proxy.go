@@ -277,7 +277,7 @@ func (c *clientConn) serve() {
 			dbgRq.Printf("%v %v\n", c.RemoteAddr(), r)
 		}
 
-		if isSelfURL(r.URL.Host) {
+		if isSelfURL(r.URL.HostPort) {
 			if err = c.serveSelfURL(r); err != nil {
 				return
 			}
@@ -330,7 +330,7 @@ func (c *clientConn) serve() {
 			// tell the client this is to close client connection (proxy
 			// don't know the protocol between the client and server)
 
-			// debug.Printf("doConnect for %s to %s done\n", c.RemoteAddr(), r.URL.Host)
+			// debug.Printf("doConnect for %s to %s done\n", c.RemoteAddr(), r.URL.HostPort)
 			return
 		}
 
@@ -357,10 +357,10 @@ func genErrMsg(r *Request, what string) string {
 }
 
 func genBlockedSiteMsg(r *Request) string {
-	if !hostIsIP(r.URL.Host) {
+	if !hostIsIP(r.URL.HostPort) {
 		return fmt.Sprintf(
 			"<p>Domain <strong>%s</strong> maybe blocked.</p>",
-			host2Domain(r.URL.Host))
+			host2Domain(r.URL.HostPort))
 	}
 	return ""
 }
@@ -374,16 +374,16 @@ const (
 func (c *clientConn) handleBlockedRequest(r *Request, err error, msg string) error {
 	var errCode string
 	if isErrConnReset(err) {
-		if domainSet.addBlockedHost(r.URL.Host) {
+		if domainSet.addBlockedHost(r.URL.HostPort) {
 			return errRetry
 		}
 		errCode = errCodeReset
-	} else if domainSet.isHostChouFeng(r.URL.Host) || config.AutoRetry {
+	} else if domainSet.isHostChouFeng(r.URL.HostPort) || config.AutoRetry {
 		// err must be timeout here
 		// Domain in chou domain set is likely to be blocked, should automatically
 		// retry request using parent proxy.
 		// If autoRetry is enabled, treat timeout domain as chou and retry.
-		if domainSet.addChouHost(r.URL.Host) {
+		if domainSet.addChouHost(r.URL.HostPort) {
 			return errRetry
 		}
 	}
@@ -543,7 +543,7 @@ func (c *clientConn) readResponse(sv *serverConn, r *Request) (err error) {
 }
 
 func (c *clientConn) getServerConn(r *Request) (sv *serverConn, err error) {
-	sv, ok := c.serverConn[r.URL.Host]
+	sv, ok := c.serverConn[r.URL.HostPort]
 	if ok && sv.mayBeClosed() {
 		// debug.Printf("Connection to %s maybe closed\n", sv.host)
 		c.removeServerConn(sv)
@@ -651,11 +651,11 @@ fail:
 }
 
 func (c *clientConn) createServerConn(r *Request) (*serverConn, error) {
-	srvconn, err := c.createConnection(r.URL.Host, r)
+	srvconn, err := c.createConnection(r.URL.HostPort, r)
 	if err != nil {
 		return nil, err
 	}
-	sv := newServerConn(srvconn, r.URL.Host)
+	sv := newServerConn(srvconn, r.URL.HostPort)
 	if r.isConnect {
 		// Don't put connection for CONNECT method for reuse
 		return sv, nil
@@ -688,8 +688,8 @@ func copyServer2Client(sv *serverConn, c *clientConn, r *Request) (err error) {
 			setConnReadTimeout(sv, readTimeout, "copyServer2Client")
 		}
 		if n, err = sv.Read(buf); err != nil {
-			if maybeBlocked(err) && sv.maybeFake() && domainSet.addBlockedHost(r.URL.Host) {
-				debug.Printf("copyServer2Client blocked site %s detected, retry\n", r.URL.Host)
+			if maybeBlocked(err) && sv.maybeFake() && domainSet.addBlockedHost(r.URL.HostPort) {
+				debug.Printf("copyServer2Client blocked site %s detected, retry\n", r.URL.HostPort)
 				return errRetry
 			}
 			// Expected error: "use of closed network connection",
@@ -748,7 +748,7 @@ func copyClient2Server(c *clientConn, sv *serverConn, r *Request) (err error) {
 		if n, err = c.Read(buf); err != nil {
 			if config.DetectSSLErr && (isErrConnReset(err) || err == io.EOF) && sv.maybeSSLErr(start) {
 				debug.Println("client connection closed very soon, taken as SSL error:", r)
-				domainSet.addBlockedHost(r.URL.Host)
+				domainSet.addBlockedHost(r.URL.HostPort)
 			}
 			// debug.Printf("copyClient2Server read data: %v\n", err)
 			return
@@ -770,8 +770,8 @@ func copyClient2Server(c *clientConn, sv *serverConn, r *Request) (err error) {
 		}
 		// Read is using buffer, so write what have been read directly
 		if _, err = sv.Write(buffered); err != nil {
-			if sv.maybeFake() && isErrConnReset(err) && domainSet.addBlockedHost(r.URL.Host) {
-				debug.Printf("copyClient2Server blocked site %d detected, retry\n", r.URL.Host)
+			if sv.maybeFake() && isErrConnReset(err) && domainSet.addBlockedHost(r.URL.HostPort) {
+				debug.Printf("copyClient2Server blocked site %d detected, retry\n", r.URL.HostPort)
 				return errRetry
 			}
 			debug.Printf("copyClient2Server write data: %v\n", err)
@@ -811,7 +811,7 @@ var connEstablished = []byte("HTTP/1.0 200 Connection established\r\nProxy-agent
 func (sv *serverConn) doConnect(r *Request, c *clientConn) (err error) {
 	r.state = rsCreated
 	if debug {
-		debug.Printf("%v 200 Connection established to %s\n", c.RemoteAddr(), r.URL.Host)
+		debug.Printf("%v 200 Connection established to %s\n", c.RemoteAddr(), r.URL.HostPort)
 	}
 	if _, err = c.Write(connEstablished); err != nil {
 		debug.Printf("%v Error sending 200 Connecion established: %v\n", c.RemoteAddr(), err)

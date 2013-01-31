@@ -6,7 +6,7 @@ import (
 
 func TestSplitHostPort(t *testing.T) {
 	var testData = []struct {
-		host       string
+		hostPort   string
 		hostNoPort string
 		port       string
 	}{
@@ -17,9 +17,9 @@ func TestSplitHostPort(t *testing.T) {
 	}
 
 	for _, td := range testData {
-		h, p := splitHostPort(td.host)
+		h, p := splitHostPort(td.hostPort)
 		if h != td.hostNoPort || p != td.port {
-			t.Errorf("%s returns %v:%v", td.host, td.hostNoPort, td.port)
+			t.Errorf("%s returns %v:%v", td.hostPort, td.hostNoPort, td.port)
 		}
 	}
 }
@@ -55,8 +55,8 @@ func TestParseRequestURI(t *testing.T) {
 		if err != nil {
 			t.Error(td.rawurl, "non nil URL should not report error")
 		}
-		if url.Host != td.url.Host {
-			t.Error(td.rawurl, "parsed host wrong:", td.url.Host, "got", url.Host)
+		if url.HostPort != td.url.HostPort {
+			t.Error(td.rawurl, "parsed host wrong:", td.url.HostPort, "got", url.HostPort)
 		}
 		if url.Path != td.url.Path {
 			t.Error(td.rawurl, "parsed path wrong:", td.url.Path, "got", url.Path)
