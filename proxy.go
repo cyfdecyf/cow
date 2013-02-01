@@ -714,7 +714,7 @@ func copyServer2Client(sv *serverConn, c *clientConn, r *Request) (err error) {
 			return
 		}
 		if _, err = c.Write(buf[0:n]); err != nil {
-			debug.Printf("copyServer2Client write data: %v\n", err)
+			// debug.Printf("copyServer2Client write data: %v\n", err)
 			return
 		}
 		// set state to rsRecvBody to indicate the request has partial response sent to client
@@ -770,14 +770,18 @@ func copyClient2Server(c *clientConn, sv *serverConn, r *Request, done chan byte
 			setConnReadTimeout(c, time.Second, "cli->srv")
 		}
 		if n, err = c.Read(buf); err != nil {
-			// debug.Printf("copyClient2Server read data: %v\n", err)
+			// debug.Printf("copyClient2Server read err: %v\n", err)
 			if config.DetectSSLErr && (isErrConnReset(err) || err == io.EOF) && sv.maybeSSLErr(start) {
 				debug.Println("client connection closed very soon, taken as SSL error:", r)
 				domainSet.addBlockedURL(r.URL)
-			} else if !isErrTimeout(err) {
+			} else if isErrTimeout(err) {
+				// For timeout, write to server connection to detect whether this should stop
+				// debug.Printf("cli(%s)->srv(%s) timeout\n", c.RemoteAddr(), r.URL.HostPort)
+				buffered = buf[:1]
+				goto writeBuf
+			} else {
 				return
 			}
-			// For timeout, write to server connection to detect whether this should stop
 		}
 		if sv.maybeFake() {
 			unsetConnReadTimeout(c, "cli->srv")
@@ -829,13 +833,13 @@ func (sv *serverConn) doConnect(r *Request, c *clientConn) (err error) {
 	var cli2srvErr error
 	done := make(chan byte, 1)
 	go func() {
-		debug.Printf("doConnect: cli(%s)->srv(%s)\n", c.RemoteAddr(), r.URL.HostPort)
+		// debug.Printf("doConnect: cli(%s)->srv(%s)\n", c.RemoteAddr(), r.URL.HostPort)
 		cli2srvErr = copyClient2Server(c, sv, r, done)
 		sv.Close() // close sv to force read from server in copyServer2Client return
 	}()
 
+	// debug.Printf("doConnect: srv(%s)->cli(%s)\n", r.URL.HostPort, c.RemoteAddr())
 	err = copyServer2Client(sv, c, r)
-	// debug.Printf("doConnect: srv(%s)->cli(%s) err: %v\n", r.URL.HostPort, c.RemoteAddr(), err)
 	if err == errRetry {
 		// close sv to force copyClient2Server got write error and stop
 		// need to retry request, so do not close client connection here
