@@ -12,6 +12,27 @@ import (
 	"runtime"
 )
 
+type notification chan byte
+
+func newNotification() notification {
+	// Notification channle has size 1, so sending a single one will not block
+	return make(chan byte, 1)
+}
+
+func (n notification) notify() {
+	n <- 1
+}
+
+func (n notification) hasNotified() bool {
+	select {
+	case <-n:
+		return true
+	default:
+		return false
+	}
+	return false
+}
+
 // ReadLine read till '\n' is found or encounter error. The returned line does
 // not include ending '\r' and '\n'. If returns err != nil if and only if
 // len(line) == 0.

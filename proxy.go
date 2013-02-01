@@ -729,13 +729,33 @@ func copyServer2Client(sv *serverConn, c *clientConn, r *Request) (err error) {
 	return
 }
 
-func copyClient2Server(c *clientConn, sv *serverConn, r *Request, done chan byte) (err error) {
-	// TODO this is complicated, simplify it.
+func copy2Server(sv *serverConn, r *Request, p []byte) (err error) {
+	if r.responseNotSent() {
+		if r.contBuf == nil {
+			r.contBuf = new(bytes.Buffer)
+		}
+		r.contBuf.Write(p)
+	} else if r.contBuf != nil {
+		r.contBuf = nil
+	}
+	_, err = sv.Write(p)
+	return
+}
+
+func copyClient2Server(c *clientConn, sv *serverConn, r *Request, srvStopped notification, done chan byte) (err error) {
+	// sv.maybeFake may change during execution in this function.
+	// So need a variable to record the whether timeout is set.
+	deadlineIsSet := false
 	defer func() {
+		if deadlineIsSet {
+			// maybe need to retry, should unset timeout here because
+			// maybeFake would become false if using parent connection
+			unsetConnReadTimeout(c, "cli->srv after err")
+		}
 		done <- 1
 	}()
+
 	buf := make([]byte, bufSize)
-	var buffered []byte
 	var n int
 
 	if r.contBuf != nil {
@@ -749,11 +769,12 @@ func copyClient2Server(c *clientConn, sv *serverConn, r *Request, done chan byte
 
 	if c.bufRd != nil {
 		n = c.bufRd.Buffered()
-		if n > bufSize {
-			buf = make([]byte, n)
-		}
 		if n > 0 {
-			buffered, _ = c.bufRd.Peek(n) // should not return error
+			buffered, _ := c.bufRd.Peek(n) // should not return error
+			if err = copy2Server(sv, r, buffered); err != nil {
+				// debug.Printf("cli->srv write buffered err: %v\n", err)
+				return
+			}
 		}
 		c.bufRd = nil
 	}
@@ -763,42 +784,29 @@ func copyClient2Server(c *clientConn, sv *serverConn, r *Request, done chan byte
 		start = time.Now()
 	}
 	for {
-		if buffered != nil {
-			goto writeBuf
-		}
+		// debug.Println("cli->srv")
 		if sv.maybeFake() {
 			setConnReadTimeout(c, time.Second, "cli->srv")
+			deadlineIsSet = true
+		} else if deadlineIsSet {
+			// maybeFake may truned to false after timeout, but timeout should be unset
+			unsetConnReadTimeout(c, "cli->srv before read")
+			deadlineIsSet = false
 		}
 		if n, err = c.Read(buf); err != nil {
-			// debug.Printf("copyClient2Server read err: %v\n", err)
 			if config.DetectSSLErr && (isErrConnReset(err) || err == io.EOF) && sv.maybeSSLErr(start) {
 				debug.Println("client connection closed very soon, taken as SSL error:", r)
 				domainSet.addBlockedURL(r.URL)
-			} else if isErrTimeout(err) {
-				// For timeout, write to server connection to detect whether this should stop
+			} else if isErrTimeout(err) && !srvStopped.hasNotified() {
 				// debug.Printf("cli(%s)->srv(%s) timeout\n", c.RemoteAddr(), r.URL.HostPort)
-				buffered = buf[:1]
-				goto writeBuf
-			} else {
-				return
+				continue
 			}
+			// debug.Printf("cli->srv read err: %v\n", err)
+			return
 		}
-		if sv.maybeFake() {
-			unsetConnReadTimeout(c, "cli->srv")
-		}
-		buffered = buf[:n]
 
-	writeBuf:
 		// copyServer2Client will detect write to closed server. Just store client content for retry.
-		if r.responseNotSent() {
-			if r.contBuf == nil {
-				r.contBuf = new(bytes.Buffer)
-			}
-			r.contBuf.Write(buffered)
-		} else if r.contBuf != nil {
-			r.contBuf = nil
-		}
-		if _, err = sv.Write(buffered); err != nil {
+		if err = copy2Server(sv, r, buf[:n]); err != nil {
 			// XXX is it enough to only do block detection in copyServer2Client?
 			/*
 				if sv.maybeFake() && isErrConnReset(err) && domainSet.addBlockedURL(r.URL) {
@@ -806,11 +814,10 @@ func copyClient2Server(c *clientConn, sv *serverConn, r *Request, done chan byte
 					return errRetry
 				}
 			*/
-			// debug.Printf("cli->srv write data: %v\n", err)
+			// debug.Printf("cli->srv write err: %v\n", err)
 			return
 		}
 		// debug.Printf("cli(%s)->srv(%s) sent %d bytes data\n", c.RemoteAddr(), r.URL.HostPort, n)
-		buffered = nil
 	}
 	return
 }
@@ -832,18 +839,17 @@ func (sv *serverConn) doConnect(r *Request, c *clientConn) (err error) {
 
 	var cli2srvErr error
 	done := make(chan byte, 1)
+	srvStopped := newNotification()
 	go func() {
 		// debug.Printf("doConnect: cli(%s)->srv(%s)\n", c.RemoteAddr(), r.URL.HostPort)
-		cli2srvErr = copyClient2Server(c, sv, r, done)
+		cli2srvErr = copyClient2Server(c, sv, r, srvStopped, done)
 		sv.Close() // close sv to force read from server in copyServer2Client return
 	}()
 
 	// debug.Printf("doConnect: srv(%s)->cli(%s)\n", r.URL.HostPort, c.RemoteAddr())
 	err = copyServer2Client(sv, c, r)
 	if err == errRetry {
-		// close sv to force copyClient2Server got write error and stop
-		// need to retry request, so do not close client connection here
-		sv.Close()
+		srvStopped.notify()
 		<-done
 		// debug.Printf("doConnect: cli(%s)->srv(%s) stopped\n", c.RemoteAddr(), r.URL.HostPort)
 	} else {
