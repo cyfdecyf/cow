@@ -303,18 +303,9 @@ func (c *clientConn) serve() {
 		}
 
 	retry:
-		if r.tryCnt > 5 {
-			debug.Println("Retry too many times, abort")
-			if !r.isConnect && r.responseNotSent() {
-				sendErrorPage(c, "502 retry failed", "Can't finish HTTP request",
-					genErrMsg(r, "Has retried several times."))
-				continue
-			}
-			return
-		}
-		r.tryCnt++
-		if bool(debug) && r.tryCnt > 1 {
-			debug.Printf("%s retry request tryCnt=%d %v\n", c.RemoteAddr(), r.tryCnt, r)
+		r.tryOnce()
+		if bool(debug) && r.isRetry() {
+			errl.Printf("%s retry request tryCnt=%d %v\n", c.RemoteAddr(), r.tryCnt, r)
 		}
 		if sv, err = c.getServerConn(r); err != nil {
 			// Failed connection will send error page back to client
@@ -327,7 +318,7 @@ func (c *clientConn) serve() {
 
 		if r.isConnect {
 			if err = sv.doConnect(r, c); err == errRetry {
-				if r.responseNotSent() {
+				if r.canRetry() {
 					// connection for CONNECT is not reused, no need to remove
 					goto retry
 				}
@@ -345,13 +336,18 @@ func (c *clientConn) serve() {
 
 		if err = sv.doRequest(r, c); err != nil {
 			c.removeServerConn(sv)
-			if err == errPageSent {
-				continue
-			} else if err == errRetry {
-				if r.responseNotSent() {
-					c.removeServerConn(sv)
+			if err == errRetry {
+				if r.canRetry() {
 					goto retry
 				}
+				debug.Println("Can't retry tryCnt=%d responseNotSent=%v\n", r.tryCnt, r.responseNotSent())
+				if r.responseNotSent() {
+					sendErrorPage(c, "502 retry failed", "Can't finish HTTP request",
+						genErrMsg(r, "Has tried several times."))
+					continue
+				}
+			} else if err == errPageSent {
+				continue
 			}
 			return
 		}
@@ -693,9 +689,17 @@ func copyServer2Client(sv *serverConn, c *clientConn, r *Request) (err error) {
 	sv.bufRd = nil
 	var n int
 
+	/*
+		// XXX This is to debug CONNECT retry
+		if r.tryCnt == 1 {
+			time.Sleep(1)
+			return errRetry
+		}
+	*/
+
 	for {
 		if sv.maybeFake() {
-			setConnReadTimeout(sv, readTimeout, "copyServer2Client")
+			setConnReadTimeout(sv, readTimeout, "srv->cli")
 		}
 		if n, err = sv.Read(buf); err != nil {
 			if err == io.EOF {
@@ -706,7 +710,7 @@ func copyServer2Client(sv *serverConn, c *clientConn, r *Request) (err error) {
 			}
 			if sv.maybeFake() && maybeBlocked(r.URL, err) && domainSet.addBlockedURL(r.URL) {
 				if r.responseNotSent() {
-					debug.Printf("copyServer2Client blocked site %s detected, err: %v retry\n", r.URL.HostPort, err)
+					debug.Printf("srv->cli blocked site %s detected, err: %v retry\n", r.URL.HostPort, err)
 					return errRetry
 				}
 				debug.Println("Can't retry blocked doConnect request because has sent data to client")
@@ -723,8 +727,9 @@ func copyServer2Client(sv *serverConn, c *clientConn, r *Request) (err error) {
 		}
 		// set state to rsRecvBody to indicate the request has partial response sent to client
 		r.state = rsRecvBody
+		// debug.Printf("srv(%s)->cli(%s) sent %d bytes data\n", r.URL.HostPort, c.RemoteAddr(), n)
 		if sv.maybeFake() {
-			unsetConnReadTimeout(sv, "copyServer2Client")
+			unsetConnReadTimeout(sv, "srv->cli")
 			domainSet.addDirectURL(sv.url)
 			sv.state = svSendRecvResponse
 		}
@@ -741,6 +746,15 @@ func copyClient2Server(c *clientConn, sv *serverConn, r *Request, done chan byte
 	var buffered []byte
 	var n int
 
+	if r.contBuf != nil {
+		debug.Printf("cli(%s)->srv(%s) retry request send %d bytes of stored data\n",
+			c.RemoteAddr(), r.URL.HostPort, r.contBuf.Len())
+		if _, err = sv.Write(r.contBuf.Bytes()); err != nil {
+			debug.Println("cli->srv send to server error")
+			return
+		}
+	}
+
 	if c.bufRd != nil {
 		n = c.bufRd.Buffered()
 		if n > bufSize {
@@ -752,20 +766,16 @@ func copyClient2Server(c *clientConn, sv *serverConn, r *Request, done chan byte
 		c.bufRd = nil
 	}
 
-	if r.contBuf != nil {
-		debug.Printf("copyClient2Server %s retry request %v send stored data\n", c.RemoteAddr(), r)
-		if _, err = sv.Write(r.contBuf.Bytes()); err != nil {
-			debug.Println("copyClient2Server send to server error")
-			return
-		}
+	var start time.Time
+	if config.DetectSSLErr {
+		start = time.Now()
 	}
-	start := time.Now()
 	for {
 		if buffered != nil {
 			goto writeBuf
 		}
 		if sv.maybeFake() {
-			setConnReadTimeout(c, time.Second, "copyClient2Server")
+			setConnReadTimeout(c, time.Second, "cli->srv")
 		}
 		if n, err = c.Read(buf); err != nil {
 			// debug.Printf("copyClient2Server read data: %v\n", err)
@@ -778,7 +788,7 @@ func copyClient2Server(c *clientConn, sv *serverConn, r *Request, done chan byte
 			// For timeout, write to server connection to detect whether this should stop
 		}
 		if sv.maybeFake() {
-			unsetConnReadTimeout(c, "copyClient2Server")
+			unsetConnReadTimeout(c, "cli->srv")
 		}
 		buffered = buf[:n]
 
@@ -789,10 +799,7 @@ func copyClient2Server(c *clientConn, sv *serverConn, r *Request, done chan byte
 				r.contBuf = new(bytes.Buffer)
 			}
 			r.contBuf.Write(buffered)
-			debug.Printf("copyClient2Server: store client %s data (%d) for %v\n", c.RemoteAddr(),
-				r.contBuf.Len(), r)
 		} else if r.contBuf != nil {
-			debug.Printf("copyClient2Server: %s clear stored data for %v\n", c.RemoteAddr(), r)
 			r.contBuf = nil
 		}
 		if _, err = sv.Write(buffered); err != nil {
@@ -803,9 +810,10 @@ func copyClient2Server(c *clientConn, sv *serverConn, r *Request, done chan byte
 					return errRetry
 				}
 			*/
-			debug.Printf("copyClient2Server write data: %v\n", err)
+			// debug.Printf("cli->srv write data: %v\n", err)
 			return
 		}
+		// debug.Printf("cli(%s)->srv(%s) sent %d bytes data\n", c.RemoteAddr(), r.URL.HostPort, n)
 		buffered = nil
 	}
 	return
@@ -816,29 +824,34 @@ var connEstablished = []byte("HTTP/1.0 200 Connection established\r\nProxy-agent
 // Do HTTP CONNECT
 func (sv *serverConn) doConnect(r *Request, c *clientConn) (err error) {
 	r.state = rsCreated
-	if _, err = c.Write(connEstablished); err != nil {
-		debug.Printf("%v Error sending 200 Connecion established: %v\n", c.RemoteAddr(), err)
-		sv.Close()
-		return err
+
+	if !r.isRetry() {
+		// debug.Printf("send connection confirmation to %s->%s\n", c.RemoteAddr(), r.URL.HostPort)
+		if _, err = c.Write(connEstablished); err != nil {
+			debug.Printf("%v Error sending 200 Connecion established: %v\n", c.RemoteAddr(), err)
+			sv.Close()
+			return err
+		}
 	}
 
 	var cli2srvErr error
 	done := make(chan byte, 1)
 	go func() {
-		debug.Printf("doConnect: start copy client(%s)->server(%s)\n", c.RemoteAddr(), r.URL.HostPort)
+		debug.Printf("doConnect: cli(%s)->srv(%s)\n", c.RemoteAddr(), r.URL.HostPort)
 		cli2srvErr = copyClient2Server(c, sv, r, done)
 		sv.Close() // close sv to force read from server in copyServer2Client return
 	}()
 
 	err = copyServer2Client(sv, c, r)
-	debug.Printf("doConnect: server(%s)->client(%s) err: %v\n", r.URL.HostPort, c.RemoteAddr(), err)
+	// debug.Printf("doConnect: srv(%s)->cli(%s) err: %v\n", r.URL.HostPort, c.RemoteAddr(), err)
 	if err == errRetry {
 		// close sv to force copyClient2Server got write error and stop
 		// need to retry request, so do not close client connection here
 		sv.Close()
 		<-done
-		debug.Printf("doConnect: client(%s)->server(%s) stopped\n", c.RemoteAddr(), r.URL.HostPort)
+		// debug.Printf("doConnect: cli(%s)->srv(%s) stopped\n", c.RemoteAddr(), r.URL.HostPort)
 	} else {
+		// close client connection to force read from client in copyClient2Server return
 		c.Conn.Close()
 	}
 	if cli2srvErr == errRetry || err == errRetry {

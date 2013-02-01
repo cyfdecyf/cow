@@ -51,6 +51,18 @@ func (r *Request) String() (s string) {
 	return
 }
 
+func (r *Request) isRetry() bool {
+	return r.tryCnt > 1
+}
+
+func (r *Request) tryOnce() {
+	r.tryCnt++
+}
+
+func (r *Request) canRetry() bool {
+	return r.tryCnt <= 5 && r.responseNotSent()
+}
+
 type Response struct {
 	Status string
 	Reason string
