@@ -667,6 +667,27 @@ func unsetConnReadTimeout(cn net.Conn, msg string) {
 	}
 }
 
+func (sv *serverConn) maybeFake() bool {
+	return sv.state == svConnected && sv.connType == ctDirectConn && !sv.alwaysDirect
+}
+
+func (sv *serverConn) maybeSSLErr(cliStart time.Time) bool {
+	// If client closes connection very soon, maybe there's SSL error, maybe
+	// not (e.g. user stopped request).
+	// COW can't tell which is the case, so this detection is not reliable.
+	return sv.state > svConnected && time.Now().Sub(cliStart) < sslLeastDuration
+}
+
+// Apache 2.2 keep-alive timeout defaults to 5 seconds.
+const serverConnTimeout = 5 * time.Second
+
+func (sv *serverConn) mayBeClosed() bool {
+	if sv.connType == ctSocksConn {
+		return false
+	}
+	return time.Now().Sub(sv.lastUse) > serverConnTimeout
+}
+
 func copyServer2Client(sv *serverConn, c *clientConn, r *Request) (err error) {
 	buf := make([]byte, bufSize)
 	sv.bufRd = nil
@@ -788,27 +809,6 @@ func copyClient2Server(c *clientConn, sv *serverConn, r *Request, done chan byte
 		buffered = nil
 	}
 	return
-}
-
-func (sv *serverConn) maybeFake() bool {
-	return sv.state == svConnected && sv.connType == ctDirectConn && !sv.alwaysDirect
-}
-
-func (sv *serverConn) maybeSSLErr(cliStart time.Time) bool {
-	// If client closes connection very soon, maybe there's SSL error, maybe
-	// not (e.g. user stopped request).
-	// COW can't tell which is the case, so this detection is not reliable.
-	return sv.state > svConnected && time.Now().Sub(cliStart) < sslLeastDuration
-}
-
-// Apache 2.2 keep-alive timeout defaults to 5 seconds.
-const serverConnTimeout = 5 * time.Second
-
-func (sv *serverConn) mayBeClosed() bool {
-	if sv.connType == ctSocksConn {
-		return false
-	}
-	return time.Now().Sub(sv.lastUse) > serverConnTimeout
 }
 
 var connEstablished = []byte("HTTP/1.0 200 Connection established\r\nProxy-agent: cow-proxy\r\n\r\n")
