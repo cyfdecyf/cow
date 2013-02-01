@@ -25,6 +25,7 @@ func estimateTimeout() {
 	debug.Println("estimating timeout")
 	buf := make([]byte, 4096)
 	var est time.Duration
+	const estTimes = 5
 
 	start := time.Now()
 	c, err := net.Dial("tcp", estimateSite+":80")
@@ -35,7 +36,8 @@ func estimateTimeout() {
 	}
 	defer c.Close()
 
-	est = time.Now().Sub(start) * 2
+	est = time.Now().Sub(start) * estTimes
+	debug.Println("estimated dialTimeout:", est)
 	if est > dialTimeout {
 		dialTimeout = est
 		info.Println("new dial timeout:", dialTimeout)
@@ -53,7 +55,8 @@ func estimateTimeout() {
 		errl.Printf("estimateTimeout: error getting %s: %v, network has problem?",
 			estimateSite, err)
 	}
-	est = time.Now().Sub(start) * 2
+	est = time.Now().Sub(start) * estTimes
+	debug.Println("estimated read timeout:", est)
 	if est > readTimeout {
 		readTimeout = est
 		info.Println("new read timeout:", readTimeout)

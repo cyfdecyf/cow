@@ -179,7 +179,7 @@ func (ds *DomainSet) addChouURL(url *URL) bool {
 		return false
 	}
 	ds.chouSet.add(url.Domain)
-	debug.Printf("domain %s blocked\n", url.Domain)
+	debug.Printf("%s blocked\n", url.HostPort)
 	return true
 }
 
