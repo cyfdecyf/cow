@@ -19,7 +19,7 @@ func init() {
 var httpProxy = 'PROXY {{.ProxyAddr}}; DIRECT';
 
 var directList = [
-"localhost",
+"",
 "0.1"{{.DirectDomains}}
 ];
 
@@ -53,7 +53,7 @@ function host2domain(host) {
 };
 
 function FindProxyForURL(url, host) {
-	return directAcc[host2domain(host)] ? direct : httpProxy;
+	return (directAcc[host] || directAcc[host2domain(host)]) ? direct : httpProxy;
 };
 `
 	var err error
