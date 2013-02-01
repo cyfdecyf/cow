@@ -406,7 +406,9 @@ func (c *clientConn) handleBlockedRequest(r *Request, err error, msg string) err
 func (c *clientConn) handleServerReadError(r *Request, sv *serverConn, err error, msg string) error {
 	var errMsg string
 	if err == io.EOF {
-		debug.Println("Read from server EOF, retry")
+		if debug {
+			debug.Printf("client %s; %s read from server EOF, retry\n", c.RemoteAddr(), msg)
+		}
 		return errRetry
 	}
 	errMsg = genErrMsg(r, msg)
@@ -474,10 +476,8 @@ func (c *clientConn) readResponse(sv *serverConn, r *Request) (err error) {
 	// After have received the first reponses from the server, we consider
 	// ther server as real instead of fake one caused by wrong DNS reply. So
 	// don't time out later.
-	if sv.state == svConnected {
-		if sv.connType == ctDirectConn {
-			domainSet.addDirectURL(sv.url)
-		}
+	if sv.maybeFake() {
+		domainSet.addDirectURL(sv.url)
 		sv.state = svSendRecvResponse
 	}
 
@@ -909,6 +909,9 @@ func (sv *serverConn) doRequest(r *Request, c *clientConn) (err error) {
 // Send response body if header specifies content length
 func sendBodyWithContLen(c *clientConn, r io.Reader, w, contBuf io.Writer, contLen int) (err error) {
 	// debug.Println("Sending body with content length", contLen)
+	if contLen == 0 {
+		return
+	}
 	if err = copyN(r, w, contBuf, contLen, c.buf, nil, nil); err != nil {
 		debug.Println("sendBodyWithContLen error:", err)
 	}
@@ -963,6 +966,7 @@ var chunkEndbytes = []byte("0\r\n\r\n")
 // content length or use chunked encoding. Thus contBuf is not necessary for
 // sendBodySplitIntoChunk.
 func sendBodySplitIntoChunk(c *clientConn, r io.Reader, w io.Writer) (err error) {
+	// debug.Printf("client %s sendBodySplitIntoChunk called\n", c.RemoteAddr())
 	var n int
 	bufLen := len(c.buf)
 	for {
@@ -1016,9 +1020,11 @@ func sendBody(c *clientConn, sv *serverConn, req *Request, rp *Response) (err er
 		contBuf = req.contBuf
 	}
 
+	// chunked encoding has precedence over content length
+	// COW does not sanitize response header, but should correctly handle it
 	if chunk {
 		err = sendBodyChunked(c, bufRd, w, contBuf)
-	} else if contLen > 0 {
+	} else if contLen >= 0 {
 		err = sendBodyWithContLen(c, bufRd, w, contBuf, contLen)
 	} else {
 		if req != nil {
