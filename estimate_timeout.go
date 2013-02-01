@@ -6,6 +6,8 @@ import (
 	"time"
 )
 
+var dialTimeout, readTimeout time.Duration
+
 // use a fast to fetch web site
 const estimateSite = "www.baidu.com"
 
@@ -37,11 +39,11 @@ func estimateTimeout() {
 
 	est = time.Now().Sub(start) * 5
 	debug.Println("estimated dialTimeout:", est)
-	if est > dialTimeout {
+	if est > config.DialTimeout {
 		dialTimeout = est
 		info.Println("new dial timeout:", dialTimeout)
-	} else if dialTimeout != minDialTimeout {
-		dialTimeout = minDialTimeout
+	} else if dialTimeout != config.DialTimeout {
+		dialTimeout = config.DialTimeout
 		info.Println("new dial timeout:", dialTimeout)
 	}
 
@@ -58,11 +60,11 @@ func estimateTimeout() {
 	}
 	est = time.Now().Sub(start) * 10
 	debug.Println("estimated read timeout:", est)
-	if est > readTimeout {
+	if est > time.Duration(config.ReadTimeout) {
 		readTimeout = est
 		info.Println("new read timeout:", readTimeout)
-	} else if readTimeout != minReadTimeout {
-		readTimeout = minReadTimeout
+	} else if readTimeout != config.ReadTimeout {
+		readTimeout = config.ReadTimeout
 		info.Println("new read timeout:", readTimeout)
 	}
 	return
@@ -72,6 +74,8 @@ onErr:
 }
 
 func runEstimateTimeout() {
+	readTimeout = config.ReadTimeout
+	dialTimeout = config.DialTimeout
 	for {
 		estimateTimeout()
 		time.Sleep(time.Minute)

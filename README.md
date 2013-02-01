@@ -55,8 +55,8 @@ PAC url 为 `http://<listen address>/pac`。
 
 `~/.cow/blocked` 和 `~/.cow/direct` 可以用来指定被墙和直连网站：
 
-  - 每行一个域名
-  - 可以使用类似 `google.com.hk` 这样的域名
+- 每行一个域名或者主机名（COW 会先检查主机名是否在列表中，再检查域名）
+- 可以使用类似 `google.com.hk` 这样的域名
 
 如果想记录经常访问的网站来提高性能，请参考[样例配置](https://github.com/cyfdecyf/cow/blob/master/doc/sample-config/rc)中高级选项部分关于 `updateBlocked` 和 `updateDirect` 选项的说明。
 
@@ -78,4 +78,4 @@ COW 将以下错误认为是墙在作怪：
 用连接被重置来判断被墙通常来说比较可靠，超时则不可靠。COW 每隔 30 秒会尝试估算合适的超时间隔，避免在网络连接差的情况下把直连网站由于超时也当成被墙。
 COW 默认配置下检测到被墙后，过两分钟再次尝试直连也是为了避免误判。
 
-如果超时自动重试给你造成了问题，请参考[样例配置](https://github.com/cyfdecyf/cow/blob/master/doc/sample-config/rc)中高级选项部分的 `autoRetry` 选项。
+如果超时自动重试给你造成了问题，请参考[样例配置](https://github.com/cyfdecyf/cow/blob/master/doc/sample-config/rc)高级选项中的 `readTimeout`, `dialTimeout` 以及 `autoRetry` 选项。

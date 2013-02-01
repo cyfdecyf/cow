@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const (
@@ -34,7 +35,9 @@ type Config struct {
 	ShadowMethod  string // shadowsocks encryption method
 	UserPasswd    string
 	AllowedClient string
-	AuthTimeout   int // in hour
+	AuthTimeout   time.Duration
+	DialTimeout   time.Duration
+	ReadTimeout   time.Duration
 
 	// not configurable in config file
 	PrintVer bool
@@ -74,6 +77,7 @@ func parseCmdLineConfig() *Config {
 	var c Config
 	var listenAddr string
 	flag.StringVar(&c.RcFile, "rc", path.Join(dsFile.dir, rcFname), "configuration file")
+	// Specifying listen default value to StringVar would override config file options
 	flag.StringVar(&listenAddr, "listen", "", "proxy server listen address, default to "+defaultListenAddr)
 	flag.StringVar(&c.SocksAddr, "socks", "", "socks proxy address")
 	flag.IntVar(&c.Core, "core", 2, "number of cores to use")
@@ -83,8 +87,10 @@ func parseCmdLineConfig() *Config {
 	flag.StringVar(&c.ShadowPasswd, "shadowPasswd", "", "shadowsocks password")
 	flag.StringVar(&c.ShadowMethod, "shadowMethod", "", "shadowsocks encryption method, empty string or rc4")
 	flag.StringVar(&c.UserPasswd, "userPasswd", "", "user name and password for authentication")
-	flag.StringVar(&c.AllowedClient, "allowedClient", "", "clients that need no authentication, list of ip/#maskbit")
-	flag.IntVar(&c.AuthTimeout, "authTimeout", 2, "authentication timeout, in hour")
+	flag.StringVar(&c.AllowedClient, "allowedClient", "", "clients that need no authentication, list of IP address or IPv4 subnet")
+	flag.DurationVar(&c.AuthTimeout, "authTimeout", 2*time.Hour, "authentication time out,")
+	flag.DurationVar(&c.ReadTimeout, "readTimeout", 5*time.Second, "minimum read time out")
+	flag.DurationVar(&c.DialTimeout, "dialTimeout", 5*time.Second, "minimum dial time out")
 	flag.BoolVar(&c.PrintVer, "version", false, "print version")
 
 	// Bool options can't be specified on command line because the flag
@@ -105,17 +111,35 @@ func parseCmdLineConfig() *Config {
 	return &c
 }
 
-func parseBool(v string, msg string) bool {
+func parseBool(v, msg string) bool {
 	switch v {
 	case "true":
 		return true
 	case "false":
 		return false
 	default:
-		fmt.Printf("%s should be true or false\n", msg)
+		fmt.Printf("Config error: %s should be true or false\n", msg)
 		os.Exit(1)
 	}
 	return false
+}
+
+func parseInt(val, msg string) (i int) {
+	var err error
+	if i, err = strconv.Atoi(val); err != nil {
+		fmt.Printf("Config error: %s should be an integer\n", msg)
+		os.Exit(1)
+	}
+	return
+}
+
+func parseDuration(val, msg string) (d time.Duration) {
+	var err error
+	if d, err = time.ParseDuration(val); err != nil {
+		fmt.Printf("Config error: %s %v\n", msg, err)
+		os.Exit(1)
+	}
+	return
 }
 
 type configParser struct{}
@@ -161,15 +185,7 @@ func (p configParser) ParseSocks(val string) {
 }
 
 func (p configParser) ParseCore(val string) {
-	if val == "" {
-		return
-	}
-	var err error
-	config.Core, err = strconv.Atoi(val)
-	if err != nil {
-		fmt.Printf("Config error: core number %s %v", val, err)
-		os.Exit(1)
-	}
+	config.Core = parseInt(val, "core")
 }
 
 func (p configParser) ParseSshServer(val string) {
@@ -228,14 +244,15 @@ func (p configParser) ParseAllowedClient(val string) {
 }
 
 func (p configParser) ParseAuthTimeout(val string) {
-	if val == "" {
-		return
-	}
-	var err error
-	if config.AuthTimeout, err = strconv.Atoi(val); err != nil {
-		fmt.Printf("Config error: authTimeout %s %v", val, err)
-		os.Exit(1)
-	}
+	config.AuthTimeout = parseDuration(val, "authTimeout")
+}
+
+func (p configParser) ParseReadTimeout(val string) {
+	config.ReadTimeout = parseDuration(val, "readTimeout")
+}
+
+func (p configParser) ParseDialTimeout(val string) {
+	config.DialTimeout = parseDuration(val, "dialTimeout")
 }
 
 func parseConfig(path string) {
@@ -279,6 +296,9 @@ func parseConfig(path string) {
 			os.Exit(1)
 		}
 		key, val := strings.TrimSpace(v[0]), strings.TrimSpace(v[1])
+		if val == "" {
+			continue
+		}
 
 		methodName := "Parse" + strings.ToUpper(key[0:1]) + key[1:]
 		method := parser.MethodByName(methodName)

@@ -15,14 +15,6 @@ import (
 
 var _ = reflect.TypeOf
 
-// With GFW's DNS pollution/hijacking, the returned address will block on
-// net.Dial.
-const minDialTimeout = 5 * time.Second
-const minReadTimeout = 5 * time.Second
-
-var dialTimeout = minDialTimeout
-var readTimeout = minReadTimeout
-
 // Close client connection it no new request received in 1 minute.
 const clientConnTimeout = 60 * time.Second
 
