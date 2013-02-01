@@ -178,8 +178,10 @@ func (ds *DomainSet) addChouURL(url *URL) bool {
 	if ds.isURLAlwaysDirect(url) || url.Domain == "" || url.HostIsIP() {
 		return false
 	}
-	ds.chouSet.add(url.Domain)
-	debug.Printf("%s blocked\n", url.HostPort)
+	if !ds.chouSet.has(url.Domain) {
+		ds.chouSet.add(url.Domain)
+		info.Printf("%s blocked\n", url.HostPort)
+	}
 	return true
 }
 

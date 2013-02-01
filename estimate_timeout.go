@@ -11,7 +11,7 @@ const estimateSite = "www.baidu.com"
 
 var estimateReq = []byte("GET / HTTP/1.1\r\n" +
 	"Host: " + estimateSite + "\r\n" +
-	"User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10.8; rv:11.0) Gecko/20100101 Firefox/11.0\r\n" +
+	"User-Agent: curl/7.24.0 (x86_64-apple-darwin12.0) libcurl/7.24.0 OpenSSL/0.9.8r zlib/1.2.5\r\n" +
 	"Accept: */*\r\n" +
 	"Accept-Language: en-us,en;q=0.5\r\n" +
 	"Accept-Encoding: gzip, deflate\r\n" +
@@ -25,7 +25,6 @@ func estimateTimeout() {
 	debug.Println("estimating timeout")
 	buf := make([]byte, 4096)
 	var est time.Duration
-	const estTimes = 5
 
 	start := time.Now()
 	c, err := net.Dial("tcp", estimateSite+":80")
@@ -36,18 +35,20 @@ func estimateTimeout() {
 	}
 	defer c.Close()
 
-	est = time.Now().Sub(start) * estTimes
+	est = time.Now().Sub(start) * 5
 	debug.Println("estimated dialTimeout:", est)
 	if est > dialTimeout {
 		dialTimeout = est
 		info.Println("new dial timeout:", dialTimeout)
-	} else {
+	} else if dialTimeout != minDialTimeout {
 		dialTimeout = minDialTimeout
+		info.Println("new dial timeout:", dialTimeout)
 	}
 
-	c.Write(estimateReq)
 	start = time.Now()
-	// read all content to make the time spent a little longer
+	// include time spent on sending request, reading all content to make it a
+	// little longer
+	c.Write(estimateReq)
 	for err == nil {
 		_, err = c.Read(buf)
 	}
@@ -55,13 +56,14 @@ func estimateTimeout() {
 		errl.Printf("estimateTimeout: error getting %s: %v, network has problem?",
 			estimateSite, err)
 	}
-	est = time.Now().Sub(start) * estTimes
+	est = time.Now().Sub(start) * 10
 	debug.Println("estimated read timeout:", est)
 	if est > readTimeout {
 		readTimeout = est
 		info.Println("new read timeout:", readTimeout)
-	} else {
+	} else if readTimeout != minReadTimeout {
 		readTimeout = minReadTimeout
+		info.Println("new read timeout:", readTimeout)
 	}
 	return
 onErr:
@@ -70,11 +72,8 @@ onErr:
 }
 
 func runEstimateTimeout() {
-	estimateTimeout()
 	for {
-		select {
-		case <-time.After(30 * time.Second):
-			estimateTimeout()
-		}
+		estimateTimeout()
+		time.Sleep(time.Minute)
 	}
 }
