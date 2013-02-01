@@ -26,9 +26,9 @@
 
 ## 二进制文件
 
-目前为运行在 x86 处理器上的的 OS X, Linux, Windows 提供二进制文件。二进制文件发布在 [Google Code](http://code.google.com/p/cow-proxy/downloads/list)。
+目前为运行在 x86 处理器上的 OS X, Linux, Windows 提供二进制文件。二进制文件发布在 [Google Code](http://code.google.com/p/cow-proxy/downloads/list)。
 
-OS X 和 Linux 上，使用下面的命令来下载二进制文件和样例配置（也可用来更新）：
+OS X 和 Linux 上，推荐使用下面的命令来下载二进制文件和样例配置（也可用来更新）：
 
     curl -s -L https://github.com/cyfdecyf/cow/raw/master/install-cow.sh | bash
 
@@ -69,9 +69,9 @@ PAC url 为 `http://<listen address>/pac`。
 
 COW 将以下错误认为是墙在作怪：
 
-  - 服务器连接被重置 (connection reset)
-  - 创建连接超时
-  - 服务器读操作超时
+- 服务器连接被重置 (connection reset)
+- 创建连接超时
+- 服务器读操作超时
 
 无论是普通的 HTTP GET 等请求还是 CONNECT 请求，失败后 COW 都会自动重试请求。（如果已经有内容发送回 client 则不会重试而是直接断开连接。）
 

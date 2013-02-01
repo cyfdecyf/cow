@@ -1,4 +1,4 @@
-0.5 (not released)
+0.5 (2013-02-01)
 
     * Work more automatically: autoRetry is enabled by default, time out request
     will be treated as temporarily blocked instead of asking user what to do
@@ -8,6 +8,7 @@
     are just a way to optimize access speed
     * Periodically estimate timeout value to avoid considering direct site as
     blocked with bad network connection
+    * User configurable timeout
     * Better windows support: connection reset, timeout and DNS error detection
     tested and works on XP
     * chou file is removed as it's not needed
