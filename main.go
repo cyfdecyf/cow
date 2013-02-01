@@ -1,12 +1,12 @@
 package main
 
 import (
+	// "flag"
 	"os"
 	"os/signal"
 	"runtime"
-	"syscall"
-	// "syscall"
 	// "runtime/pprof"
+	"syscall"
 )
 
 // var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
@@ -21,6 +21,11 @@ func sigHandler() {
 		domainSet.write()
 		break
 	}
+	/*
+		if *cpuprofile != "" {
+			pprof.StopCPUProfile()
+		}
+	*/
 	os.Exit(0)
 }
 
@@ -49,6 +54,7 @@ func main() {
 	}
 
 	domainSet.load()
+
 	/*
 		if *cpuprofile != "" {
 			f, err := os.Create(*cpuprofile)
@@ -57,14 +63,6 @@ func main() {
 				os.Exit(1)
 			}
 			pprof.StartCPUProfile(f)
-			signal.Notify(c, os.Interrupt)
-			go func() {
-				for sig := range c {
-					info.Printf("captured %v, stopping profiler and exiting..", sig)
-					pprof.StopCPUProfile()
-					os.Exit(0)
-				}
-			}()
 		}
 	*/
 
