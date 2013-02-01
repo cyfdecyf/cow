@@ -15,15 +15,18 @@ build() {
     echo "building $name"
     GOOS=$1 GOARCH=$2 go build -a -ldflags "-s" || exit 1
     if [[ $1 == "windows" ]]; then
-        mv cow.exe bin/$name.exe
-        zip bin/$name.zip bin/$name.exe
+        zip $name.zip cow.exe
+        rm -f cow.exe
+        mv $name.zip bin/
     else 
         mv cow bin/$name
-        gzip bin/$name
+        gzip -f bin/$name
     fi
 }
 
+build darwin amd64 mac64
 build linux amd64 linux64
 build linux 386 linux32
-build darwin amd64 mac64
+build windows amd64 win64
+build windows 386 win32
 
