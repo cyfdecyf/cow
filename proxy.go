@@ -458,6 +458,13 @@ func isErrOpWrite(err error) bool {
 	return false
 }
 
+func isErrOpRead(err error) bool {
+	if ne, ok := err.(*net.OpError); ok && ne.Op == "read" {
+		return true
+	}
+	return false
+}
+
 func (c *clientConn) readResponse(sv *serverConn, r *Request) (err error) {
 	var rp *Response
 
@@ -877,10 +884,7 @@ func (sv *serverConn) doRequest(r *Request, c *clientConn) (err error) {
 	if r.contBuf != nil {
 		debug.Println("Retry request send buffered body:", r)
 		if _, err = sv.Write(r.contBuf.Bytes()); err != nil {
-			sendErrorPage(sv, "502 send request error", err.Error(),
-				"Send retry request body")
-			r.contBuf = nil // let gc recycle memory earlier
-			return errPageSent
+			return c.handleServerWriteError(r, sv, err, "Sending retry request body")
 		}
 	} else if r.Chunking || r.ContLen > 0 {
 		// Message body in request is signaled by the inclusion of a Content-
@@ -888,12 +892,8 @@ func (sv *serverConn) doRequest(r *Request, c *clientConn) (err error) {
 		// The server connection may have been closed, need to retry request in that case.
 		r.contBuf = new(bytes.Buffer)
 		if err = sendBody(c, sv, r, nil); err != nil {
-			if err == io.EOF {
-				if r.KeepAlive {
-					errl.Println("Unexpected EOF reading request body from client", r)
-				} else {
-					err = nil
-				}
+			if err == io.EOF && isErrOpRead(err) {
+				info.Println("EOF reading request body from client", r)
 			} else if isErrOpWrite(err) {
 				err = c.handleServerWriteError(r, sv, err, "Sending request body")
 			} else {
