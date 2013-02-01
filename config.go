@@ -71,6 +71,10 @@ func init() {
 	config.AutoRetry = true
 	config.DetectSSLErr = false
 	config.AlwaysProxy = false
+
+	config.AuthTimeout = 2 * time.Hour
+	config.DialTimeout = 5 * time.Second
+	config.ReadTimeout = 5 * time.Second
 }
 
 func parseCmdLineConfig() *Config {
@@ -87,10 +91,6 @@ func parseCmdLineConfig() *Config {
 	flag.StringVar(&c.ShadowPasswd, "shadowPasswd", "", "shadowsocks password")
 	flag.StringVar(&c.ShadowMethod, "shadowMethod", "", "shadowsocks encryption method, empty string or rc4")
 	flag.StringVar(&c.UserPasswd, "userPasswd", "", "user name and password for authentication")
-	flag.StringVar(&c.AllowedClient, "allowedClient", "", "clients that need no authentication, list of IP address or IPv4 subnet")
-	flag.DurationVar(&c.AuthTimeout, "authTimeout", 2*time.Hour, "authentication time out,")
-	flag.DurationVar(&c.ReadTimeout, "readTimeout", 5*time.Second, "minimum read time out")
-	flag.DurationVar(&c.DialTimeout, "dialTimeout", 5*time.Second, "minimum dial time out")
 	flag.BoolVar(&c.PrintVer, "version", false, "print version")
 
 	// Bool options can't be specified on command line because the flag
@@ -311,8 +311,8 @@ func parseConfig(path string) {
 	}
 }
 
-func updateConfig(new *Config) {
-	newVal := reflect.ValueOf(new).Elem()
+func updateConfig(nc *Config) {
+	newVal := reflect.ValueOf(nc).Elem()
 	oldVal := reflect.ValueOf(&config).Elem()
 
 	// typeOfT := newVal.Type()
@@ -334,8 +334,8 @@ func updateConfig(new *Config) {
 			}
 		}
 	}
-	if new.ListenAddr != nil {
-		config.ListenAddr = new.ListenAddr
+	if nc.ListenAddr != nil {
+		config.ListenAddr = nc.ListenAddr
 	}
 	if config.ListenAddr == nil {
 		config.ListenAddr = []string{defaultListenAddr}

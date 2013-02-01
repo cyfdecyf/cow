@@ -51,8 +51,8 @@ type conn struct {
 	connType
 }
 
-var zeroConn = conn{}
-var zeroTime = time.Time{}
+var zeroConn conn
+var zeroTime time.Time
 
 // For both client and server connection, there's only read buffer. If we
 // create write buffer for the connection and pass it to io.CopyN, there will

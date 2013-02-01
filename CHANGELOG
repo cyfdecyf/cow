@@ -14,7 +14,7 @@
     * chou file is removed as it's not needed
     * Support listening multiple addresses
     * Support IP based and user password authentication
-    * Bug fix: Support PUT request with message body
+    * Various bug fixes
 
 0.3.5 (2012-12-23)
 
