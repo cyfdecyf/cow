@@ -3,6 +3,8 @@ package main
 var blockedDomainList = []string{
 	"appspot.com",
 	"bit.ly",
+	"j.mp",
+	"bitly.com",
 	"blogger.com",
 	"blogspot.com",
 	"feedburner.com",
