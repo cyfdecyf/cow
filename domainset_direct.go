@@ -1,89 +1,119 @@
 package main
 
 var directDomainList = []string{
-	"12306.cn",
-	"163.com",
+	// 视频
+	"xunlei.com", // 迅雷
+	"kankan.com",
+	"kanimg.com",
+
+	"tdimg.com", // 土豆
+	"tudou.com",
+	"tudouui.com",
+
+	"soku.com", // 优酷
+	"youku.com",
+	"ykimg.com",
+
+	"ku6.cn", // 酷六
+	"ku6.com",
+	"ku6cdn.com",
+	"ku6img.com",
+
+	// 电商
+	"z.cn",
+	"amazon.cn",
+
 	"360buy.com",
+	"360buyimg.com",
+
 	"51buy.com",
-	"95559.com.cn",
-	"95599.cn",
-	"abchina.com",
+	"icson.com",
+
+	"dangdang.com",
+	"ddimg.cn",
+
+	"yihaodian.com",
+	"yihaodianimg.com",
+
+	"paipai.com",
+	"paipaiimg.com",
+
+	"tmall.com",
+	"taobao.com",
+	"taobaocdn.com",
+	"tbcdn.cn",
+	"etao.com",
+
 	"aicdn.com",
 	"alicdn.com",
 	"alimama.cn",
 	"alimama.com",
 	"alipay.com",
 	"alipayobjects.com",
-	"amazon.cn",
-	"apple.com",
-	"apple.com.cn",
-	"baidu.com",
+
+	// 银行
 	"bankcomm.com",
 	"bankofchina.com",
-	"bdstatic.com",
-	"dianping.com",
-	"dpfile.com",
-	"bing.com",
-	"bing.com.cn",
+	"95559.com.cn",
+	"abchina.com",
+	"95599.cn",
 	"boc.cn",
 	"ccb.com",
 	"cmbchina.com",
-	"dangdang.com",
-	"douban.com",
-	"etao.com",
-	"evernote.com",
-	"hexun.com",
-	"hotmail.com",
-	"huaban.com",
 	"icbc.com.cn",
-	"icloud.com",
-	"icson.com",
-	"instapaper.com",
+	"spdb.com.cn",
+
+	// 社交
+	"douban.com",
+	"t.cn",
+	"weibo.com",
+	"zhihu.com",
+	"v2ex.com",
 	"kaixin001.com",
-	"kankan.com",
-	"kanimg.com",
-	"ku6.cn",
-	"ku6.com",
-	"ku6cdn.com",
-	"ku6img.com",
-	"lastpass.com",
+	"qq.com",
+
+	"renren.com",
+	"rrimg.com",
+	"xiaonei.com",
+	"xnimg.cn",
+	"xnpic.com",
+
+	"dianping.com", // 点评
+	"dpfile.com",
+
+	"huaban.com", // 又拍云的几个
+	"yupoo.com",
+	"upyun.com",
+
+	// 搜索
+	"bing.com",
+	"bing.com.cn",
+	"baidu.com",
+	"bdstatic.com",
+	"youdao.com",
+	"sogou.com",
+
+	// Apple
+	"apple.com",
+	"apple.com.cn",
+	"icloud.com",
+
+	// 新闻门户
+	"ifanr.cn",
+	"ifanr.com",
+	"163.com",
+	"hexun.com",
+	"sina.com.cn",
+	"sinaimg.cn",
+	"sinajs.cn",
+	"sohu.com",
+	"solidot.org",
+
+	// 其他
+	"hotmail.com",
 	"live.com",
 	"macromedia.com",
 	"mmcdn.cn",
 	"outlook.com",
-	"qq.com",
-	"renren.com",
-	"serverfault.com",
-	"sina.com.cn",
-	"sinaimg.cn",
-	"sinajs.cn",
-	"sogou.com",
-	"sohu.com",
-	"soku.com",
-	"solidot.org",
-	"spdb.com.cn",
-	"stackexchange.com",
-	"stackoverflow.com",
-	"t.cn",
-	"taobao.com",
-	"taobaocdn.com",
-	"tbcdn.cn",
-	"tdimg.com",
-	"tmall.com",
-	"trello.com",
-	"tudou.com",
-	"tudouui.com",
-	"upyun.com",
-	"verisign.com",
-	"weibo.com",
-	"v2ex.com",
-	"xunlei.com",
-	"yihaodian.com",
-	"yihaodianimg.com",
-	"ykimg.com",
-	"youdao.com",
-	"youku.com",
-	"yupoo.com",
-	"z.cn",
-	"zhihu.com",
+	"12306.cn",
 }
