@@ -31,8 +31,8 @@ func estimateTimeout() {
 	start := time.Now()
 	c, err := net.Dial("tcp", estimateSite+":80")
 	if err != nil {
-		errl.Println("estimateTimeout: can't connect to %s, network has problem?",
-			estimateSite)
+		errl.Printf("estimateTimeout: can't connect to %s: %v, network has problem?\n",
+			estimateSite, err)
 		goto onErr
 	}
 	defer c.Close()
@@ -55,7 +55,7 @@ func estimateTimeout() {
 		_, err = c.Read(buf)
 	}
 	if err != io.EOF {
-		errl.Printf("estimateTimeout: error getting %s: %v, network has problem?",
+		errl.Printf("estimateTimeout: error getting %s: %v, network has problem?\n",
 			estimateSite, err)
 	}
 	est = time.Now().Sub(start) * 10
