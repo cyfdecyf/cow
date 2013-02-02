@@ -18,7 +18,7 @@ func sigHandler() {
 
 	for sig := range sigChan {
 		info.Printf("%v caught, exit\n", sig)
-		domainSet.write()
+		domainSet.store()
 		break
 	}
 	/*

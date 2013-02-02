@@ -228,18 +228,18 @@ func (ds *DomainSet) addDirectURL(url *URL) (added bool) {
 	return true
 }
 
-func (ds *DomainSet) writeBlockedDs() {
+func (ds *DomainSet) storeBlockedDs() {
 	if !config.UpdateBlocked || !ds.blockedChanged {
 		return
 	}
-	writeDomainList(dsFile.blocked, ds.blocked.toSlice())
+	storeDomainList(dsFile.blocked, ds.blocked.toSlice())
 }
 
-func (ds *DomainSet) writeDirectDs() {
+func (ds *DomainSet) storeDirectDs() {
 	if !config.UpdateDirect || !ds.directChanged {
 		return
 	}
-	writeDomainList(dsFile.direct, ds.direct.toSlice())
+	storeDomainList(dsFile.direct, ds.direct.toSlice())
 }
 
 // filter out domain in blocked and direct domain set.
@@ -273,9 +273,9 @@ func (ds *DomainSet) filterOutBlockedInDirect() {
 	}
 }
 
-func (ds *DomainSet) write() {
-	ds.writeBlockedDs()
-	ds.writeDirectDs()
+func (ds *DomainSet) store() {
+	ds.storeBlockedDs()
+	ds.storeDirectDs()
 }
 
 // TODO reload domain list when receives SIGUSR1
@@ -351,7 +351,7 @@ func mkConfigDir() (err error) {
 	return
 }
 
-func writeDomainList(fpath string, lst []string) (err error) {
+func storeDomainList(fpath string, lst []string) (err error) {
 	if err = mkConfigDir(); err != nil {
 		return
 	}
