@@ -932,7 +932,7 @@ func sendBodyChunked(c *clientConn, r *bufio.Reader, w, contBuf io.Writer) (err 
 		f := strings.SplitN(s, ";", 2)
 		var size int64
 		if size, err = strconv.ParseInt(strings.TrimSpace(f[0]), 16, 64); err != nil {
-			errl.Println("Chunk size not valid:", err)
+			errl.Println("Chunk size invalid:", err)
 			return
 		}
 		if size == 0 { // end of chunked data, TODO should ignore trailers
@@ -947,13 +947,12 @@ func sendBodyChunked(c *clientConn, r *bufio.Reader, w, contBuf io.Writer) (err 
 			}
 			return
 		}
-		if err = copyN(r, w, contBuf, int(size), c.buf, []byte(s+"\r\n"), CRLFbytes); err != nil {
+		// Read chunked data and the following CRLF. If server is not
+		// returning correct data, the next call to strconv.ParseInt is likely
+		// to discover the error.
+		if err = copyN(r, w, contBuf, int(size)+2, c.buf, []byte(s+"\r\n"), nil); err != nil {
 			debug.Println("Copying chunked data:", err)
 			return
-		}
-		if err = readCheckCRLF(r); err != nil {
-			// If we see this, maybe the server is sending trailers
-			errl.Println("Chunked data not end with CRLF, try continue")
 		}
 	}
 	return
