@@ -206,13 +206,19 @@ func (c *clientConn) serveSelfURLAddHost(r *Request, query, listType string, add
 	// this regard. But client should not redirect for POST request, so I
 	// choose to use GET when submitting form.
 	host := getHostFromQuery(query)
-	url := NewURL(host)
+	url, err := ParseRequestURI(host)
+	if err != nil {
+		errl.Println("serveSelfURLAddHost host from client invalid, shouldn't happen")
+		sendErrorPage(c, "500 internal error", "host invalid",
+			"COW has some bug, please report to the author")
+		return errInternal
+	}
 	if url.HostIsIP() {
 		// sendBlockedErrorPage will not put IP address in form, this should not happen.
 		// server side checking to be safe.
 		errl.Println("Host is IP address, shouldn't happen")
 		sendErrorPage(c, "500 internal error", "Requsted host is IP address",
-			"COW can only record blocked site based on domain name.")
+			"COW has some bug, please report to the author")
 		return errInternal
 	}
 	addHost(domainSet, url)

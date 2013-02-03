@@ -99,15 +99,6 @@ type URL struct {
 	Scheme   string
 }
 
-func NewURL(raw string) *URL {
-	hostport := raw
-	host, port := splitHostPort(raw)
-	if port == "" {
-		hostport = net.JoinHostPort(host, "80")
-	}
-	return &URL{hostport, host, host2Domain(host), "", ""}
-}
-
 func (url *URL) String() string {
 	return url.HostPort + url.Path
 }
@@ -117,7 +108,7 @@ func (url *URL) toURI() string {
 }
 
 func (url *URL) HostIsIP() bool {
-	return net.ParseIP(url.Host) != nil
+	return hostIsIP(url.Host)
 }
 
 // headers of interest to a proxy
