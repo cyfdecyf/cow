@@ -7,6 +7,7 @@ import (
 )
 
 var dialTimeout, readTimeout time.Duration
+var maxTimeout = time.Duration(15)
 
 // use a fast to fetch web site
 const estimateSite = "www.baidu.com"
@@ -39,6 +40,9 @@ func estimateTimeout() {
 
 	est = time.Now().Sub(start) * 5
 	debug.Println("estimated dialTimeout:", est)
+	if est > maxTimeout {
+		est = maxTimeout
+	}
 	if est > config.DialTimeout {
 		dialTimeout = est
 		info.Println("new dial timeout:", dialTimeout)
@@ -58,7 +62,10 @@ func estimateTimeout() {
 		errl.Printf("estimateTimeout: error getting %s: %v, network has problem?\n",
 			estimateSite, err)
 	}
-	est = time.Now().Sub(start) * 10
+	est = time.Now().Sub(start) * 5
+	if est > maxTimeout {
+		est = maxTimeout
+	}
 	debug.Println("estimated read timeout:", est)
 	if est > time.Duration(config.ReadTimeout) {
 		readTimeout = est
