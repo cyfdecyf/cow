@@ -341,3 +341,21 @@ func updateConfig(nc *Config) {
 		config.ListenAddr = []string{defaultListenAddr}
 	}
 }
+
+func mkConfigDir() (err error) {
+	if dsFile.dir == "" {
+		return
+	}
+	exists, err := isDirExists(dsFile.dir)
+	if err != nil {
+		errl.Printf("Error checking config directory: %v\n", err)
+		return
+	}
+	if exists {
+		return
+	}
+	if err = os.Mkdir(dsFile.dir, 0755); err != nil {
+		errl.Printf("Error create config directory %s: %v\n", dsFile.dir, err)
+	}
+	return
+}

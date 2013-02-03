@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"io"
-	"log"
 	"os"
 	"path"
 	"sort"
@@ -329,24 +328,6 @@ func loadDomainList(fpath string) (lst []string, err error) {
 			continue
 		}
 		lst = append(lst, strings.TrimSpace(domain))
-	}
-	return
-}
-
-func mkConfigDir() (err error) {
-	if dsFile.dir == "" {
-		return
-	}
-	exists, err := isDirExists(dsFile.dir)
-	if err != nil {
-		errl.Printf("Error creating config directory: %v\n", err)
-		return
-	}
-	if exists {
-		return
-	}
-	if err = os.Mkdir(dsFile.dir, 0755); err != nil {
-		log.Printf("Error create config directory %s: %v\n", dsFile.dir, err)
 	}
 	return
 }
