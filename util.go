@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 	"runtime"
+	"strings"
 )
 
 type notification chan byte
@@ -198,6 +199,10 @@ func md5sum(ss ...string) string {
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
+func hostIsIP(host string) bool {
+	return net.ParseIP(host) != nil
+}
+
 // NetNbitIPv4Mask returns a IPMask with highest n bit set.
 func NewNbitIPv4Mask(n int) net.IPMask {
 	if n > 32 {
@@ -214,4 +219,45 @@ func NewNbitIPv4Mask(n int) net.IPMask {
 		n -= 8
 	}
 	return net.IPMask(mask)
+}
+
+var topLevelDomain = map[string]bool{
+	"ac":  true,
+	"co":  true,
+	"org": true,
+	"com": true,
+	"net": true,
+	"edu": true,
+}
+
+// host2Domain returns the domain of a host. It will recognize domains like
+// google.com.hk. Returns empty string for simple host.
+func host2Domain(host string) (domain string) {
+	host, _ = splitHostPort(host)
+	if hostIsIP(host) {
+		return ""
+	}
+	host = trimLastDot(host)
+	lastDot := strings.LastIndex(host, ".")
+	if lastDot == -1 {
+		return ""
+	}
+	// Find the 2nd last dot
+	dot2ndLast := strings.LastIndex(host[:lastDot], ".")
+	if dot2ndLast == -1 {
+		return host
+	}
+
+	part := host[dot2ndLast+1 : lastDot]
+	// If the 2nd last part of a domain name equals to a top level
+	// domain, search for the 3rd part in the host name.
+	// So domains like bbc.co.uk will not be recorded as co.uk
+	if topLevelDomain[part] {
+		dot3rdLast := strings.LastIndex(host[:dot2ndLast], ".")
+		if dot3rdLast == -1 {
+			return host
+		}
+		return host[dot3rdLast+1:]
+	}
+	return host[dot2ndLast+1:]
 }
