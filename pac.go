@@ -7,11 +7,14 @@ import (
 	"os"
 	"strings"
 	"text/template"
+	"time"
 )
 
 var pac struct {
 	template       *template.Template
 	topLevelDomain string
+	content        *bytes.Buffer
+	updated        time.Time
 }
 
 func init() {
@@ -75,21 +78,21 @@ function FindProxyForURL(url, host) {
 var pacHeader = []byte("HTTP/1.1 200 OK\r\nServer: cow-proxy\r\n" +
 	"Content-Type: application/x-ns-proxy-autoconfig\r\nConnection: close\r\n\r\n")
 
-func sendPAC(c *clientConn) {
-	// TODO cache direct list for some time
-	// domains in PAC file needs double quote
-	ds := strings.Join(siteStat.GetDirectList(), "\",\n\"")
+func genPAC(c *clientConn) {
+	buf := new(bytes.Buffer)
 
 	host, _ := splitHostPort(c.LocalAddr().String())
 	_, port := splitHostPort(c.proxy.addr)
 	proxyAddr := net.JoinHostPort(host, port)
 
-	if ds == "" {
+	directList := strings.Join(siteStat.GetDirectList(), "\",\n\"")
+
+	if directList == "" {
 		// Empty direct domain list
-		c.Write(pacHeader)
+		buf.Write(pacHeader)
 		pacproxy := fmt.Sprintf("function FindProxyForURL(url, host) { return 'PROXY %s; DIRECT'; };",
 			proxyAddr)
-		c.Write([]byte(pacproxy))
+		buf.Write([]byte(pacproxy))
 		return
 	}
 
@@ -99,20 +102,28 @@ func sendPAC(c *clientConn) {
 		TopLevel      string
 	}{
 		proxyAddr,
-		ds,
+		directList,
 		pac.topLevelDomain,
 	}
 
-	if _, err := c.Write(pacHeader); err != nil {
-		debug.Println("Error writing pac header")
-		return
-	}
-	// debug.Println("direct:", data.DirectDomains)
-	buf := new(bytes.Buffer)
+	buf.Write(pacHeader)
 	if err := pac.template.Execute(buf, data); err != nil {
 		errl.Println("Error generating pac file:", err)
+		panic("Error generating pac file")
 	}
-	if _, err := c.Write(buf.Bytes()); err != nil {
-		debug.Println("Error writing pac content:", err)
+	pac.content = buf
+}
+
+func sendPAC(c *clientConn) {
+	const pacOutdate = 10 * time.Minute
+	now := time.Now()
+	if now.Sub(pac.updated) > pacOutdate {
+		genPAC(c)
+		pac.updated = now
+	}
+
+	if _, err := c.Write(pac.content.Bytes()); err != nil {
+		debug.Println("Error sending PAC file")
+		return
 	}
 }

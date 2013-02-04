@@ -165,9 +165,8 @@ type SiteStat struct {
 	hbhLock        sync.RWMutex
 }
 
-const blockedTimeout = 2 * time.Minute
-
 func newSiteStat() *SiteStat {
+	const blockedTimeout = 2 * time.Minute
 	return &SiteStat{
 		Vcnt:           map[string]*visitCnt{},
 		hasBlockedHost: map[string]bool{},
