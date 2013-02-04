@@ -9,14 +9,13 @@ import (
 var _ = os.Remove
 
 func TestDateMarshal(t *testing.T) {
-	time.Date(2013, 2, 4, 0, 0, 0, 0, time.UTC)
-	d := Date(time.Now())
+	d := Date(time.Date(2013, 2, 4, 0, 0, 0, 0, time.UTC))
 	j, err := d.MarshalJSON()
 	if err != nil {
 		t.Error("Error marshalling json:", err)
 	}
 	if string(j) != "\"2013-02-04\"" {
-		t.Error("Date marshal result wrong")
+		t.Error("Date marshal result wrong, got:", string(j))
 	}
 
 	err = d.UnmarshalJSON([]byte("\"2013-01-01\""))
