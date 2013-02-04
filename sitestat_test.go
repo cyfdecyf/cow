@@ -3,7 +3,29 @@ package main
 import (
 	// "os"
 	"testing"
+	"time"
 )
+
+func TestDateMarshal(t *testing.T) {
+	time.Date(2013, 2, 4, 0, 0, 0, 0, time.UTC)
+	d := Date(time.Now())
+	j, err := d.MarshalJSON()
+	if err != nil {
+		t.Error("Error marshalling json:", err)
+	}
+	if string(j) != "\"2013-02-04\"" {
+		t.Error("Date marshal result wrong")
+	}
+
+	err = d.UnmarshalJSON([]byte("\"2013-01-01\""))
+	if err != nil {
+		t.Error("Error unmarshaling Date:", err)
+	}
+	tm := time.Time(d)
+	if tm.Year() != 2013 || tm.Month() != 1 || tm.Day() != 1 {
+		t.Error("Unmarshaled date wrong, got:", tm)
+	}
+}
 
 func TestSiteStatLoadStore(t *testing.T) {
 	st := newSiteStat()
@@ -42,10 +64,23 @@ func TestSiteStatLoadStore(t *testing.T) {
 		t.Errorf("load error, %s not loaded\n", b1.Host)
 	}
 
-	// test bulitin direct site
+	// test bulitin site
 	ap, _ := ParseRequestURI("apple.com")
 	if ld.GetVisitMethod(ap) != vmDirect {
 		t.Error("builtin site apple.com should use direct access")
+	}
+	tw, _ := ParseRequestURI("twitter.com")
+	blockeVisit := false
+	// there're some randomness in treating a site as blocked
+	// so try several times
+	for i := 0; i < 2*blockedDelta; i++ {
+		if ld.GetVisitMethod(tw) == vmBlocked {
+			blockeVisit = true
+			break
+		}
+	}
+	if blockeVisit == false {
+		t.Error("builtin site twitter.com should use blocked access")
 	}
 	if len(ld.GetDirectList()) == 0 {
 		t.Error("builtin site should appear in direct site list")

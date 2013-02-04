@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -22,10 +23,10 @@ func init() {
 // judging whether a site is blocked or not is more reliable.
 
 const (
-	directDelta = 100
-	blockDelta  = 20
-	maxCnt      = 120 // no protect to update visit cnt, so value may exceed maxCnt
-	userCnt     = -1  // this represents user specified host or domain
+	directDelta  = 100
+	blockedDelta = 20
+	maxCnt       = 120 // no protect to update visit cnt, so value may exceed maxCnt
+	userCnt      = -1  // this represents user specified host or domain
 )
 
 type siteVisitMethod int
@@ -38,21 +39,39 @@ const (
 
 type vcntint int8
 
+type Date time.Time
+
+const dateLayout = "2006-01-02"
+
+func (d Date) MarshalJSON() ([]byte, error) {
+	return []byte("\"" + time.Time(d).Format(dateLayout) + "\""), nil
+}
+
+func (d *Date) UnmarshalJSON(input []byte) error {
+	if len(input) != len(dateLayout)+2 {
+		return errors.New(fmt.Sprintf("unmarshaling date: invalid input %s", string(input)))
+	}
+	input = input[1 : len(dateLayout)+1]
+	t, err := time.Parse(dateLayout, string(input))
+	*d = Date(t)
+	return err
+}
+
 // COW don't need very accurate visit count, so update to visit count value is
 // not protected.
 type visitCnt struct {
-	Blocked  vcntint   `json:"block"`
-	Direct   vcntint   `json:"direct"`
-	Recent   time.Time `json:"recent"`
-	rUpdated bool      // whether Recent is updated, we only need date precision
+	Blocked  vcntint `json:"block"`
+	Direct   vcntint `json:"direct"`
+	Recent   Date    `json:"recent"`
+	rUpdated bool    // whether Recent is updated, we only need date precision
 }
 
 func newVisitCnt(blocked, direct vcntint) *visitCnt {
-	return &visitCnt{blocked, direct, time.Now(), true}
+	return &visitCnt{blocked, direct, Date(time.Now()), true}
 }
 
 func newVisitCntWithTime(blocked, direct vcntint, t time.Time) *visitCnt {
-	return &visitCnt{blocked, direct, t, true}
+	return &visitCnt{blocked, direct, Date(t), true}
 }
 
 func newVisitCntBlocked() *visitCnt {
@@ -67,12 +86,12 @@ func (vc *visitCnt) userSpecified() bool {
 	return vc.Blocked == userCnt || vc.Direct == userCnt
 }
 
-const staleThreshold = 5 * 24 * time.Hour
+const staleThreshold = 30 * 24 * time.Hour
 
 // shouldDrop returns true if the a VisitCnt is not visited for a long time
 // (several days) or is specified by user.
 func (vc *visitCnt) shouldDrop() bool {
-	return vc.userSpecified() || time.Now().Sub(vc.Recent) > staleThreshold
+	return vc.userSpecified() || time.Now().Sub(time.Time(vc.Recent)) > staleThreshold
 }
 
 func (vc *visitCnt) asDirect() bool {
@@ -85,7 +104,7 @@ func (vc *visitCnt) asBlocked() bool {
 	}
 	// add some randomness to fix mistake
 	delta := vc.Blocked - vc.Direct
-	return delta >= blockDelta && rand.Intn(int(delta/3)) == 0
+	return delta >= blockedDelta && rand.Intn(int(delta)) != 0
 }
 
 // time.Time is composed of 3 fields, so need lock to protect update. As
@@ -105,7 +124,7 @@ func (vc *visitCnt) visit(inc *vcntint) {
 	if !vc.rUpdated {
 		vc.rUpdated = true
 		visitLock.Lock()
-		vc.Recent = time.Now()
+		vc.Recent = Date(time.Now())
 		visitLock.Unlock()
 	}
 }
@@ -134,7 +153,7 @@ func (vc *visitCnt) blockedVisit() {
 
 // directVisitStat records visit count
 type SiteStat struct {
-	Update time.Time            `json:"update"`
+	Update Date                 `json:"update"`
 	Vcnt   map[string]*visitCnt `json:"site_info"` // Vcnt uses host as key
 	vcLock sync.RWMutex
 
@@ -149,9 +168,11 @@ type SiteStat struct {
 const blockedTimeout = 2 * time.Minute
 
 func newSiteStat() *SiteStat {
-	return &SiteStat{Vcnt: map[string]*visitCnt{},
+	return &SiteStat{
+		Vcnt:           map[string]*visitCnt{},
 		hasBlockedHost: map[string]bool{},
-		tempBlocked:    NewTimeoutSet(blockedTimeout)}
+		tempBlocked:    NewTimeoutSet(blockedTimeout),
+	}
 }
 
 func (vs *SiteStat) get(s string) *visitCnt {
@@ -164,16 +185,19 @@ func (vs *SiteStat) get(s string) *visitCnt {
 	return nil
 }
 
-func (vs *SiteStat) BlockedVisit(url *URL) {
-	vs.tempBlocked.add(url.Host)
+// Caller guarantee that always direct url should not be attempt blocked
+// visit.
+func (ss *SiteStat) BlockedVisit(url *URL) {
+	debug.Printf("%s blocked\n", url.Host)
+	ss.tempBlocked.add(url.Host)
 
-	vcnt := vs.get(url.Host)
+	vcnt := ss.get(url.Host)
 	if vcnt != nil {
 		vcnt.blockedVisit()
 	} else {
-		vs.vcLock.Lock()
-		vs.Vcnt[url.Host] = newVisitCntBlocked()
-		vs.vcLock.Unlock()
+		ss.vcLock.Lock()
+		ss.Vcnt[url.Host] = newVisitCntBlocked()
+		ss.vcLock.Unlock()
 	}
 
 	// Mistakenly consider a partial blocked domain as direct will make that
@@ -182,13 +206,13 @@ func (vs *SiteStat) BlockedVisit(url *URL) {
 	// it's block visit count decrease to 0. As hasBlockedHost is not saved,
 	// upon next start up of COW, the information will reflect the current
 	// status of that host.
-	vs.hbhLock.RLock()
-	t := vs.hasBlockedHost[url.Domain]
-	vs.hbhLock.RUnlock()
+	ss.hbhLock.RLock()
+	t := ss.hasBlockedHost[url.Domain]
+	ss.hbhLock.RUnlock()
 	if !t {
-		vs.hbhLock.Lock()
-		vs.hasBlockedHost[url.Domain] = true
-		vs.hbhLock.Unlock()
+		ss.hbhLock.Lock()
+		ss.hasBlockedHost[url.Domain] = true
+		ss.hbhLock.Unlock()
 	}
 }
 
@@ -214,37 +238,78 @@ func (ss *SiteStat) GetVisitMethod(url *URL) siteVisitMethod {
 	// First check if host has visit info
 	hostCnt := ss.get(url.Host)
 	if hostCnt != nil {
-		if hostCnt.asBlocked() {
-			return vmBlocked
-		} else if hostCnt.asDirect() {
+		if hostCnt.asDirect() {
+			debug.Printf("host %s as direct\n", url.Host)
 			return vmDirect
+		} else if hostCnt.asBlocked() {
+			debug.Printf("host %s as blocked\n", url.Host)
+			return vmBlocked
 		}
 	}
 	dmCnt := ss.get(url.Domain)
 	if dmCnt != nil {
-		if dmCnt.asBlocked() {
-			return vmBlocked
-		} else if dmCnt.asDirect() {
+		if dmCnt.asDirect() {
+			debug.Printf("domain %s as direct for host %s\n", url.Domain, url.Host)
 			return vmDirect
+		} else if dmCnt.asBlocked() {
+			debug.Printf("domain %s as blocked for host %s\n", url.Domain, url.Host)
+			return vmBlocked
 		}
 	}
 	return vmUnknown
 }
 
+func (ss *SiteStat) AlwaysBlocked(url *URL) bool {
+	if url.Domain == "" { // simple host or ip
+		return false
+	}
+	hostCnt := ss.get(url.Host)
+	if hostCnt != nil && hostCnt.userSpecified() {
+		return hostCnt.asBlocked()
+	}
+	dmCnt := ss.get(url.Domain)
+	if dmCnt != nil && dmCnt.userSpecified() {
+		return dmCnt.asBlocked()
+	}
+	return false
+}
+
+func (ss *SiteStat) AlwaysDirect(url *URL) bool {
+	if url.Domain == "" { // simple host or ip
+		return true
+	}
+	hostCnt := ss.get(url.Host)
+	if hostCnt != nil && hostCnt.userSpecified() {
+		return hostCnt.asDirect()
+	}
+	dmCnt := ss.get(url.Domain)
+	if dmCnt != nil && dmCnt.userSpecified() {
+		return dmCnt.asDirect()
+	}
+	return false
+}
+
 func (ss *SiteStat) store(file string) (err error) {
+	if err = mkConfigDir(); err != nil {
+		return
+	}
+
 	now := time.Now()
 	var s *SiteStat
-	if now.Sub(ss.Update) > staleThreshold {
+	if ss.Update == Date(zeroTime) {
+		ss.Update = Date(time.Now())
+	}
+	if now.Sub(time.Time(ss.Update)) > staleThreshold {
 		// Not updated for a long time, don't drop any record
 		s = ss
 		// Changing update time too fast will also drop useful record
-		s.Update = ss.Update.Add(staleThreshold)
-		if s.Update.Sub(now) > 0 {
-			s.Update = now
+		s.Update = Date(time.Time(ss.Update).Add(staleThreshold / 5))
+		if time.Time(s.Update).Sub(now) > 0 {
+			s.Update = Date(now)
 		}
 	} else {
-		s := newSiteStat()
-		s.Update = now
+		s = newSiteStat()
+		s.Update = Date(now)
 		ss.vcLock.RLock()
 		for k, v := range ss.Vcnt {
 			if !v.shouldDrop() {
@@ -257,7 +322,7 @@ func (ss *SiteStat) store(file string) (err error) {
 	b, err := json.MarshalIndent(s, "", "\t")
 	if err != nil {
 		errl.Println("Error marshalling site stat:", err)
-		return
+		panic("internal error: error marshalling site")
 	}
 
 	f, err := os.Create(file)
@@ -275,12 +340,12 @@ func (ss *SiteStat) store(file string) (err error) {
 
 func (ss *SiteStat) loadList(lst []string, blocked, direct vcntint) {
 	for _, d := range lst {
-		ss.Vcnt[d] = newVisitCntWithTime(blocked, direct, time.Time{})
+		ss.Vcnt[d] = newVisitCntWithTime(blocked, direct, zeroTime)
 	}
 }
 
 func (ss *SiteStat) loadBuiltinList() {
-	ss.loadList(blockedDomainList, blockDelta, 0)
+	ss.loadList(blockedDomainList, blockedDelta, 0)
 	ss.loadList(directDomainList, 0, directDelta)
 }
 

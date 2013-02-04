@@ -363,7 +363,7 @@ func parseResponse(sv *serverConn, r *Request) (rp *Response, err error) {
 	var s string
 	reader := sv.bufRd
 START:
-	if sv.state == svConnected && sv.maybeFake() {
+	if sv.maybeFake() {
 		setConnReadTimeout(sv, readTimeout, "parseResponse")
 	}
 	if s, err = ReadLine(reader); err != nil {
@@ -371,9 +371,10 @@ START:
 			// err maybe timeout caused by explicity setting deadline
 			debug.Printf("Reading Response status line: %v %v\n", err, r)
 		}
+		// For timeout, the connection will not be used, so no need to unset timeout
 		return nil, err
 	}
-	if sv.state == svConnected && sv.maybeFake() {
+	if sv.maybeFake() {
 		unsetConnReadTimeout(sv, "parseResponse")
 	}
 	var f []string

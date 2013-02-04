@@ -47,10 +47,9 @@ var config Config
 
 var dsFile struct {
 	dir           string // directory containing config file and blocked site list
-	blocked       string // contains blocked domains
-	direct        string // contains sites that can be directly accessed
-	alwaysDirect  string
-	alwaysBlocked string
+	alwaysBlocked string // blocked sites specified by user
+	alwaysDirect  string // direct sites specified by user
+	stat          string // site visit statistics
 }
 
 func printVersion() {
@@ -61,10 +60,9 @@ func init() {
 	initConfigDir()
 	// fmt.Println("home dir:", homeDir)
 
-	dsFile.blocked = path.Join(dsFile.dir, blockedFname)
-	dsFile.direct = path.Join(dsFile.dir, directFname)
 	dsFile.alwaysBlocked = path.Join(dsFile.dir, alwaysBlockedFname)
 	dsFile.alwaysDirect = path.Join(dsFile.dir, alwaysDirectFname)
+	dsFile.stat = path.Join(dsFile.dir, statFname)
 
 	config.UpdateBlocked = false
 	config.UpdateDirect = false
@@ -344,7 +342,7 @@ func updateConfig(nc *Config) {
 
 func mkConfigDir() (err error) {
 	if dsFile.dir == "" {
-		return
+		return os.ErrNotExist
 	}
 	exists, err := isDirExists(dsFile.dir)
 	if err != nil {

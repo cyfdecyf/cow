@@ -81,7 +81,7 @@ func newServerConn(c conn, url *URL) *serverConn {
 		conn:         c,
 		url:          url,
 		bufRd:        bufio.NewReaderSize(c, bufSize),
-		alwaysDirect: domainSet.isURLAlwaysDirect(url),
+		alwaysDirect: siteStat.AlwaysDirect(url),
 	}
 }
 
@@ -191,15 +191,15 @@ func getHostFromQuery(query string) string {
 
 func (c *clientConn) serveSelfURLBlocked(r *Request) (err error) {
 	query := r.URL.Path[9:] // "/blocked?" has 9 characters
-	return c.serveSelfURLAddHost(r, query, "blocked", (*DomainSet).addBlockedURL)
+	return c.serveSelfURLAddHost(r, query, "blocked", (*SiteStat).BlockedVisit)
 }
 
 func (c *clientConn) serveSelfURLDirect(r *Request) (err error) {
 	query := r.URL.Path[8:] // "/direct?" has 9 characters
-	return c.serveSelfURLAddHost(r, query, "direct", (*DomainSet).addDirectURL)
+	return c.serveSelfURLAddHost(r, query, "direct", (*SiteStat).DirectVisit)
 }
 
-type addHostFunc func(*DomainSet, *URL) bool
+type addHostFunc func(*SiteStat, *URL)
 
 func (c *clientConn) serveSelfURLAddHost(r *Request, query, listType string, addHost addHostFunc) (err error) {
 	// Adding blocked or direct site has side effects, so should use POST in
@@ -221,7 +221,7 @@ func (c *clientConn) serveSelfURLAddHost(r *Request, query, listType string, add
 			"COW has some bug, please report to the author")
 		return errInternal
 	}
-	addHost(domainSet, url)
+	addHost(siteStat, url)
 
 	// As there's no reliable way to convert an encoded URL back (you don't
 	// know whether a %2F should be converted to slash or not, conside Google
@@ -376,25 +376,19 @@ const (
 )
 
 func (c *clientConn) handleBlockedRequest(r *Request, err error, msg string) error {
-	var errCode string
 	if isErrConnReset(err) {
-		if domainSet.addBlockedURL(r.URL) {
-			return errRetry
-		}
-		errCode = errCodeReset
+		siteStat.BlockedVisit(r.URL)
+		return errRetry
 	} else if config.AutoRetry {
 		// err must be timeout here
 		// Domain in chou domain set is likely to be blocked, should automatically
 		// retry request using parent proxy.
 		// If autoRetry is enabled, treat timeout domain as chou and retry.
-		if domainSet.addChouURL(r.URL) {
-			return errRetry
-		}
+		siteStat.BlockedVisit(r.URL)
+		return errRetry
 	}
 
-	if errCode == "" {
-		errCode = errCodeTimeout
-	}
+	errCode := errCodeTimeout
 	msg += genBlockedSiteMsg(r)
 	// Let user decide what to do with with timeout error if autoRetry is not enabled
 	if !config.AutoRetry && isErrTimeout(err) && r.responseNotSent() {
@@ -433,7 +427,7 @@ func (c *clientConn) handleServerWriteError(r *Request, sv *serverConn, err erro
 	// This function is only called in doRequest, no response is sent to client.
 	// So if visiting blocked site, can always retry request.
 	if sv.maybeFake() && isErrConnReset(err) {
-		domainSet.addBlockedURL(r.URL)
+		siteStat.BlockedVisit(r.URL)
 	}
 	return errRetry
 }
@@ -482,10 +476,7 @@ func (c *clientConn) readResponse(sv *serverConn, r *Request) (err error) {
 	// After have received the first reponses from the server, we consider
 	// ther server as real instead of fake one caused by wrong DNS reply. So
 	// don't time out later.
-	if sv.maybeFake() {
-		domainSet.addDirectURL(sv.url)
-		sv.state = svSendRecvResponse
-	}
+	sv.state = svSendRecvResponse
 
 	if _, err = c.Write(rp.raw.Bytes()); err != nil {
 		return c.handleClientWriteError(r, err, "Write response header back to client")
@@ -561,8 +552,7 @@ func createctDirectConnection(url *URL) (conn, error) {
 }
 
 func maybeBlocked(url *URL, err error) bool {
-	return (isErrTimeout(err) || isErrConnReset(err)) &&
-		!domainSet.isURLAlwaysDirect(url) && !url.HostIsIP()
+	return (isErrTimeout(err) || isErrConnReset(err)) && !siteStat.AlwaysDirect(url)
 }
 
 const connFailedErrCode = "504 Connection failed"
@@ -592,12 +582,12 @@ func (c *clientConn) createConnection(r *Request) (srvconn conn, err error) {
 		}
 		goto fail
 	}
-	if domainSet.isURLBlocked(r.URL) && hasParentProxy {
+	if siteStat.GetVisitMethod(r.URL) == vmBlocked && hasParentProxy {
 		// In case of connection error to socks server, fallback to direct connection
 		if srvconn, err = createParentProxyConnection(r.URL); err == nil {
 			return
 		}
-		if domainSet.isURLAlwaysBlocked(r.URL) {
+		if siteStat.AlwaysBlocked(r.URL) {
 			goto fail
 		}
 		if srvconn, err = createctDirectConnection(r.URL); err == nil {
@@ -668,8 +658,12 @@ func unsetConnReadTimeout(cn net.Conn, msg string) {
 	}
 }
 
+func (sv *serverConn) directConnection() bool {
+	return sv.connType == ctDirectConn
+}
+
 func (sv *serverConn) maybeFake() bool {
-	return sv.state == svConnected && sv.connType == ctDirectConn && !sv.alwaysDirect
+	return sv.state == svConnected && sv.directConnection() && !sv.alwaysDirect
 }
 
 func (sv *serverConn) maybeSSLErr(cliStart time.Time) bool {
@@ -702,6 +696,9 @@ func copyServer2Client(sv *serverConn, c *clientConn, r *Request) (err error) {
 		}
 	*/
 
+	total := 0
+	directVisited := false
+	const directThreshold = 4096
 	for {
 		if sv.maybeFake() {
 			setConnReadTimeout(sv, readTimeout, "srv->cli")
@@ -713,30 +710,31 @@ func copyServer2Client(sv *serverConn, c *clientConn, r *Request) (err error) {
 				}
 				return
 			}
-			if sv.maybeFake() && maybeBlocked(r.URL, err) && domainSet.addBlockedURL(r.URL) {
-				if r.responseNotSent() {
-					debug.Printf("srv->cli blocked site %s detected, err: %v retry\n", r.URL.HostPort, err)
-					return errRetry
-				}
-				debug.Println("Can't retry blocked doConnect request because has sent data to client")
-				return
+			if sv.maybeFake() && maybeBlocked(r.URL, err) {
+				siteStat.BlockedVisit(r.URL)
+				debug.Printf("srv->cli blocked site %s detected, err: %v retry\n", r.URL.HostPort, err)
+				return errRetry
 			}
 			// Expected error: "use of closed network connection",
 			// this is to make blocking read return.
 			// debug.Printf("copyServer2Client read data: %v\n", err)
 			return
 		}
+		total += n
 		if _, err = c.Write(buf[0:n]); err != nil {
 			// debug.Printf("copyServer2Client write data: %v\n", err)
 			return
 		}
 		// set state to rsRecvBody to indicate the request has partial response sent to client
 		r.state = rsRecvBody
-		// debug.Printf("srv(%s)->cli(%s) sent %d bytes data\n", r.URL.HostPort, c.RemoteAddr(), n)
+		// debug.Printf("srv(%s)->cli(%s) sent %d bytes data\n", r.URL.HostPort, c.RemoteAddr(), total)
 		if sv.maybeFake() {
 			unsetConnReadTimeout(sv, "srv->cli")
-			domainSet.addDirectURL(sv.url)
 			sv.state = svSendRecvResponse
+		}
+		if !directVisited && sv.directConnection() && total > directThreshold {
+			directVisited = true
+			siteStat.DirectVisit(r.URL)
 		}
 	}
 	return
@@ -809,7 +807,7 @@ func copyClient2Server(c *clientConn, sv *serverConn, r *Request, srvStopped not
 		if n, err = c.Read(buf); err != nil {
 			if config.DetectSSLErr && (isErrConnReset(err) || err == io.EOF) && sv.maybeSSLErr(start) {
 				debug.Println("client connection closed very soon, taken as SSL error:", r)
-				domainSet.addBlockedURL(r.URL)
+				siteStat.BlockedVisit(r.URL)
 			} else if isErrTimeout(err) && !srvStopped.hasNotified() {
 				// debug.Printf("cli(%s)->srv(%s) timeout\n", c.RemoteAddr(), r.URL.HostPort)
 				continue
@@ -822,7 +820,8 @@ func copyClient2Server(c *clientConn, sv *serverConn, r *Request, srvStopped not
 		if err = copy2Server(sv, r, buf[:n]); err != nil {
 			// XXX is it enough to only do block detection in copyServer2Client?
 			/*
-				if sv.maybeFake() && isErrConnReset(err) && domainSet.addBlockedURL(r.URL) {
+				if sv.maybeFake() && isErrConnReset(err) {
+					siteStat.BlockedVisit(r.URL)
 					errl.Printf("copyClient2Server blocked site %d detected, retry\n", r.URL.HostPort)
 					return errRetry
 				}
@@ -909,7 +908,11 @@ func (sv *serverConn) doRequest(r *Request, c *clientConn) (err error) {
 		}
 	}
 	r.state = rsSent
-	return c.readResponse(sv, r)
+	err = c.readResponse(sv, r)
+	if err == nil && sv.directConnection() {
+		siteStat.DirectVisit(r.URL)
+	}
+	return
 }
 
 // Send response body if header specifies content length

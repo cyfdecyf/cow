@@ -8,11 +8,9 @@ import (
 
 const (
 	rcFname            = "rc"
-	blockedFname       = "auto-blocked"
-	directFname        = "auto-direct"
 	alwaysBlockedFname = "blocked"
 	alwaysDirectFname  = "direct"
-	chouFname          = "chou"
+	statFname          = "stat"
 
 	newLine = "\n"
 )
