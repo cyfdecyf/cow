@@ -51,6 +51,10 @@ func newVisitCnt(blocked, direct vcntint) *visitCnt {
 	return &visitCnt{blocked, direct, time.Now(), true}
 }
 
+func newVisitCntWithTime(blocked, direct vcntint, t time.Time) *visitCnt {
+	return &visitCnt{blocked, direct, t, true}
+}
+
 func newVisitCntBlocked() *visitCnt {
 	return newVisitCnt(1, 0)
 }
@@ -72,7 +76,7 @@ func (vc *visitCnt) shouldDrop() bool {
 }
 
 func (vc *visitCnt) asDirect() bool {
-	return (vc.Direct == userCnt) || (vc.Direct-vc.Blocked > directDelta)
+	return (vc.Direct == userCnt) || (vc.Direct-vc.Blocked >= directDelta)
 }
 
 func (vc *visitCnt) asBlocked() bool {
@@ -81,7 +85,7 @@ func (vc *visitCnt) asBlocked() bool {
 	}
 	// add some randomness to fix mistake
 	delta := vc.Blocked - vc.Direct
-	return delta > blockDelta && rand.Intn(int(delta/3)) == 0
+	return delta >= blockDelta && rand.Intn(int(delta/3)) == 0
 }
 
 // time.Time is composed of 3 fields, so need lock to protect update. As
@@ -271,11 +275,20 @@ func (ss *SiteStat) store(file string) (err error) {
 
 func (ss *SiteStat) loadList(lst []string, blocked, direct vcntint) {
 	for _, d := range lst {
-		ss.Vcnt[d] = newVisitCnt(blocked, direct)
+		ss.Vcnt[d] = newVisitCntWithTime(blocked, direct, time.Time{})
 	}
 }
 
+func (ss *SiteStat) loadBuiltinList() {
+	ss.loadList(blockedDomainList, blockDelta, 0)
+	ss.loadList(directDomainList, 0, directDelta)
+}
+
 func (ss *SiteStat) load(file string) (err error) {
+	// loadList specifies zero time for visitCnt, so builtin site will not be
+	// saved unless visit time is updated
+	ss.loadBuiltinList()
+
 	var exists bool
 	if exists, err = isFileExists(file); err != nil {
 		fmt.Println("Error loading stat:", err)
@@ -298,10 +311,6 @@ func (ss *SiteStat) load(file string) (err error) {
 		fmt.Println("Error decoding site stat:", err)
 		return
 	}
-
-	// load builtin site list
-	ss.loadList(blockedDomainList, blockDelta, 0)
-	ss.loadList(directDomainList, 0, directDelta)
 
 	// load user specified sites at last to override previous values
 	if directList, err := loadSiteList(dsFile.alwaysDirect); err == nil {

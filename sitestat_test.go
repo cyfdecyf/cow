@@ -42,6 +42,14 @@ func TestSiteStatLoadStore(t *testing.T) {
 		t.Errorf("load error, %s not loaded\n", b1.Host)
 	}
 
+	// test bulitin direct site
+	ap, _ := ParseRequestURI("apple.com")
+	if ld.GetVisitMethod(ap) != vmDirect {
+		t.Error("builtin site apple.com should use direct access")
+	}
+	if len(ld.GetDirectList()) == 0 {
+		t.Error("builtin site should appear in direct site list")
+	}
 	// os.Remove(stfile)
 }
 

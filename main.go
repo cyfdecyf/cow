@@ -18,7 +18,7 @@ func sigHandler() {
 
 	for sig := range sigChan {
 		info.Printf("%v caught, exit\n", sig)
-		domainSet.store()
+		storeSiteStat()
 		break
 	}
 	/*
@@ -53,7 +53,7 @@ func main() {
 		hasParentProxy = true
 	}
 
-	domainSet.load()
+	loadSiteStat()
 
 	/*
 		if *cpuprofile != "" {

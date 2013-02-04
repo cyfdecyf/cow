@@ -20,7 +20,8 @@ var httpProxy = 'PROXY {{.ProxyAddr}}; DIRECT';
 
 var directList = [
 "",
-"0.1"{{.DirectDomains}}
+"0.1",
+"{{.DirectDomains}}"
 ];
 
 var directAcc = {};
@@ -75,17 +76,9 @@ var pacHeader = []byte("HTTP/1.1 200 OK\r\nServer: cow-proxy\r\n" +
 	"Content-Type: application/x-ns-proxy-autoconfig\r\nConnection: close\r\n\r\n")
 
 func sendPAC(c *clientConn) {
+	// TODO cache direct list for some time
 	// domains in PAC file needs double quote
-	ds1 := strings.Join(domainSet.alwaysDirect.toSlice(), "\",\n\"")
-	ds2 := strings.Join(domainSet.direct.toSlice(), "\",\n\"")
-	var ds string
-	if ds1 == "" {
-		ds = ds2
-	} else if ds2 == "" {
-		ds = ds1
-	} else {
-		ds = ds1 + "\",\n\"" + ds2
-	}
+	ds := strings.Join(siteStat.GetDirectList(), "\",\n\"")
 
 	host, _ := splitHostPort(c.LocalAddr().String())
 	_, port := splitHostPort(c.proxy.addr)
@@ -106,7 +99,7 @@ func sendPAC(c *clientConn) {
 		TopLevel      string
 	}{
 		proxyAddr,
-		",\n\"" + ds + "\"",
+		ds,
 		pac.topLevelDomain,
 	}
 
