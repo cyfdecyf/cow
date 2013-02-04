@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"strings"
+	"sync"
 	"text/template"
 	"time"
 )
@@ -15,6 +16,7 @@ var pac struct {
 	topLevelDomain string
 	content        *bytes.Buffer
 	updated        time.Time
+	lock           sync.Mutex
 }
 
 func init() {
@@ -80,6 +82,9 @@ var pacHeader = []byte("HTTP/1.1 200 OK\r\nServer: cow-proxy\r\n" +
 
 func genPAC(c *clientConn) {
 	buf := new(bytes.Buffer)
+	defer func() {
+		pac.content = buf
+	}()
 
 	host, _ := splitHostPort(c.LocalAddr().String())
 	_, port := splitHostPort(c.proxy.addr)
@@ -111,16 +116,17 @@ func genPAC(c *clientConn) {
 		errl.Println("Error generating pac file:", err)
 		panic("Error generating pac file")
 	}
-	pac.content = buf
 }
 
 func sendPAC(c *clientConn) {
 	const pacOutdate = 10 * time.Minute
 	now := time.Now()
+	pac.lock.Lock()
 	if now.Sub(pac.updated) > pacOutdate {
 		genPAC(c)
 		pac.updated = now
 	}
+	pac.lock.Unlock()
 
 	if _, err := c.Write(pac.content.Bytes()); err != nil {
 		debug.Println("Error sending PAC file")
