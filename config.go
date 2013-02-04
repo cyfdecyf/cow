@@ -24,8 +24,6 @@ type Config struct {
 	SocksAddr     string
 	Core          int
 	SshServer     string
-	UpdateBlocked bool
-	UpdateDirect  bool
 	AutoRetry     bool
 	DetectSSLErr  bool
 	LogFile       string
@@ -64,8 +62,6 @@ func init() {
 	dsFile.alwaysDirect = path.Join(dsFile.dir, alwaysDirectFname)
 	dsFile.stat = path.Join(dsFile.dir, statFname)
 
-	config.UpdateBlocked = false
-	config.UpdateDirect = false
 	config.AutoRetry = true
 	config.DetectSSLErr = false
 	config.AlwaysProxy = false
@@ -97,8 +93,6 @@ func parseCmdLineConfig() *Config {
 	// should be override.
 
 	// flag.BoolVar(&c.AutoRetry, "autoRetry", false, "automatically retry timeout requests using socks proxy")
-	// flag.BoolVar(&c.UpdateBlocked, "updateBlocked", true, "update blocked site list")
-	// flag.BoolVar(&c.UpdateDirect, "updateDirect", true, "update direct site list")
 	// flag.BoolVar(&c.DetectSSLErr, "detectSSLErr", true, "detect SSL error based on how soon client closes connection")
 	// flag.BoolVar(&c.AlwaysProxy, "alwaysProxy", false, "always use parent proxy")
 
@@ -191,11 +185,13 @@ func (p configParser) ParseSshServer(val string) {
 }
 
 func (p configParser) ParseUpdateBlocked(val string) {
-	config.UpdateBlocked = parseBool(val, "updateBlocked")
+	// config.UpdateBlocked = parseBool(val, "updateBlocked")
+	fmt.Println("updateBlocked option will be removed in future, please remove it")
 }
 
 func (p configParser) ParseUpdateDirect(val string) {
-	config.UpdateDirect = parseBool(val, "updateDirect")
+	// config.UpdateDirect = parseBool(val, "updateDirect")
+	fmt.Println("updateDirect option will be removed in future, please remove it")
 }
 
 func (p configParser) ParseAutoRetry(val string) {
