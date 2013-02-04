@@ -86,12 +86,12 @@ func (vc *visitCnt) userSpecified() bool {
 	return vc.Blocked == userCnt || vc.Direct == userCnt
 }
 
-const staleThreshold = 30 * 24 * time.Hour
+const siteStaleThreshold = 30 * 24 * time.Hour
 
 // shouldDrop returns true if the a VisitCnt is not visited for a long time
 // (several days) or is specified by user.
 func (vc *visitCnt) shouldDrop() bool {
-	return vc.userSpecified() || time.Now().Sub(time.Time(vc.Recent)) > staleThreshold
+	return vc.userSpecified() || time.Now().Sub(time.Time(vc.Recent)) > siteStaleThreshold
 }
 
 func (vc *visitCnt) asDirect() bool {
@@ -114,11 +114,13 @@ var visitLock sync.Mutex
 
 // visit updates visit cnt
 func (vc *visitCnt) visit(inc *vcntint) {
-	// Possible for *cnt to overflow and become negative, but not likely. Even
+	// Possible for *inc to overflow and become negative, but not likely. Even
 	// if becomes negative, it should get chance to increase back to positive.
-	*inc++
+	if *inc < maxCnt {
+		*inc++
+	}
 	if *inc > maxCnt {
-		*inc = maxCnt
+		*inc = 0
 	}
 
 	if !vc.rUpdated {
@@ -298,11 +300,11 @@ func (ss *SiteStat) store(file string) (err error) {
 	if ss.Update == Date(zeroTime) {
 		ss.Update = Date(time.Now())
 	}
-	if now.Sub(time.Time(ss.Update)) > staleThreshold {
+	if now.Sub(time.Time(ss.Update)) > siteStaleThreshold {
 		// Not updated for a long time, don't drop any record
 		s = ss
 		// Changing update time too fast will also drop useful record
-		s.Update = Date(time.Time(ss.Update).Add(staleThreshold / 5))
+		s.Update = Date(time.Time(ss.Update).Add(siteStaleThreshold / 5))
 		if time.Time(s.Update).Sub(now) > 0 {
 			s.Update = Date(now)
 		}

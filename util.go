@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 	"runtime"
+	"strconv"
 	"strings"
 )
 
@@ -199,8 +200,22 @@ func md5sum(ss ...string) string {
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
+// only handles IPv4 address now
 func hostIsIP(host string) bool {
-	return net.ParseIP(host) != nil
+	parts := strings.Split(host, ".")
+	if len(parts) != 4 {
+		return false
+	}
+	for _, i := range parts {
+		if len(i) == 0 || len(i) > 3 {
+			return false
+		}
+		n, err := strconv.Atoi(i)
+		if err != nil || n < 0 || n > 255 {
+			return false
+		}
+	}
+	return true
 }
 
 // NetNbitIPv4Mask returns a IPMask with highest n bit set.

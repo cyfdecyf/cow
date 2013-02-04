@@ -183,3 +183,25 @@ func TestHost2Domain(t *testing.T) {
 		}
 	}
 }
+
+func TestHostIsIP(t *testing.T) {
+	if !hostIsIP("192.168.1.1") {
+		t.Error("192.168.1.1 is ip")
+	}
+
+	if hostIsIP("256.3.5.3") {
+		t.Error("256.3.5.3 is not ip")
+	}
+
+	if hostIsIP("192.168.1.1.1") {
+		t.Error("192.168.1.1.1 is not ip")
+	}
+
+	if hostIsIP("www.google.com") {
+		t.Error("www.google.com is not ip")
+	}
+
+	if hostIsIP("foo.www.google.com") {
+		t.Error("foo.www.google.com is not ip")
+	}
+}

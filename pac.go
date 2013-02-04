@@ -38,6 +38,23 @@ var topLevel = {
 {{.TopLevel}}
 };
 
+function hostIsIP(host) {
+	var parts = host.split('.', 4);
+	if (parts.length != 4) {
+		return false;
+	}
+	for (i in parts) {
+		if (i.length == 0 || i.length > 3) {
+			return false
+		}
+		var n = Number(i)
+		if (isNaN(n) || n < 0 || n > 255) {
+			return false
+		}
+	}
+	return true
+}
+
 function host2domain(host) {
 	var lastDot = host.lastIndexOf(".");
 	if (lastDot === -1)
@@ -59,7 +76,7 @@ function host2domain(host) {
 };
 
 function FindProxyForURL(url, host) {
-	return (directAcc[host] || directAcc[host2domain(host)]) ? direct : httpProxy;
+	return (hostIsIP(host) || directAcc[host] || directAcc[host2domain(host)]) ? direct : httpProxy;
 };
 `
 	var err error
