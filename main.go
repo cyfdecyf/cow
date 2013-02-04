@@ -54,6 +54,7 @@ func main() {
 	}
 
 	loadSiteStat()
+	initPAC()
 
 	/*
 		if *cpuprofile != "" {
@@ -66,7 +67,9 @@ func main() {
 		}
 	*/
 
-	runtime.GOMAXPROCS(config.Core)
+	if config.Core > 0 {
+		runtime.GOMAXPROCS(config.Core)
+	}
 
 	go sigHandler()
 	go runSSH()

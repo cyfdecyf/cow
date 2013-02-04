@@ -14,7 +14,7 @@ import (
 var pac struct {
 	template       *template.Template
 	topLevelDomain string
-	content        *bytes.Buffer
+	directList     *string // use pointer to guarantee atomic update
 	updated        time.Time
 	lock           sync.Mutex
 }
@@ -97,25 +97,20 @@ function FindProxyForURL(url, host) {
 var pacHeader = []byte("HTTP/1.1 200 OK\r\nServer: cow-proxy\r\n" +
 	"Content-Type: application/x-ns-proxy-autoconfig\r\nConnection: close\r\n\r\n")
 
-func genPAC(c *clientConn) {
+func genPAC(c *clientConn) []byte {
 	buf := new(bytes.Buffer)
-	defer func() {
-		pac.content = buf
-	}()
 
 	host, _ := splitHostPort(c.LocalAddr().String())
 	_, port := splitHostPort(c.proxy.addr)
 	proxyAddr := net.JoinHostPort(host, port)
 
-	directList := strings.Join(siteStat.GetDirectList(), "\",\n\"")
-
-	if directList == "" {
+	if *pac.directList == "" {
 		// Empty direct domain list
 		buf.Write(pacHeader)
 		pacproxy := fmt.Sprintf("function FindProxyForURL(url, host) { return 'PROXY %s; DIRECT'; };",
 			proxyAddr)
 		buf.Write([]byte(pacproxy))
-		return
+		return buf.Bytes()
 	}
 
 	data := struct {
@@ -124,7 +119,7 @@ func genPAC(c *clientConn) {
 		TopLevel      string
 	}{
 		proxyAddr,
-		directList,
+		*pac.directList,
 		pac.topLevelDomain,
 	}
 
@@ -133,19 +128,23 @@ func genPAC(c *clientConn) {
 		errl.Println("Error generating pac file:", err)
 		panic("Error generating pac file")
 	}
+	return buf.Bytes()
+}
+
+func initPAC() {
+	s := strings.Join(siteStat.GetDirectList(), "\",\n\"")
+	pac.directList = &s
+	go func() {
+		for {
+			time.Sleep(10 * time.Minute)
+			s = strings.Join(siteStat.GetDirectList(), "\",\n\"")
+			pac.directList = &s
+		}
+	}()
 }
 
 func sendPAC(c *clientConn) {
-	const pacOutdate = 10 * time.Minute
-	now := time.Now()
-	pac.lock.Lock()
-	if now.Sub(pac.updated) > pacOutdate {
-		genPAC(c)
-		pac.updated = now
-	}
-	pac.lock.Unlock()
-
-	if _, err := c.Write(pac.content.Bytes()); err != nil {
+	if _, err := c.Write(genPAC(c)); err != nil {
 		debug.Println("Error sending PAC file")
 		return
 	}
