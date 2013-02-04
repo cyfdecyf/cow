@@ -26,7 +26,10 @@ var (
 
 	logFile io.Writer
 
-	debugLog, errorLog, requestLog, responseLog *log.Logger
+	errorLog    = log.New(logFile, "[ERROR] ", log.LstdFlags)
+	debugLog    = log.New(logFile, "[DEBUG] ", log.LstdFlags)
+	requestLog  = log.New(logFile, "[>>>>>] ", log.LstdFlags)
+	responseLog = log.New(logFile, "[<<<<<] ", log.LstdFlags)
 )
 
 var (
@@ -64,11 +67,6 @@ func initLog() {
 		debugLog = log.New(logFile, "\033[34m[Debug]\033[0m ", log.LstdFlags)
 		requestLog = log.New(logFile, "\033[32m[>>>>>]\033[0m ", log.LstdFlags)
 		responseLog = log.New(logFile, "\033[33m[<<<<<]\033[0m ", log.LstdFlags)
-	} else {
-		errorLog = log.New(logFile, "[ERROR] ", log.LstdFlags)
-		debugLog = log.New(logFile, "[DEBUG] ", log.LstdFlags)
-		requestLog = log.New(logFile, "[>>>>>] ", log.LstdFlags)
-		responseLog = log.New(logFile, "[<<<<<] ", log.LstdFlags)
 	}
 }
 
