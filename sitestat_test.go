@@ -26,7 +26,9 @@ func TestSiteStatLoadStore(t *testing.T) {
 	}
 
 	ld := newSiteStat()
-	ld.load(stfile)
+	if err := ld.load(stfile); err != nil {
+		t.Fatal("load stat error:", err)
+	}
 	vc := ld.get(d1.Host)
 	if vc == nil {
 		t.Fatalf("load error, %s not loaded\n", d1.Host)
@@ -50,9 +52,9 @@ func TestSiteStatVisit(t *testing.T) {
 	g2, _ := ParseRequestURI("calendar.google.com")
 	g3, _ := ParseRequestURI("docs.google.com")
 
-	st.DirectVisit(g1)
-	st.DirectVisit(g1)
-	st.DirectVisit(g1)
+	for i := 0; i < 10; i++ {
+		st.DirectVisit(g1)
+	}
 	st.DirectVisit(g2)
 	st.DirectVisit(g3)
 
@@ -64,7 +66,7 @@ func TestSiteStatVisit(t *testing.T) {
 	if vc == nil {
 		t.Fatalf("no visitCnt for %s\n", g1.Host)
 	}
-	if vc.Direct != 3 {
+	if vc.Direct != 10 {
 		t.Errorf("direct cnt for %s not correct, should be 3, got: %d\n", g1.Host, vc.Direct)
 	}
 	if vc.Blocked != 0 {
@@ -78,14 +80,18 @@ func TestSiteStatVisit(t *testing.T) {
 	if vc.Blocked != 1 {
 		t.Errorf("blocked cnt for %s after 1 blocked visit should be 1, got: %d\n", g1.Host, vc.Blocked)
 	}
-	if vc.Direct != 2 {
-		t.Errorf("direct cnt for %s after 1 blocked visit should be 2, got: %d\n", g1.Host, vc.Direct)
+	if vc.Direct != 5 {
+		t.Errorf("direct cnt for %s after 1 blocked visit should be 5, got: %d\n", g1.Host, vc.Direct)
 	}
 
 	// test blocked visit
 	g4, _ := ParseRequestURI("plus.google.com")
 	st.BlockedVisit(g4)
 	st.BlockedVisit(g4)
+	// should be blocked for 2 minutes
+	if st.GetVisitMethod(g4) != vmBlocked {
+		t.Error("should be blocked for 2 minutes after blocked visit")
+	}
 	vc = st.get(g4.Host)
 	if vc == nil {
 		t.Fatal("no visitCnt for ", g4.Host)

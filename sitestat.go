@@ -36,16 +36,18 @@ const (
 	vmUnknown
 )
 
+type vcntint int8
+
 // COW don't need very accurate visit count, so update to visit count value is
 // not protected.
 type visitCnt struct {
-	Blocked  int8      `json:"block"`
-	Direct   int8      `json:"direct"`
+	Blocked  vcntint   `json:"block"`
+	Direct   vcntint   `json:"direct"`
 	Recent   time.Time `json:"recent"`
 	rUpdated bool      // whether Recent is updated, we only need date precision
 }
 
-func newVisitCnt(blocked, direct int8) *visitCnt {
+func newVisitCnt(blocked, direct vcntint) *visitCnt {
 	return &visitCnt{blocked, direct, time.Now(), true}
 }
 
@@ -61,10 +63,12 @@ func (vc *visitCnt) userSpecified() bool {
 	return vc.Blocked == userCnt || vc.Direct == userCnt
 }
 
+const staleThreshold = 5 * 24 * time.Hour
+
 // shouldDrop returns true if the a VisitCnt is not visited for a long time
 // (several days) or is specified by user.
 func (vc *visitCnt) shouldDrop() bool {
-	return vc.userSpecified() || time.Now().Sub(vc.Recent) > (5*24*time.Hour)
+	return vc.userSpecified() || time.Now().Sub(vc.Recent) > staleThreshold
 }
 
 func (vc *visitCnt) asDirect() bool {
@@ -86,25 +90,14 @@ func (vc *visitCnt) asBlocked() bool {
 var visitLock sync.Mutex
 
 // visit updates visit cnt
-func (vc *visitCnt) visit(inc, dec *int8) {
-	if vc.userSpecified() {
-		return
-	}
+func (vc *visitCnt) visit(inc *vcntint) {
 	// Possible for *cnt to overflow and become negative, but not likely. Even
 	// if becomes negative, it should get chance to increase back to positive.
-	if *inc < maxCnt {
-		*inc++
-	} else if *inc == maxCnt {
-	} else {
+	*inc++
+	if *inc > maxCnt {
 		*inc = maxCnt
 	}
 
-	if *dec == 0 {
-	} else if *dec > 0 {
-		*dec--
-	} else {
-		*dec = 0
-	}
 	if !vc.rUpdated {
 		vc.rUpdated = true
 		visitLock.Lock()
@@ -114,19 +107,34 @@ func (vc *visitCnt) visit(inc, dec *int8) {
 }
 
 func (vc *visitCnt) directVisit() {
-	vc.visit(&vc.Direct, &vc.Blocked)
+	if vc.userSpecified() {
+		return
+	}
+	vc.visit(&vc.Direct)
+	// one successful direct visit probably means the site is not actually
+	// blocked
+	vc.Blocked = 0
 }
 
 func (vc *visitCnt) blockedVisit() {
-	vc.visit(&vc.Blocked, &vc.Direct)
+	if vc.userSpecified() {
+		return
+	}
+	vc.visit(&vc.Blocked)
+	// blockage maybe caused by bad network connection
+	vc.Direct = vc.Direct - 5
+	if vc.Direct < 0 {
+		vc.Direct = 0
+	}
 }
 
 // directVisitStat records visit count
 type SiteStat struct {
-	Vcnt   map[string]*visitCnt `json:"site_stat"` // Vcnt uses host as key
+	Update time.Time            `json:"update"`
+	Vcnt   map[string]*visitCnt `json:"site_info"` // Vcnt uses host as key
 	vcLock sync.RWMutex
 
-	// TODO add chouSet
+	tempBlocked *TimeoutSet
 
 	// Whether a domain has blocked host. Used to avoid considering a domain as
 	// direct though it has blocked hosts.
@@ -134,8 +142,12 @@ type SiteStat struct {
 	hbhLock        sync.RWMutex
 }
 
+const blockedTimeout = 2 * time.Minute
+
 func newSiteStat() *SiteStat {
-	return &SiteStat{Vcnt: map[string]*visitCnt{}, hasBlockedHost: map[string]bool{}}
+	return &SiteStat{Vcnt: map[string]*visitCnt{},
+		hasBlockedHost: map[string]bool{},
+		tempBlocked:    NewTimeoutSet(blockedTimeout)}
 }
 
 func (vs *SiteStat) get(s string) *visitCnt {
@@ -149,6 +161,8 @@ func (vs *SiteStat) get(s string) *visitCnt {
 }
 
 func (vs *SiteStat) BlockedVisit(url *URL) {
+	vs.tempBlocked.add(url.Host)
+
 	vcnt := vs.get(url.Host)
 	if vcnt != nil {
 		vcnt.blockedVisit()
@@ -157,7 +171,6 @@ func (vs *SiteStat) BlockedVisit(url *URL) {
 		vs.Vcnt[url.Host] = newVisitCntBlocked()
 		vs.vcLock.Unlock()
 	}
-	// TODO If not taken as blocked from now on, block for some time.
 
 	// Mistakenly consider a partial blocked domain as direct will make that
 	// domain into PAC and never have a chance to correct the error.
@@ -191,6 +204,9 @@ func (ss *SiteStat) GetVisitMethod(url *URL) siteVisitMethod {
 	if url.Domain == "" { // simple host
 		return vmDirect
 	}
+	if ss.tempBlocked.has(url.Host) {
+		return vmBlocked
+	}
 	// First check if host has visit info
 	hostCnt := ss.get(url.Host)
 	if hostCnt != nil {
@@ -211,41 +227,29 @@ func (ss *SiteStat) GetVisitMethod(url *URL) siteVisitMethod {
 	return vmUnknown
 }
 
-func (ss *SiteStat) IsDirect(url *URL) bool {
-	if url.Domain == "" {
-		return true
-	}
-
-	// First check if host has visit info
-	hostCnt := ss.get(url.Host)
-	if hostCnt != nil {
-		if hostCnt.asBlocked() {
-			return false
-		} else if hostCnt.asDirect() {
-			return true
-		}
-	}
-	dmCnt := ss.get(url.Domain)
-	if dmCnt != nil {
-		if dmCnt.asBlocked() {
-			return false
-		} else if dmCnt.asDirect() {
-			return true
-		}
-	}
-	// unknow site, taken as direct first
-	return true
-}
-
 func (ss *SiteStat) store(file string) (err error) {
-	s := newSiteStat()
-	ss.vcLock.RLock()
-	for k, v := range ss.Vcnt {
-		if !v.shouldDrop() {
-			s.Vcnt[k] = v
+	now := time.Now()
+	var s *SiteStat
+	if now.Sub(ss.Update) > staleThreshold {
+		// Not updated for a long time, don't drop any record
+		s = ss
+		// Changing update time too fast will also drop useful record
+		s.Update = ss.Update.Add(staleThreshold)
+		if s.Update.Sub(now) > 0 {
+			s.Update = now
 		}
+	} else {
+		s := newSiteStat()
+		s.Update = now
+		ss.vcLock.RLock()
+		for k, v := range ss.Vcnt {
+			if !v.shouldDrop() {
+				s.Vcnt[k] = v
+			}
+		}
+		ss.vcLock.RUnlock()
 	}
-	ss.vcLock.RUnlock()
+
 	b, err := json.MarshalIndent(s, "", "\t")
 	if err != nil {
 		errl.Println("Error marshalling site stat:", err)
@@ -259,19 +263,23 @@ func (ss *SiteStat) store(file string) (err error) {
 	}
 	defer f.Close()
 	if _, err = f.Write(b); err != nil {
-		fmt.Println("Error writing stat file:", err)
+		errl.Println("Error writing stat file:", err)
 		return
 	}
 	return
 }
 
-func (ss *SiteStat) load(file string) {
-	var err error
+func (ss *SiteStat) loadList(lst []string, blocked, direct vcntint) {
+	for _, d := range lst {
+		ss.Vcnt[d] = newVisitCnt(blocked, direct)
+	}
+}
 
+func (ss *SiteStat) load(file string) (err error) {
 	var exists bool
 	if exists, err = isFileExists(file); err != nil {
 		fmt.Println("Error loading stat:", err)
-		os.Exit(1)
+		return
 	}
 	if !exists {
 		return
@@ -279,28 +287,28 @@ func (ss *SiteStat) load(file string) {
 	var f *os.File
 	if f, err = os.Open(file); err != nil {
 		fmt.Printf("Error opening site stat %s: %v\n", file, err)
-		os.Exit(1)
+		return
 	}
 	b, err := ioutil.ReadAll(f)
 	if err != nil {
 		fmt.Println("Error reading site stat:", err)
-		os.Exit(1)
+		return
 	}
 	if err = json.Unmarshal(b, ss); err != nil {
 		fmt.Println("Error decoding site stat:", err)
-		os.Exit(1)
+		return
 	}
 
-	// load user specified sites
+	// load builtin site list
+	// ss.loadList(blockedDomainList, blockDelta, 0)
+	// ss.loadList(directDomainList, 0, directDelta)
+
+	// load user specified sites at last to override previous values
 	if directList, err := loadSiteList(dsFile.alwaysDirect); err == nil {
-		for _, d := range directList {
-			ss.Vcnt[d] = newVisitCnt(0, userCnt)
-		}
+		ss.loadList(directList, 0, userCnt)
 	}
 	if blockedList, err := loadSiteList(dsFile.alwaysBlocked); err == nil {
-		for _, d := range blockedList {
-			ss.Vcnt[d] = newVisitCnt(userCnt, 0)
-		}
+		ss.loadList(blockedList, userCnt, 0)
 	}
 
 	for k, v := range ss.Vcnt {
@@ -308,9 +316,38 @@ func (ss *SiteStat) load(file string) {
 			ss.hasBlockedHost[k] = true
 		}
 	}
+	return
+}
+
+func (ss *SiteStat) GetDirectList() []string {
+	lst := make([]string, 0)
+	// anyway to do more fine grained locking?
+	ss.vcLock.RLock()
+	for site, vc := range ss.Vcnt {
+		if ss.hasBlockedHost[host2Domain(site)] {
+			continue
+		}
+		if vc.asDirect() {
+			lst = append(lst, site)
+		}
+	}
+	ss.vcLock.RUnlock()
+	return lst
 }
 
 var siteStat = newSiteStat()
+
+func loadSiteStat() {
+	if siteStat.load(dsFile.stat) != nil {
+		os.Exit(1)
+	}
+}
+
+func storeSiteStat() {
+	if siteStat.store(dsFile.stat) != nil {
+		os.Exit(1)
+	}
+}
 
 func loadSiteList(fpath string) (lst []string, err error) {
 	var exists bool
