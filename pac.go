@@ -24,8 +24,6 @@ func init() {
 var httpProxy = 'PROXY {{.ProxyAddr}}; DIRECT';
 
 var directList = [
-"",
-"0.1",
 "{{.DirectDomains}}"
 ];
 
@@ -38,27 +36,29 @@ var topLevel = {
 {{.TopLevel}}
 };
 
+// only handles IPv4 address now
 function hostIsIP(host) {
-	var parts = host.split('.', 4);
+	var parts = host.split('.');
 	if (parts.length != 4) {
 		return false;
 	}
-	for (i in parts) {
-		if (i.length == 0 || i.length > 3) {
+	for (var i = 3; i >= 0; i--) {
+		if (parts[i].length == 0 || parts[i].length > 3) {
 			return false
 		}
-		var n = Number(i)
+		var n = Number(parts[i])
 		if (isNaN(n) || n < 0 || n > 255) {
-			return false
+			return false;
 		}
 	}
-	return true
+	return true;
 }
 
 function host2domain(host) {
-	var lastDot = host.lastIndexOf(".");
-	if (lastDot === -1)
+	var lastDot = host.lastIndexOf('.');
+	if (lastDot === -1) {
 		return ""; // simple host name has no domain
+	}
 	// Find the second last dot
 	dot2ndLast = host.lastIndexOf(".", lastDot-1);
 	if (dot2ndLast === -1)
@@ -68,9 +68,9 @@ function host2domain(host) {
 	if (topLevel[part]) {
 		var dot3rdLast = host.lastIndexOf(".", dot2ndLast-1)
 		if (dot3rdLast === -1) {
-			return host
+			return host;
 		}
-		return host.substring(dot3rdLast+1)
+		return host.substring(dot3rdLast+1);
 	}
 	return host.substring(dot2ndLast+1);
 };
