@@ -8,15 +8,15 @@ import (
 func TestSiteStatLoadStore(t *testing.T) {
 	st := newSiteStat()
 
-	d1, _ := ParseRequestURI("www.baidu.com")
-	d2, _ := ParseRequestURI("img.baidu.com")
+	d1, _ := ParseRequestURI("www.foobar.com")
+	d2, _ := ParseRequestURI("img.foobar.com")
 	st.DirectVisit(d1)
 	st.DirectVisit(d1)
 	st.DirectVisit(d1)
 	st.DirectVisit(d2)
 
-	b1, _ := ParseRequestURI("twitter.com")
-	b2, _ := ParseRequestURI("facebook.com")
+	b1, _ := ParseRequestURI("blocked.com")
+	b2, _ := ParseRequestURI("blocked2.com")
 	st.BlockedVisit(b1)
 	st.BlockedVisit(b2)
 
@@ -48,9 +48,9 @@ func TestSiteStatLoadStore(t *testing.T) {
 func TestSiteStatVisit(t *testing.T) {
 	st := newSiteStat()
 
-	g1, _ := ParseRequestURI("www.google.com")
-	g2, _ := ParseRequestURI("calendar.google.com")
-	g3, _ := ParseRequestURI("docs.google.com")
+	g1, _ := ParseRequestURI("www.gtemp.com")
+	g2, _ := ParseRequestURI("calendar.gtemp.com")
+	g3, _ := ParseRequestURI("docs.gtemp.com")
 
 	for i := 0; i < 10; i++ {
 		st.DirectVisit(g1)
@@ -85,7 +85,7 @@ func TestSiteStatVisit(t *testing.T) {
 	}
 
 	// test blocked visit
-	g4, _ := ParseRequestURI("plus.google.com")
+	g4, _ := ParseRequestURI("plus.gtemp.com")
 	st.BlockedVisit(g4)
 	st.BlockedVisit(g4)
 	// should be blocked for 2 minutes
@@ -110,13 +110,13 @@ func TestSiteStatVisit(t *testing.T) {
 func TestSiteStatGetVisitMethod(t *testing.T) {
 	ss := newSiteStat()
 
-	g, _ := ParseRequestURI("google.com")
+	g, _ := ParseRequestURI("gtemp.com")
 	if ss.GetVisitMethod(g) != vmUnknown {
 		t.Error("should get unknown visit method")
 	}
 
-	b, _ := ParseRequestURI("www.baidu.com")
-	ss.Vcnt["www.baidu.com"] = newVisitCnt(0, userCnt)
+	b, _ := ParseRequestURI("www.btemp.com")
+	ss.Vcnt[b.Host] = newVisitCnt(0, userCnt)
 	vc := ss.get(b.Host)
 	if !vc.userSpecified() {
 		t.Error("should be user specified")
@@ -128,7 +128,7 @@ func TestSiteStatGetVisitMethod(t *testing.T) {
 		t.Error("User specified direct site not working")
 	}
 
-	tw, _ := ParseRequestURI("www.twitter.com")
+	tw, _ := ParseRequestURI("www.tblocked.com")
 	ss.Vcnt[tw.Domain] = newVisitCnt(userCnt, 0)
 	if ss.GetVisitMethod(tw) != vmBlocked {
 		t.Error("host in blocked domain should get blocked visit method")

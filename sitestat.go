@@ -300,8 +300,8 @@ func (ss *SiteStat) load(file string) (err error) {
 	}
 
 	// load builtin site list
-	// ss.loadList(blockedDomainList, blockDelta, 0)
-	// ss.loadList(directDomainList, 0, directDelta)
+	ss.loadList(blockedDomainList, blockDelta, 0)
+	ss.loadList(directDomainList, 0, directDelta)
 
 	// load user specified sites at last to override previous values
 	if directList, err := loadSiteList(dsFile.alwaysDirect); err == nil {
