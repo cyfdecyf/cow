@@ -1,10 +1,12 @@
 package main
 
 import (
-	// "os"
+	"os"
 	"testing"
 	"time"
 )
+
+var _ = os.Remove
 
 func TestDateMarshal(t *testing.T) {
 	time.Date(2013, 2, 4, 0, 0, 0, 0, time.UTC)
@@ -85,7 +87,7 @@ func TestSiteStatLoadStore(t *testing.T) {
 	if len(ld.GetDirectList()) == 0 {
 		t.Error("builtin site should appear in direct site list")
 	}
-	// os.Remove(stfile)
+	os.Remove(stfile)
 }
 
 func TestSiteStatVisit(t *testing.T) {
