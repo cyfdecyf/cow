@@ -412,7 +412,7 @@ func (c *clientConn) handleServerReadError(r *Request, sv *serverConn, err error
 		return errRetry
 	}
 	errMsg = genErrMsg(r, msg)
-	if sv.maybeFake() && maybeBlocked(r.URL, err) {
+	if sv.maybeFake() && maybeBlocked(err) {
 		return c.handleBlockedRequest(r, err, errMsg)
 	}
 	if r.responseNotSent() {
@@ -551,8 +551,8 @@ func createctDirectConnection(url *URL) (conn, error) {
 	return conn{c, ctDirectConn}, nil
 }
 
-func maybeBlocked(url *URL, err error) bool {
-	return (isErrTimeout(err) || isErrConnReset(err)) && !siteStat.AlwaysDirect(url)
+func maybeBlocked(err error) bool {
+	return isErrTimeout(err) || isErrConnReset(err)
 }
 
 const connFailedErrCode = "504 Connection failed"
@@ -598,13 +598,13 @@ func (c *clientConn) createConnection(r *Request) (srvconn conn, err error) {
 		if srvconn, err = createctDirectConnection(r.URL); err == nil {
 			return
 		}
-		if !hasParentProxy {
+		if !hasParentProxy || siteStat.AlwaysDirect(r.URL) {
 			goto fail
 		}
 		// debug.Printf("type of err %v\n", reflect.TypeOf(err))
 		// GFW may cause dns lookup fail (net.DNSError),
 		// may also cause connection time out or reset (net.OpError)
-		if isDNSError(err) || maybeBlocked(r.URL, err) {
+		if isDNSError(err) || maybeBlocked(err) {
 			// Try to create socks connection
 			var socksErr error
 			if srvconn, socksErr = createParentProxyConnection(r.URL); socksErr == nil {
@@ -662,6 +662,10 @@ func (sv *serverConn) directConnection() bool {
 	return sv.connType == ctDirectConn
 }
 
+func (sv *serverConn) shouldUpdateDirectStat() bool {
+	return !sv.directConnection() && sv.directConnection()
+}
+
 func (sv *serverConn) maybeFake() bool {
 	return sv.state == svConnected && sv.directConnection() && !sv.alwaysDirect
 }
@@ -710,7 +714,7 @@ func copyServer2Client(sv *serverConn, c *clientConn, r *Request) (err error) {
 				}
 				return
 			}
-			if sv.maybeFake() && maybeBlocked(r.URL, err) {
+			if sv.maybeFake() && maybeBlocked(err) {
 				siteStat.BlockedVisit(r.URL)
 				debug.Printf("srv->cli blocked site %s detected, err: %v retry\n", r.URL.HostPort, err)
 				return errRetry
@@ -732,7 +736,7 @@ func copyServer2Client(sv *serverConn, c *clientConn, r *Request) (err error) {
 			unsetConnReadTimeout(sv, "srv->cli")
 			sv.state = svSendRecvResponse
 		}
-		if !directVisited && sv.directConnection() && total > directThreshold {
+		if !directVisited && sv.shouldUpdateDirectStat() && total > directThreshold {
 			directVisited = true
 			siteStat.DirectVisit(r.URL)
 		}
@@ -909,7 +913,7 @@ func (sv *serverConn) doRequest(r *Request, c *clientConn) (err error) {
 	}
 	r.state = rsSent
 	err = c.readResponse(sv, r)
-	if err == nil && sv.directConnection() {
+	if err == nil && sv.shouldUpdateDirectStat() {
 		siteStat.DirectVisit(r.URL)
 	}
 	return
