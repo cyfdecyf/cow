@@ -7,14 +7,14 @@ import (
 )
 
 var dialTimeout, readTimeout time.Duration
-var maxTimeout = time.Duration(15)
+var maxTimeout = time.Duration(20)
 
 // use a fast to fetch web site
 const estimateSite = "www.baidu.com"
 
 var estimateReq = []byte("GET / HTTP/1.1\r\n" +
 	"Host: " + estimateSite + "\r\n" +
-	"User-Agent: curl/7.24.0 (x86_64-apple-darwin12.0) libcurl/7.24.0 OpenSSL/0.9.8r zlib/1.2.5\r\n" +
+	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10.8; rv:11.0) Gecko/20100101 Firefox/11.0\r\n" +
 	"Accept: */*\r\n" +
 	"Accept-Language: en-us,en;q=0.5\r\n" +
 	"Accept-Encoding: gzip, deflate\r\n" +
