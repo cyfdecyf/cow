@@ -53,7 +53,7 @@ func main() {
 		hasParentProxy = true
 	}
 
-	loadSiteStat()
+	initSiteStat()
 	initPAC()
 
 	/*

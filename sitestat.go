@@ -416,6 +416,20 @@ func (ss *SiteStat) GetDirectList() []string {
 
 var siteStat = newSiteStat()
 
+func initSiteStat() {
+	loadSiteStat()
+	if isWindows() {
+		// TODO How to detect program exit on Windows? This
+		// is just a workaround.
+		go func() {
+			for {
+				time.Sleep(time.Hour)
+				storeSiteStat()
+			}
+		}()
+	}
+}
+
 func loadSiteStat() {
 	if siteStat.load(dsFile.stat) != nil {
 		os.Exit(1)
@@ -423,9 +437,7 @@ func loadSiteStat() {
 }
 
 func storeSiteStat() {
-	if siteStat.store(dsFile.stat) != nil {
-		os.Exit(1)
-	}
+	siteStat.store(dsFile.stat)
 }
 
 func loadSiteList(fpath string) (lst []string, err error) {
