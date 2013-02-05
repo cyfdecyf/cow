@@ -315,10 +315,13 @@ func (ss *SiteStat) store(file string) (err error) {
 		s = newSiteStat()
 		s.Update = Date(now)
 		ss.vcLock.RLock()
-		for k, v := range ss.Vcnt {
-			if !v.shouldDrop() {
-				s.Vcnt[k] = v
+		for site, vcnt := range ss.Vcnt {
+			// user specified sites may change, always filter them out
+			dmcnt := ss.get(host2Domain(site))
+			if (dmcnt != nil && dmcnt.userSpecified()) || vcnt.shouldDrop() {
+				continue
 			}
+			s.Vcnt[site] = vcnt
 		}
 		ss.vcLock.RUnlock()
 	}
@@ -349,15 +352,11 @@ func (ss *SiteStat) loadList(lst []string, blocked, direct vcntint) {
 }
 
 func (ss *SiteStat) loadBuiltinList() {
-	ss.loadList(blockedDomainList, blockedDelta, 0)
-	ss.loadList(directDomainList, 0, directDelta)
+	ss.loadList(blockedDomainList, userCnt, 0)
+	ss.loadList(directDomainList, 0, userCnt)
 }
 
 func (ss *SiteStat) load(file string) (err error) {
-	// loadList specifies zero time for visitCnt, so builtin site will not be
-	// saved unless visit time is updated
-	ss.loadBuiltinList()
-
 	var exists bool
 	if exists, err = isFileExists(file); err != nil {
 		fmt.Println("Error loading stat:", err)
@@ -380,6 +379,8 @@ func (ss *SiteStat) load(file string) (err error) {
 		fmt.Println("Error decoding site stat:", err)
 		return
 	}
+
+	ss.loadBuiltinList()
 
 	// load user specified sites at last to override previous values
 	if directList, err := loadSiteList(dsFile.alwaysDirect); err == nil {

@@ -85,6 +85,17 @@ var directDomainList = []string{
 	"yupoo.com",
 	"upyun.com",
 
+	// 新闻门户
+	"ifanr.cn",
+	"ifanr.com",
+	"163.com",
+	"hexun.com",
+	"sina.com.cn",
+	"sinaimg.cn",
+	"sinajs.cn",
+	"sohu.com",
+	"solidot.org",
+
 	// 搜索
 	"bing.com",
 	"bing.com.cn",
@@ -98,22 +109,14 @@ var directDomainList = []string{
 	"apple.com.cn",
 	"icloud.com",
 
-	// 新闻门户
-	"ifanr.cn",
-	"ifanr.com",
-	"163.com",
-	"hexun.com",
-	"sina.com.cn",
-	"sinaimg.cn",
-	"sinajs.cn",
-	"sohu.com",
-	"solidot.org",
-
-	// 其他
+	// 微软
 	"hotmail.com",
 	"live.com",
+	"outlook.com",
+	"microsoft.com",
+
+	// 其他
 	"macromedia.com",
 	"mmcdn.cn",
-	"outlook.com",
 	"12306.cn",
 }
