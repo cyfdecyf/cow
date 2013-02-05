@@ -24,7 +24,6 @@ type Config struct {
 	SocksAddr     string
 	Core          int
 	SshServer     string
-	AutoRetry     bool
 	DetectSSLErr  bool
 	LogFile       string
 	AlwaysProxy   bool
@@ -62,7 +61,6 @@ func init() {
 	dsFile.alwaysDirect = path.Join(dsFile.dir, alwaysDirectFname)
 	dsFile.stat = path.Join(dsFile.dir, statFname)
 
-	config.AutoRetry = true
 	config.DetectSSLErr = false
 	config.AlwaysProxy = false
 
@@ -92,7 +90,6 @@ func parseCmdLineConfig() *Config {
 	// given on command line, so we don't know if the option in config file
 	// should be override.
 
-	// flag.BoolVar(&c.AutoRetry, "autoRetry", false, "automatically retry timeout requests using socks proxy")
 	// flag.BoolVar(&c.DetectSSLErr, "detectSSLErr", true, "detect SSL error based on how soon client closes connection")
 	// flag.BoolVar(&c.AlwaysProxy, "alwaysProxy", false, "always use parent proxy")
 
@@ -195,7 +192,8 @@ func (p configParser) ParseUpdateDirect(val string) {
 }
 
 func (p configParser) ParseAutoRetry(val string) {
-	config.AutoRetry = parseBool(val, "autoRetry")
+	// config.AutoRetry = parseBool(val, "autoRetry")
+	fmt.Println("autoRetry option will be removed in future, please remove it")
 }
 
 func (p configParser) ParseDetectSSLErr(val string) {

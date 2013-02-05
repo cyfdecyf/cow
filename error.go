@@ -9,6 +9,9 @@ import (
 	"time"
 )
 
+// blocked/direct form related code is no longer used, but still keep it for a
+// while
+
 var errPageRawTmpl = `<!DOCTYPE html>
 <html>
 	<head> <title>COW Proxy</title> </head>

@@ -375,32 +375,9 @@ const (
 	errCodeBadReq  = "400 bad request"
 )
 
-func (c *clientConn) handleBlockedRequest(r *Request, err error, msg string) error {
-	if isErrConnReset(err) {
-		siteStat.BlockedVisit(r.URL)
-		return errRetry
-	} else if config.AutoRetry {
-		// err must be timeout here
-		// Domain in chou domain set is likely to be blocked, should automatically
-		// retry request using parent proxy.
-		// If autoRetry is enabled, treat timeout domain as chou and retry.
-		siteStat.BlockedVisit(r.URL)
-		return errRetry
-	}
-
-	errCode := errCodeTimeout
-	msg += genBlockedSiteMsg(r)
-	// Let user decide what to do with with timeout error if autoRetry is not enabled
-	if !config.AutoRetry && isErrTimeout(err) && r.responseNotSent() {
-		sendBlockedErrorPage(c, errCode, err.Error(), msg, r)
-		return errPageSent
-	}
-	if r.responseNotSent() {
-		sendErrorPage(c, errCode, err.Error(), msg)
-		return errPageSent
-	}
-	errl.Printf("%s blocked request with partial response sent to client: %v %v\n", msg, err, r)
-	return errShouldClose
+func (c *clientConn) handleBlockedRequest(r *Request) error {
+	siteStat.BlockedVisit(r.URL)
+	return errRetry
 }
 
 func (c *clientConn) handleServerReadError(r *Request, sv *serverConn, err error, msg string) error {
@@ -413,7 +390,7 @@ func (c *clientConn) handleServerReadError(r *Request, sv *serverConn, err error
 	}
 	errMsg = genErrMsg(r, msg)
 	if sv.maybeFake() && maybeBlocked(err) {
-		return c.handleBlockedRequest(r, err, errMsg)
+		return c.handleBlockedRequest(r)
 	}
 	if r.responseNotSent() {
 		sendErrorPage(c, "502 read error", err.Error(), errMsg)
@@ -608,8 +585,7 @@ func (c *clientConn) createConnection(r *Request) (srvconn conn, err error) {
 			// Try to create socks connection
 			var socksErr error
 			if srvconn, socksErr = createParentProxyConnection(r.URL); socksErr == nil {
-				handRes := c.handleBlockedRequest(r, err,
-					genErrMsg(r, "Create direct connection."))
+				handRes := c.handleBlockedRequest(r)
 				if handRes == errRetry {
 					debug.Println("direct connection failed, use socks connection for", r)
 					return srvconn, nil
