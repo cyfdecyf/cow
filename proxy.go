@@ -74,14 +74,17 @@ type serverConn struct {
 	state        serverConnState
 	lastUse      time.Time
 	alwaysDirect bool
+	onceBlocked  bool
+	timeoutSet   bool
 }
 
-func newServerConn(c conn, url *URL) *serverConn {
+func newServerConn(c conn, url *URL, alwaysBlocked, onceBlocked bool) *serverConn {
 	return &serverConn{
 		conn:         c,
 		url:          url,
 		bufRd:        bufio.NewReaderSize(c, bufSize),
-		alwaysDirect: siteStat.AlwaysDirect(url),
+		alwaysDirect: alwaysBlocked,
+		onceBlocked:  onceBlocked,
 	}
 }
 
@@ -455,8 +458,12 @@ func (c *clientConn) removeServerConn(sv *serverConn) {
 	delete(c.serverConn, sv.url.HostPort)
 }
 
-func createctDirectConnection(url *URL) (conn, error) {
-	c, err := net.DialTimeout("tcp", url.HostPort, dialTimeout)
+func createctDirectConnection(url *URL, onceBlocked bool) (conn, error) {
+	to := dialTimeout
+	if onceBlocked && to >= defaultDialTimeout {
+		to /= 2
+	}
+	c, err := net.DialTimeout("tcp", url.HostPort, to)
 	if err != nil {
 		// Time out is very likely to be caused by GFW
 		debug.Printf("Connecting to: %s %v\n", url.HostPort, err)
@@ -490,7 +497,7 @@ func createParentProxyConnection(url *URL) (srvconn conn, err error) {
 	return zeroConn, errNoParentProxy
 }
 
-func (c *clientConn) createConnection(r *Request) (srvconn conn, err error) {
+func (c *clientConn) createConnection(r *Request, alwaysDirect, onceBlocked bool) (srvconn conn, err error) {
 	if config.AlwaysProxy {
 		if srvconn, err = createParentProxyConnection(r.URL); err == nil {
 			return
@@ -560,18 +567,6 @@ func (c *clientConn) createServerConn(r *Request) (*serverConn, error) {
 	return sv, nil
 }
 
-func setConnReadTimeout(cn net.Conn, d time.Duration, msg string) {
-	if cn.SetReadDeadline(time.Now().Add(d)) != nil {
-		errl.Println("Set readtimeout:", msg)
-	}
-}
-
-func unsetConnReadTimeout(cn net.Conn, msg string) {
-	if cn.SetReadDeadline(zeroTime) != nil {
-		errl.Println("Unset readtimeout:", msg)
-	}
-}
-
 func (sv *serverConn) directConnection() bool {
 	return sv.connType == ctDirectConn
 }
@@ -582,6 +577,33 @@ func (sv *serverConn) shouldUpdateDirectStat() bool {
 
 func (sv *serverConn) maybeFake() bool {
 	return sv.state == svConnected && sv.directConnection() && !sv.alwaysDirect
+}
+
+// setReadTimeout will only set timeout if the server connection maybe fake.
+// In case it's not fake, this will unset timeout.
+func (sv *serverConn) setReadTimeout(msg string) {
+	if sv.maybeFake() {
+		to := readTimeout
+		if sv.onceBlocked && to >= defaultReadTimeout {
+			// use shorter readTimeout for potential blocked sites
+			to /= 2
+		}
+		if sv.SetReadDeadline(time.Now().Add(to)) != nil {
+			errl.Println("Set server read timeout:", msg)
+		}
+		sv.timeoutSet = true
+	} else {
+		sv.unsetReadTimeout(msg)
+	}
+}
+
+func (sv *serverConn) unsetReadTimeout(msg string) {
+	if sv.timeoutSet {
+		sv.timeoutSet = false
+		if sv.SetReadDeadline(zeroTime) != nil {
+			errl.Println("Unset server read timeout:", msg)
+		}
+	}
 }
 
 func (sv *serverConn) maybeSSLErr(cliStart time.Time) bool {
@@ -618,10 +640,7 @@ func copyServer2Client(sv *serverConn, c *clientConn, r *Request) (err error) {
 	directVisited := false
 	const directThreshold = 4096
 	for {
-		if sv.maybeFake() {
-			// TODO reduce readTimeout if has been blocked once
-			setConnReadTimeout(sv, readTimeout, "srv->cli")
-		}
+		sv.setReadTimeout("srv->cli")
 		if n, err = sv.Read(buf); err != nil {
 			if err == io.EOF {
 				if r.responseNotSent() {
@@ -644,13 +663,11 @@ func copyServer2Client(sv *serverConn, c *clientConn, r *Request) (err error) {
 			// debug.Printf("copyServer2Client write data: %v\n", err)
 			return
 		}
+		// debug.Printf("srv(%s)->cli(%s) sent %d bytes data\n", r.URL.HostPort, c.RemoteAddr(), total)
 		// set state to rsRecvBody to indicate the request has partial response sent to client
 		r.state = rsRecvBody
-		// debug.Printf("srv(%s)->cli(%s) sent %d bytes data\n", r.URL.HostPort, c.RemoteAddr(), total)
-		if sv.maybeFake() {
-			unsetConnReadTimeout(sv, "srv->cli")
-			sv.state = svSendRecvResponse
-		}
+		sv.state = svSendRecvResponse
+		sv.unsetReadTimeout("srv->cli")
 		if !directVisited && sv.shouldUpdateDirectStat() && total > directThreshold {
 			directVisited = true
 			siteStat.DirectVisit(r.URL)
@@ -673,15 +690,9 @@ func copy2Server(sv *serverConn, r *Request, p []byte) (err error) {
 }
 
 func copyClient2Server(c *clientConn, sv *serverConn, r *Request, srvStopped notification, done chan byte) (err error) {
-	// sv.maybeFake may change during execution in this function.
-	// So need a variable to record the whether timeout is set.
-	deadlineIsSet := false
 	defer func() {
-		if deadlineIsSet {
-			// maybe need to retry, should unset timeout here because
-			// maybeFake would become false if using parent connection
-			unsetConnReadTimeout(c, "cli->srv after err")
-		}
+		// may need to retry, should unset timeout here
+		sv.unsetReadTimeout("cli->srv after err")
 		done <- 1
 	}()
 
@@ -715,14 +726,7 @@ func copyClient2Server(c *clientConn, sv *serverConn, r *Request, srvStopped not
 	}
 	for {
 		// debug.Println("cli->srv")
-		if sv.maybeFake() {
-			setConnReadTimeout(c, time.Second, "cli->srv")
-			deadlineIsSet = true
-		} else if deadlineIsSet {
-			// maybeFake may truned to false after timeout, but timeout should be unset
-			unsetConnReadTimeout(c, "cli->srv before read")
-			deadlineIsSet = false
-		}
+		sv.setReadTimeout("cli->srv")
 		if n, err = c.Read(buf); err != nil {
 			if config.DetectSSLErr && (isErrConnReset(err) || err == io.EOF) && sv.maybeSSLErr(start) {
 				debug.Println("client connection closed very soon, taken as SSL error:", r)

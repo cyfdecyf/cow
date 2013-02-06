@@ -9,6 +9,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Header struct {
@@ -275,12 +276,16 @@ func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, url *URL) 
 func parseRequest(c *clientConn) (r *Request, err error) {
 	var s []byte
 	reader := c.bufRd
-	setConnReadTimeout(c, clientConnTimeout, "parseRequest")
+	if err = c.SetReadDeadline(time.Now().Add(clientConnTimeout)); err != nil {
+		errl.Println("Set readtimeout for parseRequest:", err)
+	}
 	// parse initial request line
 	if s, err = ReadLineBytes(reader); err != nil {
 		return nil, err
 	}
-	unsetConnReadTimeout(c, "parseRequest")
+	if err = c.SetReadDeadline(zeroTime); err != nil {
+		errl.Println("Unset readtimeout for parseRequest:", err)
+	}
 	// debug.Printf("Request initial line %s", s)
 
 	r = new(Request)
@@ -357,9 +362,7 @@ func parseResponse(sv *serverConn, r *Request) (rp *Response, err error) {
 	var s []byte
 	reader := sv.bufRd
 START:
-	if sv.maybeFake() {
-		setConnReadTimeout(sv, readTimeout, "parseResponse")
-	}
+	sv.setReadTimeout("parseResponse")
 	if s, err = ReadLineBytes(reader); err != nil {
 		if err != io.EOF {
 			// err maybe timeout caused by explicity setting deadline
@@ -368,9 +371,7 @@ START:
 		// For timeout, the connection will not be used, so no need to unset timeout
 		return nil, err
 	}
-	if sv.maybeFake() {
-		unsetConnReadTimeout(sv, "parseResponse")
-	}
+	sv.unsetReadTimeout("parseResponse")
 	var f [][]byte
 	if f = bytes.SplitN(s, []byte{' '}, 3); len(f) < 2 { // status line are separated by SP
 		errl.Printf("Malformed HTTP response status line: %s %v\n", s, r)

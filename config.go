@@ -65,8 +65,8 @@ func init() {
 	config.AlwaysProxy = false
 
 	config.AuthTimeout = 2 * time.Hour
-	config.DialTimeout = 5 * time.Second
-	config.ReadTimeout = 5 * time.Second
+	config.DialTimeout = defaultDialTimeout
+	config.ReadTimeout = defaultReadTimeout
 }
 
 func parseCmdLineConfig() *Config {

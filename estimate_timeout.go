@@ -6,7 +6,10 @@ import (
 	"time"
 )
 
-var dialTimeout, readTimeout time.Duration
+const defaultDialTimeout = 5 * time.Second
+const defaultReadTimeout = 5 * time.Second
+
+var dialTimeout, readTimeout time.Duration // initialized in runEstimateTimeout
 var maxTimeout = time.Duration(20)
 
 // use a fast to fetch web site
@@ -18,7 +21,6 @@ var estimateReq = []byte("GET / HTTP/1.1\r\n" +
 	"Accept: */*\r\n" +
 	"Accept-Language: en-us,en;q=0.5\r\n" +
 	"Accept-Encoding: gzip, deflate\r\n" +
-	"Referer: http://www.baidu.com/\r\n" +
 	"Connection: close\r\n\r\n")
 
 // estimateTimeout tries to fetch a url and adjust timeout value according to
