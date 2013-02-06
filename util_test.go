@@ -12,15 +12,13 @@ func TestReadLine(t *testing.T) {
 		text  string
 		lines []string
 	}{
-		{"nihao\nwelcome\r", []string{"nihao", "welcome"}},
-		{"hello\r\nworld\n", []string{"hello", "world"}},
-		{"hello\r\r\nworld\r\r", []string{"hello", "world"}},
-		{"hello", []string{"hello"}},
-		{"hello\r\r", []string{"hello"}},
+		{"one\ntwo", []string{"one", "two"}},
+		{"three\r\nfour\n", []string{"three", "four"}},
+		{"five\r\nsix\r\n", []string{"five", "six"}},
+		{"seven", []string{"seven"}},
+		{"eight\n", []string{"eight"}},
 		{"\r\n", []string{""}},
-		{"\r", []string{""}},
 		{"\n", []string{""}},
-		{"\r\r\n", []string{""}},
 	}
 	for _, td := range testData {
 		raw := bytes.NewBufferString(td.text)
@@ -31,12 +29,46 @@ func TestReadLine(t *testing.T) {
 				t.Fatalf("%d read error %v got: %s\ntext: %s\n", i+1, err, l, td.text)
 			}
 			if line != l {
-				t.Fatalf("%d read got: %s should be: %s\ntext: %s\n", i+1, l, line, td.text)
+				t.Fatalf("%d read got: %s (%d) should be: %s (%d)\n", i+1, l, len(l), line, len(line))
 			}
 		}
 		_, err := ReadLine(rd)
 		if err != io.EOF {
 			t.Error("ReadLine past end should return EOF")
+		}
+	}
+}
+
+func TestASCIIToUpper(t *testing.T) {
+	testData := []struct {
+		raw   []byte
+		upper []byte
+	}{
+		{[]byte("foobar"), []byte("FOOBAR")},
+		{[]byte("fOoBAr"), []byte("FOOBAR")},
+		{[]byte("..fOoBAr\n"), []byte("..FOOBAR\n")},
+	}
+	for _, td := range testData {
+		up := ASCIIToUpper(td.raw)
+		if !bytes.Equal(up, td.upper) {
+			t.Errorf("raw: %s, upper: %s\n", string(up), string(td.upper))
+		}
+	}
+}
+
+func TestASCIIToLower(t *testing.T) {
+	testData := []struct {
+		raw   []byte
+		upper []byte
+	}{
+		{[]byte("FOOBAR"), []byte("foobar")},
+		{[]byte("fOoBAr"), []byte("foobar")},
+		{[]byte("..fOoBAr\n"), []byte("..foobar\n")},
+	}
+	for _, td := range testData {
+		low := ASCIIToLower(td.raw)
+		if !bytes.Equal(low, td.upper) {
+			t.Errorf("raw: %s, upper: %s\n", string(low), string(td.upper))
 		}
 	}
 }

@@ -38,19 +38,61 @@ func (n notification) hasNotified() bool {
 // ReadLine read till '\n' is found or encounter error. The returned line does
 // not include ending '\r' and '\n'. If returns err != nil if and only if
 // len(line) == 0.
-func ReadLine(r *bufio.Reader) (line string, err error) {
-	line, err = r.ReadString('\n')
-	n := len(line)
-	if n > 0 && (err == nil || err == io.EOF) {
-		id := n - 1
-		if line[id] == '\n' {
-			id--
+func ReadLine(r *bufio.Reader) (string, error) {
+	l, err := ReadLineBytes(r)
+	return string(l), err
+}
+
+// ReadLineBytes read till '\n' is found or encounter error. The returned line does
+// not include ending '\r\n' or '\n'. Returns err != nil if and only if
+// len(line) == 0. Note the returned byte should not be used for append.
+// Copied code of readLineSlice from $GOROOT/src/pkg/net/textproto/reader.go
+func ReadLineBytes(r *bufio.Reader) (line []byte, err error) {
+	for {
+		l, more, err := r.ReadLine()
+		if err != nil {
+			return nil, err
 		}
-		for ; id >= 0 && line[id] == '\r'; id-- {
+		// Avoid the copy if the first call produced a full line.
+		if line == nil && !more {
+			return l, nil
 		}
-		return line[:id+1], nil
+		line = append(line, l...)
+		if !more {
+			break
+		}
 	}
-	return
+	return line, nil
+}
+
+func ASCIIToUpperInplace(b []byte) {
+	for i := 0; i < len(b); i++ {
+		if 97 <= b[i] && b[i] <= 122 {
+			b[i] -= 32
+		}
+	}
+}
+
+func ASCIIToUpper(b []byte) []byte {
+	buf := make([]byte, len(b))
+	copy(buf, b)
+	ASCIIToUpperInplace(buf)
+	return buf
+}
+
+func ASCIIToLowerInplace(b []byte) {
+	for i := 0; i < len(b); i++ {
+		if 65 <= b[i] && b[i] <= 90 {
+			b[i] += 32
+		}
+	}
+}
+
+func ASCIIToLower(b []byte) []byte {
+	buf := make([]byte, len(b))
+	copy(buf, b)
+	ASCIIToLowerInplace(buf)
+	return buf
 }
 
 func IsDigit(b byte) bool {
