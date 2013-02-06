@@ -855,16 +855,16 @@ func sendBodyWithContLen(c *clientConn, r io.Reader, w, contBuf io.Writer, contL
 func sendBodyChunked(c *clientConn, r *bufio.Reader, w, contBuf io.Writer) (err error) {
 	// debug.Println("Sending chunked body")
 	for {
-		var s string
+		var s []byte
 		// Read chunk size line, ignore chunk extension if any
-		if s, err = ReadLine(r); err != nil {
+		if s, err = ReadLineBytes(r); err != nil {
 			errl.Println("Reading chunk size:", err)
 			return
 		}
 		// debug.Println("Chunk size line", s)
-		f := strings.SplitN(s, ";", 2)
+		f := bytes.SplitN(s, []byte{';'}, 2)
 		var size int64
-		if size, err = strconv.ParseInt(strings.TrimSpace(f[0]), 16, 64); err != nil {
+		if size, err = strconv.ParseInt(string(TrimSpace(f[0])), 16, 64); err != nil {
 			errl.Println("Chunk size invalid:", err)
 			return
 		}
@@ -883,7 +883,10 @@ func sendBodyChunked(c *clientConn, r *bufio.Reader, w, contBuf io.Writer) (err 
 		// Read chunked data and the following CRLF. If server is not
 		// returning correct data, the next call to strconv.ParseInt is likely
 		// to discover the error.
-		if err = copyN(r, w, contBuf, int(size)+2, c.buf, []byte(s+"\r\n"), nil); err != nil {
+		chunkLen := make([]byte, len(s)+2)
+		copy(chunkLen, s)
+		copy(chunkLen[len(s):], CRLF)
+		if err = copyN(r, w, contBuf, int(size)+2, c.buf, chunkLen, nil); err != nil {
 			debug.Println("Copying chunked data:", err)
 			return
 		}
