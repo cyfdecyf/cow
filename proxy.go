@@ -578,7 +578,7 @@ func (sv *serverConn) directConnection() bool {
 }
 
 func (sv *serverConn) shouldUpdateDirectStat() bool {
-	return !sv.directConnection() && sv.directConnection()
+	return !sv.alwaysDirect && sv.directConnection()
 }
 
 func (sv *serverConn) maybeFake() bool {
