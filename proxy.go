@@ -431,9 +431,10 @@ func (c *clientConn) readResponse(sv *serverConn, r *Request) (err error) {
 			debug.Printf("[Finished] %v request %s %s\n", c.RemoteAddr(), r.Method, r.URL)
 		}
 	*/
-
 	if rp.ConnectionKeepAlive {
 		if rp.KeepAlive == time.Duration(0) {
+			// Apache 2.2 timeout defaults to 5 seconds.
+			const serverConnTimeout = 5 * time.Second
 			sv.willCloseOn = time.Now().Add(serverConnTimeout)
 		} else {
 			sv.willCloseOn = time.Now().Add(rp.KeepAlive - time.Second)
@@ -617,9 +618,6 @@ func (sv *serverConn) maybeSSLErr(cliStart time.Time) bool {
 	// COW can't tell which is the case, so this detection is not reliable.
 	return sv.state > svConnected && time.Now().Sub(cliStart) < sslLeastDuration
 }
-
-// Apache 2.2 keep-alive timeout defaults to 5 seconds.
-const serverConnTimeout = 5 * time.Second
 
 func (sv *serverConn) mayBeClosed() bool {
 	if sv.connType == ctSocksConn {

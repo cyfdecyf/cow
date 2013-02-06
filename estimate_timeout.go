@@ -8,9 +8,9 @@ import (
 
 const defaultDialTimeout = 5 * time.Second
 const defaultReadTimeout = 5 * time.Second
+const maxTimeout = time.Duration(20)
 
 var dialTimeout, readTimeout time.Duration // initialized in runEstimateTimeout
-var maxTimeout = time.Duration(20)
 
 // use a fast to fetch web site
 const estimateSite = "www.baidu.com"
