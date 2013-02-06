@@ -88,6 +88,44 @@ func TestIsDigit(t *testing.T) {
 	}
 }
 
+func TestIsSpace(t *testing.T) {
+	testData := []struct {
+		c  byte
+		is bool
+	}{
+		{'a', false},
+		{'B', false},
+		{' ', true},
+		{'\r', true},
+		{'\n', true},
+	}
+	for _, td := range testData {
+		if IsSpace(td.c) != td.is {
+			t.Errorf("%v isspace wrong", rune(td.c))
+		}
+	}
+}
+
+func TestTrimSpace(t *testing.T) {
+	testData := []struct {
+		old    string
+		trimed string
+	}{
+		{"hello", "hello"},
+		{" hello", "hello"},
+		{"  hello\r\n ", "hello"},
+		{"  hello \t  ", "hello"},
+		{"", ""},
+		{"\r\n", ""},
+	}
+	for _, td := range testData {
+		trimed := string(TrimSpace([]byte(td.old)))
+		if trimed != td.trimed {
+			t.Errorf("%s trimmed to %s, wrong", td.old, trimed)
+		}
+	}
+}
+
 func TestCopyN(t *testing.T) {
 	testStr := "hello world"
 	src := bytes.NewBufferString(testStr)

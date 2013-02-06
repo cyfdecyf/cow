@@ -100,6 +100,36 @@ func IsDigit(b byte) bool {
 	return '0' <= b && b <= '9'
 }
 
+var spaceTbl = [...]bool{
+	9:  true, // ht
+	10: true, // lf
+	13: true, // cr
+	32: true, // sp
+}
+
+func IsSpace(b byte) bool {
+	if 9 <= b && b <= 32 {
+		return spaceTbl[b]
+	}
+	return false
+}
+
+func TrimSpace(s []byte) []byte {
+	if len(s) == 0 {
+		return s
+	}
+	st := 0
+	end := len(s) - 1
+	for ; st < len(s) && IsSpace(s[st]); st++ {
+	}
+	if st == len(s) {
+		return s[:0]
+	}
+	for ; end >= 0 && IsSpace(s[end]); end-- {
+	}
+	return s[st : end+1]
+}
+
 func isWindows() bool {
 	return runtime.GOOS == "windows"
 }
