@@ -182,63 +182,6 @@ func (c *clientConn) getRequest() (r *Request) {
 	return r
 }
 
-func getHostFromQuery(query string) string {
-	for _, s := range strings.Split(query, "&") {
-		if strings.HasPrefix(s, "host=") {
-			return s[len("host="):]
-		}
-	}
-	return ""
-}
-
-func (c *clientConn) serveSelfURLBlocked(r *Request) (err error) {
-	query := r.URL.Path[9:] // "/blocked?" has 9 characters
-	return c.serveSelfURLAddHost(r, query, "blocked", (*SiteStat).BlockedVisit)
-}
-
-func (c *clientConn) serveSelfURLDirect(r *Request) (err error) {
-	query := r.URL.Path[8:] // "/direct?" has 9 characters
-	return c.serveSelfURLAddHost(r, query, "direct", (*SiteStat).DirectVisit)
-}
-
-type addHostFunc func(*SiteStat, *URL)
-
-func (c *clientConn) serveSelfURLAddHost(r *Request, query, listType string, addHost addHostFunc) (err error) {
-	// Adding blocked or direct site has side effects, so should use POST in
-	// this regard. But client should not redirect for POST request, so I
-	// choose to use GET when submitting form.
-	host := getHostFromQuery(query)
-	url, err := ParseRequestURI(host)
-	if err != nil {
-		errl.Println("serveSelfURLAddHost host from client invalid, shouldn't happen")
-		sendErrorPage(c, "500 internal error", "host invalid",
-			"COW has some bug, please report to the author")
-		return errInternal
-	}
-	if url.HostIsIP() {
-		// sendBlockedErrorPage will not put IP address in form, this should not happen.
-		// server side checking to be safe.
-		errl.Println("Host is IP address, shouldn't happen")
-		sendErrorPage(c, "500 internal error", "Requsted host is IP address",
-			"COW has some bug, please report to the author")
-		return errInternal
-	}
-	addHost(siteStat, url)
-
-	// As there's no reliable way to convert an encoded URL back (you don't
-	// know whether a %2F should be converted to slash or not, conside Google
-	// search results for example), so I rely on the browser sending Referer
-	// header to redirect the client back to the original web page.
-	if r.Referer != "" {
-		// debug.Println("Sending refirect page.")
-		sendRedirectPage(c, r.Referer)
-		return
-	}
-	sendErrorPage(c, "404 not found", "No Referer header",
-		"Domain added to "+listType+" list, but no referer header in request so can't redirect.")
-	return
-}
-
 func (c *clientConn) serveSelfURL(r *Request) (err error) {
 	if r.Method != "GET" {
 		goto end
@@ -248,16 +191,9 @@ func (c *clientConn) serveSelfURL(r *Request) (err error) {
 		// Send non nil error to close client connection.
 		return errPageSent
 	}
-	if strings.HasPrefix(r.URL.Path, "/blocked?") {
-		return c.serveSelfURLBlocked(r)
-	}
-	if strings.HasPrefix(r.URL.Path, "/direct?") {
-		return c.serveSelfURLDirect(r)
-	}
-
 end:
 	sendErrorPage(c, "404 not found", "Page not found", "Handling request to proxy itself.")
-	return
+	return errPageSent
 }
 
 func (c *clientConn) serve() {
@@ -683,6 +619,7 @@ func copyServer2Client(sv *serverConn, c *clientConn, r *Request) (err error) {
 	const directThreshold = 4096
 	for {
 		if sv.maybeFake() {
+			// TODO reduce readTimeout if has been blocked once
 			setConnReadTimeout(sv, readTimeout, "srv->cli")
 		}
 		if n, err = sv.Read(buf); err != nil {
