@@ -78,13 +78,13 @@ type serverConn struct {
 	timeoutSet   bool
 }
 
-func newServerConn(c conn, url *URL, alwaysBlocked, onceBlocked bool) *serverConn {
+func newServerConn(c conn, url *URL, si *SiteInfo) *serverConn {
 	return &serverConn{
 		conn:         c,
 		url:          url,
 		bufRd:        bufio.NewReaderSize(c, bufSize),
-		alwaysDirect: alwaysBlocked,
-		onceBlocked:  onceBlocked,
+		alwaysDirect: si.alwaysDirect,
+		onceBlocked:  si.onceBlocked,
 	}
 }
 
@@ -458,9 +458,9 @@ func (c *clientConn) removeServerConn(sv *serverConn) {
 	delete(c.serverConn, sv.url.HostPort)
 }
 
-func createctDirectConnection(url *URL, onceBlocked bool) (conn, error) {
+func createctDirectConnection(url *URL, si *SiteInfo) (conn, error) {
 	to := dialTimeout
-	if onceBlocked && to >= defaultDialTimeout {
+	if si.onceBlocked && to >= defaultDialTimeout {
 		to /= 2
 	}
 	c, err := net.DialTimeout("tcp", url.HostPort, to)
@@ -497,30 +497,30 @@ func createParentProxyConnection(url *URL) (srvconn conn, err error) {
 	return zeroConn, errNoParentProxy
 }
 
-func (c *clientConn) createConnection(r *Request, alwaysDirect, onceBlocked bool) (srvconn conn, err error) {
+func (c *clientConn) createConnection(r *Request, si *SiteInfo) (srvconn conn, err error) {
 	if config.AlwaysProxy {
 		if srvconn, err = createParentProxyConnection(r.URL); err == nil {
 			return
 		}
 		goto fail
 	}
-	if siteStat.GetVisitMethod(r.URL) == vmBlocked && hasParentProxy {
+	if si.visitMethod == vmBlocked && hasParentProxy {
 		// In case of connection error to socks server, fallback to direct connection
 		if srvconn, err = createParentProxyConnection(r.URL); err == nil {
 			return
 		}
-		if siteStat.AlwaysBlocked(r.URL) {
+		if si.alwaysBlocked {
 			goto fail
 		}
-		if srvconn, err = createctDirectConnection(r.URL); err == nil {
+		if srvconn, err = createctDirectConnection(r.URL, si); err == nil {
 			return
 		}
 	} else {
 		// In case of error on direction connection, try socks server
-		if srvconn, err = createctDirectConnection(r.URL); err == nil {
+		if srvconn, err = createctDirectConnection(r.URL, si); err == nil {
 			return
 		}
-		if !hasParentProxy || siteStat.AlwaysDirect(r.URL) {
+		if !hasParentProxy || si.alwaysDirect {
 			goto fail
 		}
 		// debug.Printf("type of err %v\n", reflect.TypeOf(err))
@@ -552,11 +552,12 @@ fail:
 }
 
 func (c *clientConn) createServerConn(r *Request) (*serverConn, error) {
-	srvconn, err := c.createConnection(r)
+	si := siteStat.GetSiteInfo(r.URL)
+	srvconn, err := c.createConnection(r, si)
 	if err != nil {
 		return nil, err
 	}
-	sv := newServerConn(srvconn, r.URL)
+	sv := newServerConn(srvconn, r.URL, si)
 	if r.isConnect {
 		// Don't put connection for CONNECT method for reuse
 		return sv, nil

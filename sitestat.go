@@ -32,9 +32,9 @@ const (
 type siteVisitMethod int
 
 const (
-	vmDirect siteVisitMethod = iota
+	vmUnknown siteVisitMethod = iota
+	vmDirect
 	vmBlocked
-	vmUnknown
 )
 
 type vcntint int8
@@ -60,26 +60,26 @@ func (d *Date) UnmarshalJSON(input []byte) error {
 // COW don't need very accurate visit count, so update to visit count value is
 // not protected.
 type visitCnt struct {
-	Blocked  vcntint `json:"block"`
 	Direct   vcntint `json:"direct"`
+	Blocked  vcntint `json:"block"`
 	Recent   Date    `json:"recent"`
 	rUpdated bool    // whether Recent is updated, we only need date precision
 }
 
-func newVisitCnt(blocked, direct vcntint) *visitCnt {
-	return &visitCnt{blocked, direct, Date(time.Now()), true}
+func newVisitCnt(direct, blocked vcntint) *visitCnt {
+	return &visitCnt{direct, blocked, Date(time.Now()), true}
 }
 
-func newVisitCntWithTime(blocked, direct vcntint, t time.Time) *visitCnt {
-	return &visitCnt{blocked, direct, Date(t), true}
+func newVisitCntWithTime(direct, blocked vcntint, t time.Time) *visitCnt {
+	return &visitCnt{direct, blocked, Date(t), true}
 }
 
 func newVisitCntBlocked() *visitCnt {
-	return newVisitCnt(1, 0)
+	return newVisitCnt(0, 1)
 }
 
 func newVisitCntDirect() *visitCnt {
-	return newVisitCnt(0, 1)
+	return newVisitCnt(1, 0)
 }
 
 func (vc *visitCnt) userSpecified() bool {
@@ -232,65 +232,67 @@ func (ss *SiteStat) DirectVisit(url *URL) {
 
 }
 
-func (ss *SiteStat) GetVisitMethod(url *URL) siteVisitMethod {
-	if url.Domain == "" { // simple host
-		return vmDirect
+type SiteInfo struct {
+	alwaysDirect  bool
+	alwaysBlocked bool
+	onceBlocked   bool
+	visitMethod   siteVisitMethod
+}
+
+func (ss *SiteStat) GetSiteInfo(url *URL) *SiteInfo {
+	if url.Domain == "" { // simple host or ip
+		return &SiteInfo{true, false, false, vmDirect}
 	}
 	if ss.tempBlocked.has(url.Host) {
-		return vmBlocked
+		return &SiteInfo{false, false, true, vmBlocked}
 	}
-	// First check if host has visit info
-	hostCnt := ss.get(url.Host)
-	if hostCnt != nil {
-		if hostCnt.asDirect() {
-			debug.Printf("host %s as direct\n", url.Host)
-			return vmDirect
-		} else if hostCnt.asBlocked() {
-			debug.Printf("host %s as blocked\n", url.Host)
-			return vmBlocked
+	vcnt := ss.get(url.Host)
+	var alwaysDirect, alwaysBlocked, onceBlocked bool
+	var visitMethod siteVisitMethod
+	if vcnt != nil {
+		onceBlocked = (vcnt.Blocked != 0)
+		if vcnt.userSpecified() {
+			if vcnt.asBlocked() {
+				alwaysBlocked = true
+				visitMethod = vmBlocked
+			} else {
+				alwaysDirect = true
+				visitMethod = vmDirect
+			}
+		} else {
+			if vcnt.asBlocked() {
+				debug.Printf("host %s as blocked\n", url.Host)
+				visitMethod = vmBlocked
+			} else if vcnt.asDirect() {
+				debug.Printf("host %s as direct\n", url.Host)
+				visitMethod = vmDirect
+			}
 		}
+		return &SiteInfo{alwaysDirect, alwaysBlocked, onceBlocked, visitMethod}
 	}
-	dmCnt := ss.get(url.Domain)
-	if dmCnt != nil {
-		if dmCnt.asDirect() {
-			debug.Printf("domain %s as direct for host %s\n", url.Domain, url.Host)
-			return vmDirect
-		} else if dmCnt.asBlocked() {
-			debug.Printf("domain %s as blocked for host %s\n", url.Domain, url.Host)
-			return vmBlocked
+	vcnt = ss.get(url.Domain)
+	if vcnt != nil {
+		onceBlocked = (vcnt.Blocked != 0)
+		if vcnt.userSpecified() {
+			if vcnt.asBlocked() {
+				alwaysBlocked = true
+				visitMethod = vmBlocked
+			} else {
+				alwaysDirect = true
+				visitMethod = vmDirect
+			}
+		} else {
+			if vcnt.asBlocked() {
+				debug.Printf("domain %s as blocked\n", url.Domain)
+				visitMethod = vmBlocked
+			} else if vcnt.asDirect() {
+				debug.Printf("domain %s as direct\n", url.Domain)
+				visitMethod = vmDirect
+			}
 		}
+		return &SiteInfo{alwaysDirect, alwaysBlocked, onceBlocked, visitMethod}
 	}
-	return vmUnknown
-}
-
-func (ss *SiteStat) AlwaysBlocked(url *URL) bool {
-	if url.Domain == "" { // simple host or ip
-		return false
-	}
-	hostCnt := ss.get(url.Host)
-	if hostCnt != nil && hostCnt.userSpecified() {
-		return hostCnt.asBlocked()
-	}
-	dmCnt := ss.get(url.Domain)
-	if dmCnt != nil && dmCnt.userSpecified() {
-		return dmCnt.asBlocked()
-	}
-	return false
-}
-
-func (ss *SiteStat) AlwaysDirect(url *URL) bool {
-	if url.Domain == "" { // simple host or ip
-		return true
-	}
-	hostCnt := ss.get(url.Host)
-	if hostCnt != nil && hostCnt.userSpecified() {
-		return hostCnt.asDirect()
-	}
-	dmCnt := ss.get(url.Domain)
-	if dmCnt != nil && dmCnt.userSpecified() {
-		return dmCnt.asDirect()
-	}
-	return false
+	return &SiteInfo{false, false, false, vmUnknown}
 }
 
 func (ss *SiteStat) store(file string) (err error) {
@@ -345,15 +347,15 @@ func (ss *SiteStat) store(file string) (err error) {
 	return
 }
 
-func (ss *SiteStat) loadList(lst []string, blocked, direct vcntint) {
+func (ss *SiteStat) loadList(lst []string, direct, blocked vcntint) {
 	for _, d := range lst {
-		ss.Vcnt[d] = newVisitCntWithTime(blocked, direct, zeroTime)
+		ss.Vcnt[d] = newVisitCntWithTime(direct, blocked, zeroTime)
 	}
 }
 
 func (ss *SiteStat) loadBuiltinList() {
-	ss.loadList(blockedDomainList, userCnt, 0)
-	ss.loadList(directDomainList, 0, userCnt)
+	ss.loadList(blockedDomainList, 0, userCnt)
+	ss.loadList(directDomainList, userCnt, 0)
 }
 
 func (ss *SiteStat) load(file string) (err error) {
@@ -384,10 +386,10 @@ func (ss *SiteStat) load(file string) (err error) {
 
 	// load user specified sites at last to override previous values
 	if directList, err := loadSiteList(dsFile.alwaysDirect); err == nil {
-		ss.loadList(directList, 0, userCnt)
+		ss.loadList(directList, userCnt, 0)
 	}
 	if blockedList, err := loadSiteList(dsFile.alwaysBlocked); err == nil {
-		ss.loadList(blockedList, userCnt, 0)
+		ss.loadList(blockedList, 0, userCnt)
 	}
 
 	for k, v := range ss.Vcnt {
