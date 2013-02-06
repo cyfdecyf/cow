@@ -72,7 +72,7 @@ type serverConn struct {
 	bufRd        *bufio.Reader
 	url          *URL
 	state        serverConnState
-	lastUse      time.Time
+	willCloseOn  time.Time
 	alwaysDirect bool
 	onceBlocked  bool
 	timeoutSet   bool
@@ -432,10 +432,14 @@ func (c *clientConn) readResponse(sv *serverConn, r *Request) (err error) {
 		}
 	*/
 
-	if !rp.ConnectionKeepAlive {
-		c.removeServerConn(sv)
+	if rp.ConnectionKeepAlive {
+		if rp.KeepAlive == time.Duration(0) {
+			sv.willCloseOn = time.Now().Add(serverConnTimeout)
+		} else {
+			sv.willCloseOn = time.Now().Add(rp.KeepAlive - time.Second)
+		}
 	} else {
-		sv.lastUse = time.Now()
+		c.removeServerConn(sv)
 	}
 	return
 }
@@ -621,7 +625,7 @@ func (sv *serverConn) mayBeClosed() bool {
 	if sv.connType == ctSocksConn {
 		return false
 	}
-	return time.Now().Sub(sv.lastUse) > serverConnTimeout
+	return time.Now().After(sv.willCloseOn)
 }
 
 func copyServer2Client(sv *serverConn, c *clientConn, r *Request) (err error) {

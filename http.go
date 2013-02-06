@@ -14,11 +14,11 @@ import (
 
 type Header struct {
 	ContLen             int64
-	Chunking            bool
-	ConnectionKeepAlive bool
 	KeepAlive           time.Duration
 	Referer             string
 	ProxyAuthorization  string
+	Chunking            bool
+	ConnectionKeepAlive bool
 }
 
 type rqState byte
@@ -31,16 +31,14 @@ const (
 )
 
 type Request struct {
-	Method string
-	URL    *URL
-
+	Method  string
+	URL     *URL
+	contBuf *bytes.Buffer // will be non nil when retrying request
+	raw     bytes.Buffer
 	Header
 	isConnect bool
-
-	raw     bytes.Buffer
-	contBuf *bytes.Buffer // will be non nil when retrying request
-	state   rqState
-	tryCnt  int
+	state     rqState
+	tryCnt    byte
 }
 
 func (r *Request) String() (s string) {
@@ -206,6 +204,7 @@ const (
 var headerParser = map[string]HeaderParserFunc{
 	headerConnection:         (*Header).parseConnection,
 	headerContentLength:      (*Header).parseContentLength,
+	headerKeepAlive:          (*Header).parseKeepAlive,
 	headerProxyAuthorization: (*Header).parseProxyAuthorization,
 	headerProxyConnection:    (*Header).parseConnection,
 	headerTransferEncoding:   (*Header).parseTransferEncoding,
