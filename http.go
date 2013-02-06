@@ -111,21 +111,6 @@ func (url *URL) HostIsIP() bool {
 	return hostIsIP(url.Host)
 }
 
-// headers of interest to a proxy
-// Define them as constant and use editor's completion to avoid typos.
-// Note RFC2616 only says about "Connection", no "Proxy-Connection", but firefox
-// send this header.
-// See more at http://homepage.ntlworld.com/jonathan.deboynepollard/FGA/web-proxy-connection-header.html
-// TODO: parse Keep-Alive header so we know when the server will close connection
-const (
-	headerContentLength      = "content-length"
-	headerTransferEncoding   = "transfer-encoding"
-	headerConnection         = "connection"
-	headerProxyConnection    = "proxy-connection"
-	headerReferer            = "referer"
-	headerProxyAuthorization = "proxy-authorization"
-)
-
 // For port, return empty string if no port specified.
 func splitHostPort(s string) (host, port string) {
 	// Common case should has no port, check the last char first
@@ -193,15 +178,33 @@ func ParseRequestURI(rawurl string) (*URL, error) {
 	return &URL{hostport, host, host2Domain(host), path, scheme}, nil
 }
 
-func splitHeader(s []byte) (name, val []byte, err error) {
-	var f [][]byte
-	if f = bytes.SplitN(s, []byte{':'}, 2); len(f) != 2 {
-		errl.Println("malformed header:", s)
-		return nil, nil, errMalformHeader
-	}
-	// Do not lower case field value, as it maybe case sensitive
-	return ASCIIToLower(f[0]), f[1], nil
+// headers of interest to a proxy
+// Define them as constant and use editor's completion to avoid typos.
+// Note RFC2616 only says about "Connection", no "Proxy-Connection", but firefox
+// send this header.
+// See more at http://homepage.ntlworld.com/jonathan.deboynepollard/FGA/web-proxy-connection-header.html
+// TODO: parse Keep-Alive header so we know when the server will close connection
+const (
+	headerContentLength      = "content-length"
+	headerTransferEncoding   = "transfer-encoding"
+	headerConnection         = "connection"
+	headerTE                 = "te"
+	headerKeepAlive          = "keep-alive"
+	headerProxyConnection    = "proxy-connection"
+	headerReferer            = "referer"
+	headerProxyAuthorization = "proxy-authorization"
+)
+
+// Using Go's method expression
+var headerParser = map[string]HeaderParserFunc{
+	headerConnection:         (*Header).parseConnection,
+	headerProxyConnection:    (*Header).parseConnection,
+	headerContentLength:      (*Header).parseContentLength,
+	headerTransferEncoding:   (*Header).parseTransferEncoding,
+	headerProxyAuthorization: (*Header).parseProxyAuthorization,
 }
+
+type HeaderParserFunc func(*Header, []byte) error
 
 func (h *Header) parseContentLength(s []byte) (err error) {
 	h.ContLen, err = strconv.ParseInt(string(bytes.TrimSpace(s)), 10, 64)
@@ -223,15 +226,14 @@ func (h *Header) parseProxyAuthorization(s []byte) error {
 	return nil
 }
 
-type HeaderParserFunc func(*Header, []byte) error
-
-// Using Go's method expression
-var headerParser = map[string]HeaderParserFunc{
-	headerConnection:         (*Header).parseConnection,
-	headerProxyConnection:    (*Header).parseConnection,
-	headerContentLength:      (*Header).parseContentLength,
-	headerTransferEncoding:   (*Header).parseTransferEncoding,
-	headerProxyAuthorization: (*Header).parseProxyAuthorization,
+func splitHeader(s []byte) (name, val []byte, err error) {
+	var f [][]byte
+	if f = bytes.SplitN(s, []byte{':'}, 2); len(f) != 2 {
+		errl.Println("malformed header:", s)
+		return nil, nil, errMalformHeader
+	}
+	// Do not lower case field value, as it maybe case sensitive
+	return ASCIIToLower(f[0]), f[1], nil
 }
 
 // Only add headers that are of interest for a proxy into request's header map.
