@@ -31,7 +31,6 @@ const (
 type Request struct {
 	Method string
 	URL    *URL
-	Proto  string
 
 	Header
 	isConnect bool
@@ -193,41 +192,36 @@ func ParseRequestURI(rawurl string) (*URL, error) {
 	return &URL{hostport, host, host2Domain(host), path, scheme}, nil
 }
 
-func splitHeader(s string) (name, val string, err error) {
-	var f []string
-	if f = strings.SplitN(strings.ToLower(s), ":", 2); len(f) != 2 {
+func splitHeader(s []byte) (name, val []byte, err error) {
+	var f [][]byte
+	if f = bytes.SplitN(s, []byte{':'}, 2); len(f) != 2 {
 		errl.Println("malformed header:", s)
-		return "", "", errMalformHeader
+		return nil, nil, errMalformHeader
 	}
-	return f[0], f[1], nil
+	return ASCIIToLower(f[0]), f[1], nil
 }
 
-func (h *Header) parseContentLength(s string) (err error) {
-	h.ContLen, err = strconv.ParseInt(strings.TrimSpace(s), 10, 64)
+func (h *Header) parseContentLength(s []byte) (err error) {
+	h.ContLen, err = strconv.ParseInt(string(bytes.TrimSpace(s)), 10, 64)
 	return err
 }
 
-func (h *Header) parseConnection(s string) error {
-	h.KeepAlive = strings.Contains(s, "keep-alive")
+func (h *Header) parseConnection(s []byte) error {
+	h.KeepAlive = bytes.Contains(s, []byte("keep-alive"))
 	return nil
 }
 
-func (h *Header) parseTransferEncoding(s string) error {
-	h.Chunking = strings.Contains(s, "chunked")
+func (h *Header) parseTransferEncoding(s []byte) error {
+	h.Chunking = bytes.Contains(s, []byte("chunked"))
 	return nil
 }
 
-func (h *Header) parseReferer(s string) error {
-	h.Referer = strings.TrimSpace(s)
+func (h *Header) parseProxyAuthorization(s []byte) error {
+	h.ProxyAuthorization = string(bytes.TrimSpace(s))
 	return nil
 }
 
-func (h *Header) parseProxyAuthorization(s string) error {
-	h.ProxyAuthorization = strings.TrimSpace(s)
-	return nil
-}
-
-type HeaderParserFunc func(*Header, string) error
+type HeaderParserFunc func(*Header, []byte) error
 
 // Using Go's method expression
 var headerParser = map[string]HeaderParserFunc{
@@ -235,41 +229,42 @@ var headerParser = map[string]HeaderParserFunc{
 	headerProxyConnection:    (*Header).parseConnection,
 	headerContentLength:      (*Header).parseContentLength,
 	headerTransferEncoding:   (*Header).parseTransferEncoding,
-	headerReferer:            (*Header).parseReferer,
 	headerProxyAuthorization: (*Header).parseProxyAuthorization,
 }
 
 // Only add headers that are of interest for a proxy into request's header map.
 func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, url *URL) (err error) {
 	// Read request header and body
-	var s, name, val, lastLine string
+	var s, name, val, lastLine []byte
 	for {
-		if s, err = ReadLine(reader); err != nil {
+		if s, err = ReadLineBytes(reader); err != nil {
 			return
 		}
-		if s == "" { // end of headers
+		if len(s) == 0 { // end of headers
 			return
 		}
-		if (s[0] == ' ' || s[0] == '\t') && lastLine != "" { // multi-line header
-			s = lastLine + " " + s // combine previous line with current line
-			info.Printf("Encounter multi-line header: %v %s", url, s)
+		if (s[0] == ' ' || s[0] == '\t') && lastLine != nil { // multi-line header
+			info.Printf("Encounter multi-line header: %v %s", url, string(s))
+			// combine previous line with current line
+			s = bytes.Join([][]byte{lastLine, []byte{' '}, s}, nil)
 		}
 		if name, val, err = splitHeader(s); err != nil {
 			return
 		}
-		if parseFunc, ok := headerParser[name]; ok {
+		kn := string(name)
+		if parseFunc, ok := headerParser[kn]; ok {
 			lastLine = s
 			parseFunc(h, val)
-			if name == headerConnection ||
-				name == headerProxyConnection ||
-				name == headerProxyAuthorization {
+			if kn == headerConnection ||
+				kn == headerProxyConnection ||
+				kn == headerProxyAuthorization {
 				continue
 			}
 		} else {
 			// mark this header as not of interest to proxy
-			lastLine = ""
+			lastLine = nil
 		}
-		raw.WriteString(s)
+		raw.Write(s)
 		raw.Write(CRLFbytes)
 		// debug.Printf("len %d %s", len(s), s)
 	}
@@ -278,11 +273,11 @@ func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, url *URL) 
 
 // Parse the initial line and header, does not touch body
 func parseRequest(c *clientConn) (r *Request, err error) {
-	var s string
+	var s []byte
 	reader := c.bufRd
 	setConnReadTimeout(c, clientConnTimeout, "parseRequest")
 	// parse initial request line
-	if s, err = ReadLine(reader); err != nil {
+	if s, err = ReadLineBytes(reader); err != nil {
 		return nil, err
 	}
 	unsetConnReadTimeout(c, "parseRequest")
@@ -291,12 +286,13 @@ func parseRequest(c *clientConn) (r *Request, err error) {
 	r = new(Request)
 	r.ContLen = -1
 
-	var f []string
-	if f = strings.SplitN(s, " ", 3); len(f) < 3 { // request line are separated by SP
-		return nil, errors.New(fmt.Sprintf("malformed HTTP request: %s", s))
+	var f [][]byte
+	if f = bytes.SplitN(s, []byte{' '}, 3); len(f) < 3 { // request line are separated by SP
+		return nil, errors.New(fmt.Sprintf("malformed HTTP request: %s", string(s)))
 	}
 	var requestURI string
-	r.Method, requestURI, r.Proto = strings.ToUpper(f[0]), f[1], f[2]
+	ASCIIToUpperInplace(f[0])
+	r.Method, requestURI = string(f[0]), string(f[1])
 
 	// Parse URI into host and path
 	r.URL, err = ParseRequestURI(requestURI)
