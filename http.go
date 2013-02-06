@@ -199,6 +199,7 @@ func splitHeader(s []byte) (name, val []byte, err error) {
 		errl.Println("malformed header:", s)
 		return nil, nil, errMalformHeader
 	}
+	// Do not lower case field value, as it maybe case sensitive
 	return ASCIIToLower(f[0]), f[1], nil
 }
 
@@ -255,7 +256,7 @@ func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, url *URL) 
 		kn := string(name)
 		if parseFunc, ok := headerParser[kn]; ok {
 			lastLine = s
-			parseFunc(h, val)
+			parseFunc(h, ASCIIToLower(val))
 			if kn == headerConnection ||
 				kn == headerProxyConnection ||
 				kn == headerProxyAuthorization {
