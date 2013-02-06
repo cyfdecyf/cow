@@ -43,10 +43,11 @@ func ReadLine(r *bufio.Reader) (string, error) {
 	return string(l), err
 }
 
-// ReadLineBytes read till '\n' is found or encounter error. The returned line does
-// not include ending '\r\n' or '\n'. Returns err != nil if and only if
-// len(line) == 0. Note the returned byte should not be used for append.
-// Copied code of readLineSlice from $GOROOT/src/pkg/net/textproto/reader.go
+// ReadLineBytes read till '\n' is found or encounter error. The returned line
+// does not include ending '\r\n' or '\n'. Returns err != nil if and only if
+// len(line) == 0. Note the returned byte should not be used for append and
+// maybe overwritten by next I/O operation. Copied code of readLineSlice from
+// $GOROOT/src/pkg/net/textproto/reader.go
 func ReadLineBytes(r *bufio.Reader) (line []byte, err error) {
 	for {
 		l, more, err := r.ReadLine()

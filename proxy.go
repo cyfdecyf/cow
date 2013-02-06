@@ -101,10 +101,12 @@ var (
 	errNoParentProxy     = errors.New("No parent proxy")
 	errFailedParentProxy = errors.New("Failed connecting to parent proxy")
 
-	errChunkedEncode = errors.New("Invalid chunked encoding")
-	errMalformHeader = errors.New("Malformed HTTP header")
-	errBadRequest    = errors.New("Bad request")
-	errAuthRequired  = errors.New("Authentication requried")
+	errChunkedEncode   = errors.New("Invalid chunked encoding")
+	errMalformHeader   = errors.New("Malformed HTTP header")
+	errMalformResponse = errors.New("Malformed HTTP response")
+	errNotSupported    = errors.New("Not supported")
+	errBadRequest      = errors.New("Bad request")
+	errAuthRequired    = errors.New("Authentication requried")
 )
 
 func NewProxy(addr string) *Proxy {

@@ -63,19 +63,19 @@ func (r *Request) canRetry() bool {
 }
 
 type Response struct {
-	Status string
-	Reason string
+	Status []byte
+	Reason []byte
 
 	Header
 
 	raw bytes.Buffer
 }
 
-func (rp *Response) genStatusLine() (res string) {
-	if rp.Reason == "" {
-		res = fmt.Sprintf("HTTP/1.1 %s", rp.Status)
+func (rp *Response) genStatusLine() (res []byte) {
+	if len(rp.Reason) == 0 {
+		res = bytes.Join([][]byte{[]byte("HTTP/1.1"), rp.Status}, []byte{' '})
 	} else {
-		res = fmt.Sprintf("HTTP/1.1 %s %s", rp.Status, rp.Reason)
+		res = bytes.Join([][]byte{[]byte("HTTP/1.1"), rp.Status, rp.Reason}, []byte{' '})
 	}
 	return
 }
@@ -341,12 +341,10 @@ func readCheckCRLF(reader *bufio.Reader) error {
 func (rp *Response) hasBody(method string) bool {
 	// when we have tenary search tree, can optimize this a little
 	return !(method == "HEAD" ||
-		rp.Status == "304" ||
-		rp.Status == "204" ||
-		strings.HasPrefix(rp.Status, "1"))
+		bytes.Equal(rp.Status, []byte("304")) ||
+		bytes.Equal(rp.Status, []byte("204")) ||
+		bytes.HasPrefix(rp.Status, []byte("1")))
 }
-
-var malformedHTTPResponseErr = errors.New("malformed HTTP response")
 
 var headerKeepAliveByte = []byte("Connection: Keep-Alive\r\n")
 var headerConnCloseByte = []byte("Connection: close\r\n")
@@ -356,13 +354,13 @@ func parseResponse(sv *serverConn, r *Request) (rp *Response, err error) {
 	rp = new(Response)
 	rp.ContLen = -1
 
-	var s string
+	var s []byte
 	reader := sv.bufRd
 START:
 	if sv.maybeFake() {
 		setConnReadTimeout(sv, readTimeout, "parseResponse")
 	}
-	if s, err = ReadLine(reader); err != nil {
+	if s, err = ReadLineBytes(reader); err != nil {
 		if err != io.EOF {
 			// err maybe timeout caused by explicity setting deadline
 			debug.Printf("Reading Response status line: %v %v\n", err, r)
@@ -373,13 +371,13 @@ START:
 	if sv.maybeFake() {
 		unsetConnReadTimeout(sv, "parseResponse")
 	}
-	var f []string
-	if f = strings.SplitN(s, " ", 3); len(f) < 2 { // status line are separated by SP
+	var f [][]byte
+	if f = bytes.SplitN(s, []byte{' '}, 3); len(f) < 2 { // status line are separated by SP
 		errl.Printf("Malformed HTTP response status line: %s %v\n", s, r)
-		return nil, malformedHTTPResponseErr
+		return nil, errMalformResponse
 	}
 	// Handle 1xx response
-	if f[1] == "100" {
+	if bytes.Equal(f[1], []byte("100")) {
 		if err = readCheckCRLF(reader); err != nil {
 			errl.Printf("Reading CRLF after 1xx response: %v %v\n", err, r)
 			return nil, err
@@ -391,12 +389,20 @@ START:
 		rp.Reason = f[2]
 	}
 
-	if f[0] == "HTTP/1.0" {
+	proto := f[0]
+	if !bytes.Equal(proto[0:7], []byte("HTTP/1.")) {
+		errl.Printf("Invalid response status line: %s\n", string(f[0]))
+		return nil, errMalformResponse
+	}
+	if proto[7] == '1' {
+		rp.raw.Write(s)
+	} else if proto[7] == '0' {
 		// Should return HTTP version as 1.1 to client since closed connection
 		// will be converted to chunked encoding
-		rp.raw.WriteString(rp.genStatusLine())
+		rp.raw.Write(rp.genStatusLine())
 	} else {
-		rp.raw.WriteString(s)
+		errl.Printf("Response protocol not supported: %s\n", string(f[0]))
+		return nil, errNotSupported
 	}
 	rp.raw.Write(CRLFbytes)
 
@@ -407,7 +413,7 @@ START:
 	// Connection close, no content length specification
 	// Use chunked encoding to pass content back to client
 	if !rp.KeepAlive && !rp.Chunking && rp.ContLen == -1 {
-		rp.raw.WriteString("Transfer-Encoding: chunked\r\n")
+		rp.raw.Write([]byte("Transfer-Encoding: chunked\r\n"))
 	}
 	if r.KeepAlive {
 		rp.raw.Write(headerKeepAliveByte)
