@@ -291,7 +291,7 @@ func (c *clientConn) serve() {
 			return
 		}
 
-		if !r.KeepAlive {
+		if !r.ConnectionKeepAlive {
 			// debug.Println("close client connection because request has no keep-alive")
 			return
 		}
@@ -432,7 +432,7 @@ func (c *clientConn) readResponse(sv *serverConn, r *Request) (err error) {
 		}
 	*/
 
-	if !rp.KeepAlive {
+	if !rp.ConnectionKeepAlive {
 		c.removeServerConn(sv)
 	} else {
 		sv.lastUse = time.Now()
@@ -873,9 +873,9 @@ func sendBodyChunked(c *clientConn, r *bufio.Reader, w, contBuf io.Writer) (err 
 				errl.Println("Check CRLF after chunked size 0:", err)
 			}
 			if contBuf != nil {
-				contBuf.Write(chunkEndbytes)
+				contBuf.Write([]byte(chunkEnd))
 			}
-			if _, err = w.Write(chunkEndbytes); err != nil {
+			if _, err = w.Write([]byte(chunkEnd)); err != nil {
 				debug.Println("Sending chunk ending:", err)
 			}
 			return
@@ -891,8 +891,8 @@ func sendBodyChunked(c *clientConn, r *bufio.Reader, w, contBuf io.Writer) (err 
 	return
 }
 
-var CRLFbytes = []byte("\r\n")
-var chunkEndbytes = []byte("0\r\n\r\n")
+const CRLF = "\r\n"
+const chunkEnd = "0\r\n\r\n"
 
 // Client can't use closed connection to indicate end of request, so must
 // content length or use chunked encoding. Thus contBuf is not necessary for
@@ -908,7 +908,7 @@ func sendBodySplitIntoChunk(c *clientConn, r io.Reader, w io.Writer) (err error)
 			if err == io.EOF {
 				// EOF is expected here as the server is closing connection.
 				// debug.Println("end chunked encoding")
-				if _, err = w.Write(chunkEndbytes); err != nil {
+				if _, err = w.Write([]byte(chunkEnd)); err != nil {
 					debug.Println("Write chunk end 0")
 				}
 				return
@@ -922,8 +922,8 @@ func sendBodySplitIntoChunk(c *clientConn, r io.Reader, w io.Writer) (err error)
 			debug.Printf("Writing chunk size %v\n", err)
 			return
 		}
-		copy(c.buf[n:], CRLFbytes)
-		if _, err = w.Write(c.buf[:n+len(CRLFbytes)]); err != nil {
+		copy(c.buf[n:], CRLF)
+		if _, err = w.Write(c.buf[:n+len(CRLF)]); err != nil {
 			debug.Println("Writing chunk data:", err)
 			return
 		}

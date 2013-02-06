@@ -13,11 +13,11 @@ import (
 )
 
 type Header struct {
-	ContLen            int64
-	Chunking           bool
-	KeepAlive          bool
-	Referer            string
-	ProxyAuthorization string
+	ContLen             int64
+	Chunking            bool
+	ConnectionKeepAlive bool
+	Referer             string
+	ProxyAuthorization  string
 }
 
 type rqState byte
@@ -185,43 +185,67 @@ func ParseRequestURI(rawurl string) (*URL, error) {
 // See more at http://homepage.ntlworld.com/jonathan.deboynepollard/FGA/web-proxy-connection-header.html
 // TODO: parse Keep-Alive header so we know when the server will close connection
 const (
-	headerContentLength      = "content-length"
-	headerTransferEncoding   = "transfer-encoding"
 	headerConnection         = "connection"
-	headerTE                 = "te"
+	headerContentLength      = "content-length"
 	headerKeepAlive          = "keep-alive"
+	headerProxyAuthenticate  = "proxy-authenticate"
+	headerProxyAuthorization = "proxy-authorization"
 	headerProxyConnection    = "proxy-connection"
 	headerReferer            = "referer"
-	headerProxyAuthorization = "proxy-authorization"
+	headerTE                 = "te"
+	headerTrailer            = "trailer"
+	headerTransferEncoding   = "transfer-encoding"
+	headerUpgrade            = "upgrade"
+
+	fullHeaderConnection       = "Connection: keep-alive\r\n"
+	fullHeaderTransferEncoding = "Transfer-Encoding: chunked\r\n"
 )
 
 // Using Go's method expression
 var headerParser = map[string]HeaderParserFunc{
 	headerConnection:         (*Header).parseConnection,
-	headerProxyConnection:    (*Header).parseConnection,
 	headerContentLength:      (*Header).parseContentLength,
-	headerTransferEncoding:   (*Header).parseTransferEncoding,
 	headerProxyAuthorization: (*Header).parseProxyAuthorization,
+	headerProxyConnection:    (*Header).parseConnection,
+	headerTransferEncoding:   (*Header).parseTransferEncoding,
 }
 
-type HeaderParserFunc func(*Header, []byte) error
+var hopByHopHeader = map[string]bool{
+	headerConnection:         true,
+	headerKeepAlive:          true,
+	headerProxyAuthorization: true,
+	headerProxyConnection:    true,
+	headerTE:                 true,
+	headerTrailer:            true,
+	headerTransferEncoding:   true,
+	headerUpgrade:            true,
+}
 
-func (h *Header) parseContentLength(s []byte) (err error) {
+type HeaderParserFunc func(*Header, []byte, *bytes.Buffer) error
+
+func (h *Header) parseContentLength(s []byte, raw *bytes.Buffer) (err error) {
 	h.ContLen, err = strconv.ParseInt(string(bytes.TrimSpace(s)), 10, 64)
 	return err
 }
 
-func (h *Header) parseConnection(s []byte) error {
-	h.KeepAlive = bytes.Contains(s, []byte("keep-alive"))
+func (h *Header) parseConnection(s []byte, raw *bytes.Buffer) error {
+	h.ConnectionKeepAlive = bytes.Contains(s, []byte("keep-alive"))
+	raw.WriteString(fullHeaderConnection)
 	return nil
 }
 
-func (h *Header) parseTransferEncoding(s []byte) error {
+func (h *Header) parseTransferEncoding(s []byte, raw *bytes.Buffer) error {
 	h.Chunking = bytes.Contains(s, []byte("chunked"))
+	if h.Chunking {
+		raw.WriteString(fullHeaderTransferEncoding)
+	} else {
+		errl.Printf("unsupported transfer encoding %s\n", string(s))
+		return errNotSupported
+	}
 	return nil
 }
 
-func (h *Header) parseProxyAuthorization(s []byte) error {
+func (h *Header) parseProxyAuthorization(s []byte, raw *bytes.Buffer) error {
 	h.ProxyAuthorization = string(bytes.TrimSpace(s))
 	return nil
 }
@@ -258,18 +282,16 @@ func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, url *URL) 
 		kn := string(name)
 		if parseFunc, ok := headerParser[kn]; ok {
 			lastLine = s
-			parseFunc(h, ASCIIToLower(val))
-			if kn == headerConnection ||
-				kn == headerProxyConnection ||
-				kn == headerProxyAuthorization {
-				continue
-			}
+			parseFunc(h, ASCIIToLower(val), raw)
 		} else {
 			// mark this header as not of interest to proxy
 			lastLine = nil
 		}
+		if hopByHopHeader[kn] {
+			continue
+		}
 		raw.Write(s)
-		raw.Write(CRLFbytes)
+		raw.WriteString(CRLF)
 		// debug.Printf("len %d %s", len(s), s)
 	}
 	return
@@ -320,8 +342,11 @@ func parseRequest(c *clientConn) (r *Request, err error) {
 		errl.Printf("Parsing request header: %v\n", err)
 		return nil, err
 	}
-	r.raw.Write(headerKeepAliveByte)
-	r.raw.Write(CRLFbytes)
+	if !r.ConnectionKeepAlive {
+		// Always add one connection header for request
+		r.raw.WriteString(fullHeaderConnection)
+	}
+	r.raw.WriteString(CRLF)
 	return
 }
 
@@ -353,9 +378,6 @@ func (rp *Response) hasBody(method string) bool {
 		bytes.Equal(rp.Status, []byte("204")) ||
 		bytes.HasPrefix(rp.Status, []byte("1")))
 }
-
-var headerKeepAliveByte = []byte("Connection: Keep-Alive\r\n")
-var headerConnCloseByte = []byte("Connection: close\r\n")
 
 // Parse response status and headers.
 func parseResponse(sv *serverConn, r *Request) (rp *Response, err error) {
@@ -408,7 +430,7 @@ START:
 		errl.Printf("Response protocol not supported: %s\n", string(f[0]))
 		return nil, errNotSupported
 	}
-	rp.raw.Write(CRLFbytes)
+	rp.raw.WriteString(CRLF)
 
 	if err = rp.parseHeader(reader, &rp.raw, r.URL); err != nil {
 		errl.Printf("Reading response header: %v %v\n", err, r)
@@ -416,15 +438,13 @@ START:
 	}
 	// Connection close, no content length specification
 	// Use chunked encoding to pass content back to client
-	if !rp.KeepAlive && !rp.Chunking && rp.ContLen == -1 {
-		rp.raw.Write([]byte("Transfer-Encoding: chunked\r\n"))
+	if !rp.ConnectionKeepAlive && !rp.Chunking && rp.ContLen == -1 {
+		rp.raw.WriteString("Transfer-Encoding: chunked\r\n")
 	}
-	if r.KeepAlive {
-		rp.raw.Write(headerKeepAliveByte)
-	} else {
-		rp.raw.Write(headerConnCloseByte)
+	if !rp.ConnectionKeepAlive {
+		rp.raw.WriteString("Connection: keep-alive\r\n")
 	}
-	rp.raw.Write(CRLFbytes)
+	rp.raw.WriteString(CRLF)
 
 	return rp, nil
 }
