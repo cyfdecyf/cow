@@ -2,6 +2,7 @@ package main
 
 import (
 	"testing"
+	"time"
 )
 
 func TestSplitHostPort(t *testing.T) {
@@ -108,5 +109,32 @@ func TestParseKeyValueList(t *testing.T) {
 				t.Error("key value list parse error:", td.str, "for element:", k, v, "got:", kvm[k])
 			}
 		}
+	}
+}
+
+func TestParseKeepAlive(t *testing.T) {
+	h := new(Header)
+	h.parseKeepAlive([]byte(" timeout=1"), nil)
+	if h.KeepAlive != time.Second {
+		t.Error("timeout value 1 error, got:", h.KeepAlive)
+	}
+	h.parseKeepAlive([]byte(" timeout=10"), nil)
+	if h.KeepAlive != time.Second*10 {
+		t.Error("timeout value 10 error, got:", h.KeepAlive)
+	}
+	h.parseKeepAlive([]byte(" timeout=20,max=5"), nil)
+	if h.KeepAlive != time.Second*20 {
+		t.Error("timeout value 20 error, got:", h.KeepAlive)
+	}
+	// should not crash on invalid data
+	h.KeepAlive = time.Duration(0)
+	h.parseKeepAlive([]byte(" timeout="), nil)
+	if h.KeepAlive != time.Duration(0) {
+		t.Error("should not get timeout for invalid data")
+	}
+	h.KeepAlive = time.Duration(0)
+	h.parseKeepAlive([]byte(" timeout=,max=5"), nil)
+	if h.KeepAlive != time.Duration(0) {
+		t.Error("should not get timeout")
 	}
 }

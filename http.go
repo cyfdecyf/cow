@@ -16,6 +16,7 @@ type Header struct {
 	ContLen             int64
 	Chunking            bool
 	ConnectionKeepAlive bool
+	KeepAlive           time.Duration
 	Referer             string
 	ProxyAuthorization  string
 }
@@ -223,14 +224,32 @@ var hopByHopHeader = map[string]bool{
 
 type HeaderParserFunc func(*Header, []byte, *bytes.Buffer) error
 
-func (h *Header) parseContentLength(s []byte, raw *bytes.Buffer) (err error) {
-	h.ContLen, err = strconv.ParseInt(string(bytes.TrimSpace(s)), 10, 64)
-	return err
-}
-
 func (h *Header) parseConnection(s []byte, raw *bytes.Buffer) error {
 	h.ConnectionKeepAlive = bytes.Contains(s, []byte("keep-alive"))
 	raw.WriteString(fullHeaderConnection)
+	return nil
+}
+
+func (h *Header) parseContentLength(s []byte, raw *bytes.Buffer) (err error) {
+	h.ContLen, err = strconv.ParseInt(string(TrimSpace(s)), 10, 64)
+	return err
+}
+
+func (h *Header) parseKeepAlive(s []byte, raw *bytes.Buffer) (err error) {
+	id := bytes.Index(s, []byte("timeout="))
+	if id != -1 {
+		id += len("timeout=")
+		end := id
+		for ; end < len(s) && IsDigit(s[end]); end++ {
+		}
+		delta, _ := strconv.Atoi(string(s[id:end]))
+		h.KeepAlive = time.Second * time.Duration(delta)
+	}
+	return nil
+}
+
+func (h *Header) parseProxyAuthorization(s []byte, raw *bytes.Buffer) error {
+	h.ProxyAuthorization = string(TrimSpace(s))
 	return nil
 }
 
@@ -242,11 +261,6 @@ func (h *Header) parseTransferEncoding(s []byte, raw *bytes.Buffer) error {
 		errl.Printf("unsupported transfer encoding %s\n", string(s))
 		return errNotSupported
 	}
-	return nil
-}
-
-func (h *Header) parseProxyAuthorization(s []byte, raw *bytes.Buffer) error {
-	h.ProxyAuthorization = string(bytes.TrimSpace(s))
 	return nil
 }
 
