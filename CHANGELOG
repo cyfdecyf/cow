@@ -1,4 +1,4 @@
-0.5 (not released)
+0.5 (2013-02-07)
 
     * Support parent HTTP proxy (such as goagent)
     * Work more automatically: because of this, updateBlocked, updateDirect, 
