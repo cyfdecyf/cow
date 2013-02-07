@@ -8,7 +8,7 @@ import (
 
 const defaultDialTimeout = 5 * time.Second
 const defaultReadTimeout = 5 * time.Second
-const maxTimeout = time.Duration(20)
+const maxTimeout = 20 * time.Second
 
 var dialTimeout, readTimeout time.Duration // initialized in runEstimateTimeout
 
@@ -56,7 +56,10 @@ func estimateTimeout() {
 	start = time.Now()
 	// include time spent on sending request, reading all content to make it a
 	// little longer
-	c.Write(estimateReq)
+	if _, err = c.Write(estimateReq); err != nil {
+		errl.Println("estimateTimeout: error sending request:", err)
+		goto onErr
+	}
 	for err == nil {
 		_, err = c.Read(buf)
 	}
@@ -64,11 +67,11 @@ func estimateTimeout() {
 		errl.Printf("estimateTimeout: error getting %s: %v, network has problem?\n",
 			estimateSite, err)
 	}
-	est = time.Now().Sub(start) * 5
+	est = time.Now().Sub(start) * 10
+	debug.Println("estimated read timeout:", est)
 	if est > maxTimeout {
 		est = maxTimeout
 	}
-	debug.Println("estimated read timeout:", est)
 	if est > time.Duration(config.ReadTimeout) {
 		readTimeout = est
 		info.Println("new read timeout:", readTimeout)
