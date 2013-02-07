@@ -35,7 +35,7 @@ socks = 127.0.0.1:1080
 # 若同时指定 shadowsocks 和 SOCKS5 代理，优先使用 shadowsocks
 
 # shadowsocks 服务器地址，一定要指定端口
-#shadowsocks = 1.1.1.1:8838
+#shadowSocks = 1.1.1.1:8838
 # shadowsocks 密码
 #shadowPasswd = barfoo!
 # shadowsocks 加密方法, 空字符串或者 rc4
