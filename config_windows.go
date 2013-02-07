@@ -7,11 +7,9 @@ import (
 
 const (
 	rcFname            = "rc.txt"
-	blockedFname       = "auto-blocked.txt"
-	directFname        = "auto-direct.txt"
 	alwaysBlockedFname = "blocked.txt"
 	alwaysDirectFname  = "direct.txt"
-	chouFname          = "chou.txt"
+	statFname          = "stat.txt"
 
 	newLine = "\r\n"
 )

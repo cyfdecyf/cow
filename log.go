@@ -26,7 +26,11 @@ var (
 
 	logFile io.Writer
 
-	debugLog, errorLog, requestLog, responseLog *log.Logger
+	// TODO: has to be initialized in initLog, otherwise will crash on Windows, why?
+	errorLog    *log.Logger
+	debugLog    *log.Logger
+	requestLog  *log.Logger
+	responseLog *log.Logger
 )
 
 var (

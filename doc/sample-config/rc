@@ -1,39 +1,85 @@
-# proxy listen address
-# 0.0.0.0 can be used if host IP address can be detected
+# 代理服务器监听地址，用逗号分隔多个地址
+# 0.0.0.0 表示监听本机所有 IP 地址
+# PAC url 为 http://<listen>/pac，若 listen ip 为 0.0.0.0，
+# PAC 中的代理服务器地址会根据 client 从哪个 ip 访问正确的生成
 listen = 127.0.0.1:7777
 
-# parent socks proxy address, COW will use this to access blocked sites
-socks = 127.0.0.1:1080
-# ssh to the server to start socks proxy (requires public key authentication)
-# If option is not empty, COW will run the following command:
-#     ssh -n -N -D <port in socks option> -p <port in sshServer> <sshServer>
-# port in sshServer is optional, defaults to 22
-# for other ssh options, please specify them in ~/.ssh/config
+# 日志文件路径，空字符串表示 stdout
+logFile =
+
+# COW 默认仅对被墙网站使用二级代理
+# 下面选项设置为 true 后，所有网站都通过二级代理访问
+#alwaysProxy = false
+
+# 若同时指定多个二级代理，COW 将按照配置文件中出现的顺序尝试连接二级代理
+
+#############################
+# SOCKS5 代理
+#############################
+
+# SOCKS5 代理地址
+#socksParent = 127.0.0.1:1080
+
+# 下面的选项可以让 COW 执行 ssh 命令创建本地 socks 代理，并在 ssh 断开后重连
+# 注意这一功能需要配置好 ssh public key authentication
+#
+# 若指定该选项，COW 将执行以下命令：
+#     ssh -n -N -D <socksParent 选项中的端口> -p <sshServer 选项中的端口> <sshServer>
+# sshServer 端口默认为 22。如果要指定其他 ssh 选项，请修改 ~/.ssh/config
 #sshServer = user@server[:port]
 
-# shadowsocks server address
-shadowsocks = 1.1.1.1:8838
-# shadowsocks password
-shadowPasswd = barfoo!
+#############################
+# shadowsocks 代理
+#############################
 
-# Nubmer of cores to use
-core = 2
+# 若你有自己的 VPS，推荐使用 shadowsocks。服务器端部署完成后本机无需 socks 代理
 
-# Update blocked domain list (~/.cow/auto-blocked)
-updateBlocked = true
+# shadowsocks 服务器地址，一定要指定端口
+#shadowSocks = 1.1.1.1:8838
+# shadowsocks 密码
+#shadowPasswd = barfoo!
+# shadowsocks 加密方法, 空字符串或者 rc4
+#shadowMethod = 
 
-# Update directly accessable domain list (~/.cow/auto-direct)
-updateDirect = true
+#############################
+# HTTP 代理
+#############################
 
-# Automatically retry timeout request instead of sending back error page
-# Don't enable this under bad network condition
-autoRetry = false
+# 可使用 goagent 等 HTTP 代理作为二级代理翻墙
+#httpParent = 127.0.0.1:8087
 
-# detect SSL error based on how soon client closes connection, not reliable
-detectSSLErr = true
+#############################
+# 认证
+#############################
 
-# empty path means stdout, use /dev/null to disable output
-logFile = ~/.cow/log
+# 指定允许的 IP 或者网段。网段仅支持 IPv4，IP 可以指定 v6 地址，用逗号分隔多个项
+#allowedClient = 192.168.1.0/24, 10.0.0.0/8, 8.8.8.8
 
-# always use parent proxy
-alwaysProxy = false
+# 通过用户名密码认证
+#userPasswd = username:password
+
+# 认证失效时间
+# 语法：2h3m4s 表示 2 小时 3 分钟 4 秒
+#authTimeout = 2h
+
+# COW 总是先验证 IP 是否在 allowedClient 中，若不在其中再通过用户名密码认证
+
+#############################
+# 高级选项
+#############################
+
+# 最多允许使用多少个 CPU 核
+#core = 2
+
+# GFW 会使 DNS 解析超时，也可能返回错误的地址，能连接但是读不到任何内容
+# 下面两个值改小一点可以加速检测网站是否被墙，但网络情况差时可能误判
+
+# 创建连接超时（语法跟 authTimeout 相同）
+#dialTimeout = 5s
+# 从服务器读超时
+#readTimeout = 5s
+
+# 基于 client 是否很快关闭连接来检测 SSL 错误，只对 Chrome 有效
+# （Chrome 遇到 SSL 错误会直接关闭连接，而不是让用户选择是否继续）
+# 可能将可直连网站误判为被墙网站，当 GFW 进行 SSL 中间人攻击时可以考虑使用
+#detectSSLErr = false

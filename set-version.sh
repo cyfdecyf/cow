@@ -8,6 +8,6 @@ fi
 version=$1
 #echo $version
 
-sed -i -e "s/version = .*\$/version = \"$version\"/" config.go
+sed -i -e "s,\(\tversion \+= \)\".*\"$,\1\"$version\"," config.go
 sed -i -e "s/version=.*\$/version=$version/" install-cow.sh
 

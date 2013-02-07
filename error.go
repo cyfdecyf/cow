@@ -22,22 +22,6 @@ var errPageRawTmpl = `<!DOCTYPE html>
 </html>
 `
 
-var blockedFormRawTmpl = `<p></p>
-		<b>Refresh to retry</b> or add <b>{{.Domain}}</b> to
-		<form action="http://{{.ListenAddr}}/blocked" method="get">
-		<input type="hidden" name="host" value={{.Host}}>
-		<b>blocked sites</b>
-		<input type="submit" name="submit" value="blocked">
-		</form>
-`
-
-var directFormRawTmpl = `<form action="http://{{.ListenAddr}}/direct" method="get">
-		<input type="hidden" name="host" value={{.Host}}>
-		<b>direct accessible sites</b>
-		<input type="submit" name="submit" value="direct">
-		</form>
-`
-
 // Do not end with "\r\n" so we can add more header later
 var headRawTmpl = "HTTP/1.1 {{.CodeReason}}\r\n" +
 	"Connection: keep-alive\r\n" +
@@ -56,14 +40,6 @@ func init() {
 	}
 	if errPageTmpl, err = template.New("errorPage").Parse(errPageRawTmpl); err != nil {
 		fmt.Println("Internal error on generating error page template")
-		os.Exit(1)
-	}
-	if blockedFormTmpl, err = template.New("blockedForm").Parse(blockedFormRawTmpl); err != nil {
-		fmt.Println("Internal error on generating blocked form template")
-		os.Exit(1)
-	}
-	if directFormTmpl, err = template.New("directForm").Parse(directFormRawTmpl); err != nil {
-		fmt.Println("Internal error on generating direct form template")
 		os.Exit(1)
 	}
 }
@@ -115,41 +91,4 @@ func sendPageGeneric(w io.Writer, codeReason, h1, msg, form, addHeader string) {
 
 func sendErrorPage(w io.Writer, codeReason, h1, msg string) {
 	sendPageGeneric(w, codeReason, "[Error] "+h1, msg, "", "")
-}
-
-func sendRedirectPage(w io.Writer, location string) {
-	sendPageGeneric(w, "302 Found", "Domain added to blocked list", "Redirect to "+location,
-		"", fmt.Sprintf("Location: %s\r\n", location))
-}
-
-func sendBlockedErrorPage(w io.Writer, codeReason, h1, msg string, r *Request) {
-	// If host is IP or in always DS, we can't add it to blocked or direct domain list. Just
-	// return ordinary error page.
-	h, _ := splitHostPort(r.URL.Host)
-	if hostIsIP(r.URL.Host) || isHostInAlwaysDs(h) {
-		sendErrorPage(w, codeReason, h1, msg)
-		return
-	}
-
-	data := struct {
-		ListenAddr string
-		Host       string
-		Domain     string
-	}{
-		config.ListenAddr,
-		h,
-		host2Domain(r.URL.Host),
-	}
-	buf := new(bytes.Buffer)
-	if err := blockedFormTmpl.Execute(buf, data); err != nil {
-		errl.Println("Error generating blocked form:", err)
-		return
-	}
-	if !isHostDirect(h) {
-		if err := directFormTmpl.Execute(buf, data); err != nil {
-			errl.Println("Error generating direct form:", err)
-			return
-		}
-	}
-	sendPageGeneric(w, codeReason, "[Error] "+h1, msg, buf.String(), "")
 }

@@ -1,3 +1,21 @@
+0.5 (not released)
+
+    * Support parent HTTP proxy (such as goagent)
+    * Work more automatically: because of this, updateBlocked, updateDirect, 
+    autoRetry options and chou file are removed
+    * Record direct/blocked visit count to make blocked/direct site handling
+    more reliable
+    * Builtin common blocked/direct site list
+    * Periodically estimate timeout value to avoid considering direct site as
+    blocked with bad network connection
+    * Support specifying host in blocked/direct file
+    * User configurable timeout
+    * Better windows support: connection reset, timeout and DNS error detection
+    tested and works on XP
+    * Support listening multiple addresses
+    * Support IP based and user password authentication
+    * Various bug fixes
+
 0.3.5 (2012-12-23)
 
     * Performance improvement by better buffer usage

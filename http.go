@@ -6,15 +6,19 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Header struct {
-	ContLen   int64
-	Chunking  bool
-	KeepAlive bool
-	Referer   string
+	ContLen             int64
+	KeepAlive           time.Duration
+	Referer             string
+	ProxyAuthorization  string
+	Chunking            bool
+	ConnectionKeepAlive bool
 }
 
 type rqState byte
@@ -27,42 +31,53 @@ const (
 )
 
 type Request struct {
-	Method string
-	URL    *URL
-	Proto  string
-
+	Method      string
+	URL         *URL
+	contBuf     *bytes.Buffer // will be non nil when retrying request
+	raw         bytes.Buffer
+	origReqLine []byte // original request line from client, used for http parent proxy
+	headerStart int    // start of header in raw
 	Header
 	isConnect bool
-
-	raw     bytes.Buffer
-	contBuf *bytes.Buffer // will be non nil when retrying request
-	state   rqState
-	tryCnt  int
+	state     rqState
+	tryCnt    byte
 }
 
 func (r *Request) String() (s string) {
 	s = fmt.Sprintf("%s %s%s", r.Method,
-		r.URL.Host, r.URL.Path)
+		r.URL.HostPort, r.URL.Path)
 	if verbose {
 		s += fmt.Sprintf("\n%v", r.raw.String())
 	}
 	return
 }
 
+func (r *Request) isRetry() bool {
+	return r.tryCnt > 1
+}
+
+func (r *Request) tryOnce() {
+	r.tryCnt++
+}
+
+func (r *Request) canRetry() bool {
+	return r.tryCnt <= 5 && r.responseNotSent()
+}
+
 type Response struct {
-	Status string
-	Reason string
+	Status []byte
+	Reason []byte
 
 	Header
 
 	raw bytes.Buffer
 }
 
-func (rp *Response) genStatusLine() (res string) {
-	if rp.Reason == "" {
-		res = fmt.Sprintf("HTTP/1.1 %s", rp.Status)
+func (rp *Response) genStatusLine() (res []byte) {
+	if len(rp.Reason) == 0 {
+		res = bytes.Join([][]byte{[]byte("HTTP/1.1"), rp.Status}, []byte{' '})
 	} else {
-		res = fmt.Sprintf("HTTP/1.1 %s %s", rp.Status, rp.Reason)
+		res = bytes.Join([][]byte{[]byte("HTTP/1.1"), rp.Status, rp.Reason}, []byte{' '})
 	}
 	return
 }
@@ -78,41 +93,34 @@ func (rp *Response) String() string {
 }
 
 type URL struct {
-	Host   string // must contain port
-	Path   string
-	Scheme string
+	HostPort string // must contain port
+	Host     string // no port
+	Port     string
+	Domain   string
+	Path     string
+	Scheme   string
 }
 
 func (url *URL) String() string {
-	return url.Host + url.Path
+	return url.HostPort + url.Path
 }
 
 func (url *URL) toURI() string {
 	return url.Scheme + "://" + url.String()
 }
 
-// headers of interest to a proxy
-// Define them as constant and use editor's completion to avoid typos.
-// Note RFC2616 only says about "Connection", no "Proxy-Connection", but firefox
-// send this header.
-// See more at http://homepage.ntlworld.com/jonathan.deboynepollard/FGA/web-proxy-connection-header.html
-const (
-	headerContentLength    = "content-length"
-	headerTransferEncoding = "transfer-encoding"
-	headerConnection       = "connection"
-	headerProxyConnection  = "proxy-connection"
-	headerReferer          = "referer"
-)
+func (url *URL) HostIsIP() bool {
+	return hostIsIP(url.Host)
+}
 
 // For port, return empty string if no port specified.
 func splitHostPort(s string) (host, port string) {
 	// Common case should has no port, check the last char first
-	// Update: as port is always added, this is no longer common case in COW
 	if !IsDigit(s[len(s)-1]) {
 		return s, ""
 	}
 	// Scan back, make sure we find ':'
-	for i := len(s) - 2; i > 0; i-- {
+	for i := len(s) - 2; i >= 0; i-- {
 		c := s[i]
 		switch {
 		case c == ':':
@@ -124,14 +132,12 @@ func splitHostPort(s string) (host, port string) {
 	return s, ""
 }
 
-// net.ParseRequestURI will unescape encoded path, but the proxy don't need
-// Assumes the input rawurl valid. Even if rawurl is not valid, net.Dial
+// net.ParseRequestURI will unescape encoded path, but the proxy doesn't need
+// that. Assumes the input rawurl is valid. Even if rawurl is not valid, net.Dial
 // will check the correctness of the host.
 func ParseRequestURI(rawurl string) (*URL, error) {
 	if rawurl[0] == '/' {
-		// OS X seems to send only path to the server if the url is 127.0.0.1
-		return &URL{Host: "", Path: rawurl}, nil
-		// return nil, errors.New("Invalid proxy request URI: " + rawurl)
+		return &URL{Path: rawurl}, nil
 	}
 
 	var f []string
@@ -150,141 +156,190 @@ func ParseRequestURI(rawurl string) (*URL, error) {
 		rest = f[1]
 	}
 
-	var host, path string
-	f = strings.SplitN(rest, "/", 2)
-	host = f[0]
-	if len(f) == 1 || f[1] == "" {
-		path = "/"
+	var hostport, host, port, path string
+	id := strings.Index(rest, "/")
+	if id == -1 {
+		hostport = rest
 	} else {
-		path = "/" + f[1]
+		hostport = rest[:id]
+		path = rest[id:]
 	}
+
 	// Must add port in host so it can be used as key to find the correct
 	// server connection.
 	// e.g. google.com:80 and google.com:443 should use different connections.
-	_, port := splitHostPort(host)
+	host, port = splitHostPort(hostport)
 	if port == "" {
 		if len(scheme) == 4 {
-			host += ":80"
+			hostport = net.JoinHostPort(host, "80")
+			port = "80"
 		} else {
-			host += ":443"
+			hostport = net.JoinHostPort(host, "443")
+			port = "443"
 		}
 	}
 
-	return &URL{Host: host, Path: path, Scheme: scheme}, nil
+	return &URL{hostport, host, port, host2Domain(host), path, scheme}, nil
 }
 
-func splitHeader(s string) (name, val string, err error) {
-	var f []string
-	if f = strings.SplitN(strings.ToLower(s), ":", 2); len(f) != 2 {
-		return "", "", errMalformHeader
-	}
-	return f[0], f[1], nil
-}
+// headers of interest to a proxy
+// Define them as constant and use editor's completion to avoid typos.
+// Note RFC2616 only says about "Connection", no "Proxy-Connection", but firefox
+// send this header.
+// See more at http://homepage.ntlworld.com/jonathan.deboynepollard/FGA/web-proxy-connection-header.html
+const (
+	headerConnection         = "connection"
+	headerContentLength      = "content-length"
+	headerKeepAlive          = "keep-alive"
+	headerProxyAuthenticate  = "proxy-authenticate"
+	headerProxyAuthorization = "proxy-authorization"
+	headerProxyConnection    = "proxy-connection"
+	headerReferer            = "referer"
+	headerTE                 = "te"
+	headerTrailer            = "trailer"
+	headerTransferEncoding   = "transfer-encoding"
+	headerUpgrade            = "upgrade"
 
-func (h *Header) parseContentLength(s string) (err error) {
-	h.ContLen, err = strconv.ParseInt(strings.TrimSpace(s), 10, 64)
-	return err
-}
-
-func (h *Header) parseConnection(s string) error {
-	h.KeepAlive = strings.Contains(s, "keep-alive")
-	return nil
-}
-
-func (h *Header) parseTransferEncoding(s string) error {
-	h.Chunking = strings.Contains(s, "chunked")
-	return nil
-}
-
-func (h *Header) parseReferer(s string) error {
-	h.Referer = strings.TrimSpace(s)
-	return nil
-}
-
-type HeaderParserFunc func(*Header, string) error
+	fullHeaderConnection       = "Connection: keep-alive\r\n"
+	fullHeaderTransferEncoding = "Transfer-Encoding: chunked\r\n"
+)
 
 // Using Go's method expression
 var headerParser = map[string]HeaderParserFunc{
-	headerConnection:       (*Header).parseConnection,
-	headerProxyConnection:  (*Header).parseConnection,
-	headerContentLength:    (*Header).parseContentLength,
-	headerTransferEncoding: (*Header).parseTransferEncoding,
-	headerReferer:          (*Header).parseReferer,
+	headerConnection:         (*Header).parseConnection,
+	headerContentLength:      (*Header).parseContentLength,
+	headerKeepAlive:          (*Header).parseKeepAlive,
+	headerProxyAuthorization: (*Header).parseProxyAuthorization,
+	headerProxyConnection:    (*Header).parseConnection,
+	headerTransferEncoding:   (*Header).parseTransferEncoding,
+}
+
+var hopByHopHeader = map[string]bool{
+	headerConnection:         true,
+	headerKeepAlive:          true,
+	headerProxyAuthorization: true,
+	headerProxyConnection:    true,
+	headerTE:                 true,
+	headerTrailer:            true,
+	headerTransferEncoding:   true,
+	headerUpgrade:            true,
+}
+
+type HeaderParserFunc func(*Header, []byte, *bytes.Buffer) error
+
+func (h *Header) parseConnection(s []byte, raw *bytes.Buffer) error {
+	h.ConnectionKeepAlive = bytes.Contains(s, []byte("keep-alive"))
+	raw.WriteString(fullHeaderConnection)
+	return nil
+}
+
+func (h *Header) parseContentLength(s []byte, raw *bytes.Buffer) (err error) {
+	h.ContLen, err = strconv.ParseInt(string(TrimSpace(s)), 10, 64)
+	return err
+}
+
+func (h *Header) parseKeepAlive(s []byte, raw *bytes.Buffer) (err error) {
+	id := bytes.Index(s, []byte("timeout="))
+	if id != -1 {
+		id += len("timeout=")
+		end := id
+		for ; end < len(s) && IsDigit(s[end]); end++ {
+		}
+		delta, _ := strconv.Atoi(string(s[id:end]))
+		h.KeepAlive = time.Second * time.Duration(delta)
+	}
+	return nil
+}
+
+func (h *Header) parseProxyAuthorization(s []byte, raw *bytes.Buffer) error {
+	h.ProxyAuthorization = string(TrimSpace(s))
+	return nil
+}
+
+func (h *Header) parseTransferEncoding(s []byte, raw *bytes.Buffer) error {
+	h.Chunking = bytes.Contains(s, []byte("chunked"))
+	if h.Chunking {
+		raw.WriteString(fullHeaderTransferEncoding)
+	} else {
+		errl.Printf("unsupported transfer encoding %s\n", string(s))
+		return errNotSupported
+	}
+	return nil
+}
+
+func splitHeader(s []byte) (name, val []byte, err error) {
+	var f [][]byte
+	if f = bytes.SplitN(s, []byte{':'}, 2); len(f) != 2 {
+		errl.Println("malformed header:", s)
+		return nil, nil, errMalformHeader
+	}
+	// Do not lower case field value, as it maybe case sensitive
+	return ASCIIToLower(f[0]), f[1], nil
 }
 
 // Only add headers that are of interest for a proxy into request's header map.
-func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, addHeader string, url *URL) (err error) {
+func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, url *URL) (err error) {
 	// Read request header and body
-	var s, name, val string
+	var s, name, val, lastLine []byte
 	for {
-		if s, err = ReadLine(reader); err != nil {
+		if s, err = ReadLineBytes(reader); err != nil {
 			return
 		}
-		if s == "" {
-			// Connection close, no content length specification
-			// Use chunked encoding to pass content back to client
-			if !h.KeepAlive && !h.Chunking && h.ContLen == -1 {
-				raw.WriteString("Transfer-Encoding: chunked\r\n")
-			}
-
-			raw.WriteString(addHeader)
-			raw.Write(CRLFbytes)
+		if len(s) == 0 { // end of headers
 			return
 		}
-		if s[0] == ' ' || s[0] == '\t' {
-			// TODO multiple line header, should append to last line value if
-			// it's of interest to proxy
-			errl.Println("Encounter multi-line header:", url)
+		if (s[0] == ' ' || s[0] == '\t') && lastLine != nil { // multi-line header
+			info.Printf("Encounter multi-line header: %v %s", url, string(s))
+			// combine previous line with current line
+			s = bytes.Join([][]byte{lastLine, []byte{' '}, s}, nil)
+		}
+		if name, val, err = splitHeader(s); err != nil {
+			return
+		}
+		kn := string(name)
+		if parseFunc, ok := headerParser[kn]; ok {
+			lastLine = s
+			parseFunc(h, ASCIIToLower(val), raw)
 		} else {
-			if name, val, err = splitHeader(s); err != nil {
-				return
-			}
-			if parseFunc, ok := headerParser[name]; ok {
-				parseFunc(h, val)
-				if name == headerConnection || name == headerProxyConnection {
-					// Don't pass connection header to server or client
-					continue
-				}
-			}
+			// mark this header as not of interest to proxy
+			lastLine = nil
 		}
-		raw.WriteString(s)
-		raw.Write(CRLFbytes)
+		if hopByHopHeader[kn] {
+			continue
+		}
+		raw.Write(s)
+		raw.WriteString(CRLF)
 		// debug.Printf("len %d %s", len(s), s)
 	}
 	return
 }
 
-// Consume all http header. Used for CONNECT method.
-func drainHeader(reader *bufio.Reader) (err error) {
-	// Read request header and body
-	var s string
-	for {
-		s, err = ReadLine(reader)
-		if s == "" || err != nil {
-			return
-		}
-	}
-	return
-}
-
 // Parse the initial line and header, does not touch body
-func parseRequest(reader *bufio.Reader) (r *Request, err error) {
-	r = new(Request)
-	r.ContLen = -1
-	var s string
-
+func parseRequest(c *clientConn) (r *Request, err error) {
+	var s []byte
+	reader := c.bufRd
+	if err = c.SetReadDeadline(time.Now().Add(clientConnTimeout)); err != nil {
+		errl.Println("Set readtimeout for parseRequest:", err)
+	}
 	// parse initial request line
-	if s, err = ReadLine(reader); err != nil {
+	if s, err = ReadLineBytes(reader); err != nil {
 		return nil, err
+	}
+	if err = c.SetReadDeadline(zeroTime); err != nil {
+		errl.Println("Unset readtimeout for parseRequest:", err)
 	}
 	// debug.Printf("Request initial line %s", s)
 
-	var f []string
-	if f = strings.SplitN(s, " ", 3); len(f) < 3 {
-		return nil, errors.New(fmt.Sprintf("malformed HTTP request: %s", s))
+	r = new(Request)
+	r.ContLen = -1
+
+	var f [][]byte
+	if f = bytes.SplitN(s, []byte{' '}, 3); len(f) < 3 { // request line are separated by SP
+		return nil, errors.New(fmt.Sprintf("malformed HTTP request: %s", string(s)))
 	}
 	var requestURI string
-	r.Method, requestURI, r.Proto = strings.ToUpper(f[0]), f[1], f[2]
+	ASCIIToUpperInplace(f[0])
+	r.Method, requestURI = string(f[0]), string(f[1])
 
 	// Parse URI into host and path
 	r.URL, err = ParseRequestURI(requestURI)
@@ -292,26 +347,32 @@ func parseRequest(reader *bufio.Reader) (r *Request, err error) {
 		return
 	}
 	if r.Method == "CONNECT" {
-		// Consume remaining header and just return. Headers are not used for
-		// CONNECT method.
 		r.isConnect = true
-		err = drainHeader(reader)
-		return
+	} else if hasSocksOrShadowSocksProxy {
+		// Generate normal HTTP request line
+		r.raw.WriteString(r.Method + " ")
+		r.raw.WriteString(r.URL.Path)
+		r.raw.WriteString(" HTTP/1.1\r\n")
 	}
 
-	r.genRequestLine()
+	// for http parent proxy, always need the initial request line
+	if hasHttpParentProxy {
+		r.origReqLine = make([]byte, len(s))
+		copy(r.origReqLine, s)
+		r.headerStart = r.raw.Len()
+	}
 
 	// Read request header
-	if err = r.parseHeader(reader, &r.raw, "", r.URL); err != nil {
+	if err = r.parseHeader(reader, &r.raw, r.URL); err != nil {
 		errl.Printf("Parsing request header: %v\n", err)
 		return nil, err
 	}
+	if !r.ConnectionKeepAlive {
+		// Always add one connection header for request
+		r.raw.WriteString(fullHeaderConnection)
+	}
+	r.raw.WriteString(CRLF)
 	return
-}
-
-func (r *Request) genRequestLine() {
-	r.raw.WriteString(r.Method + " " + r.URL.Path)
-	r.raw.WriteString(" HTTP/1.1\r\nConnection: Keep-Alive\r\n")
 }
 
 func (r *Request) responseNotSent() bool {
@@ -333,34 +394,36 @@ func readCheckCRLF(reader *bufio.Reader) error {
 func (rp *Response) hasBody(method string) bool {
 	// when we have tenary search tree, can optimize this a little
 	return !(method == "HEAD" ||
-		rp.Status == "304" ||
-		rp.Status == "204" ||
-		strings.HasPrefix(rp.Status, "1"))
+		bytes.Equal(rp.Status, []byte("304")) ||
+		bytes.Equal(rp.Status, []byte("204")) ||
+		bytes.HasPrefix(rp.Status, []byte("1")))
 }
 
-var malformedHTTPResponseErr = errors.New("malformed HTTP response")
-
 // Parse response status and headers.
-func parseResponse(reader *bufio.Reader, r *Request) (rp *Response, err error) {
+func parseResponse(sv *serverConn, r *Request) (rp *Response, err error) {
 	rp = new(Response)
 	rp.ContLen = -1
 
-	var s string
+	var s []byte
+	reader := sv.bufRd
 START:
-	if s, err = ReadLine(reader); err != nil {
+	sv.setReadTimeout("parseResponse")
+	if s, err = ReadLineBytes(reader); err != nil {
 		if err != io.EOF {
 			// err maybe timeout caused by explicity setting deadline
 			debug.Printf("Reading Response status line: %v %v\n", err, r)
 		}
+		// For timeout, the connection will not be used, so no need to unset timeout
 		return nil, err
 	}
-	var f []string
-	if f = strings.SplitN(s, " ", 3); len(f) < 2 {
+	sv.unsetReadTimeout("parseResponse")
+	var f [][]byte
+	if f = bytes.SplitN(s, []byte{' '}, 3); len(f) < 2 { // status line are separated by SP
 		errl.Printf("Malformed HTTP response status line: %s %v\n", s, r)
-		return nil, malformedHTTPResponseErr
+		return nil, errMalformResponse
 	}
 	// Handle 1xx response
-	if f[1] == "100" {
+	if bytes.Equal(f[1], []byte("100")) {
 		if err = readCheckCRLF(reader); err != nil {
 			errl.Printf("Reading CRLF after 1xx response: %v %v\n", err, r)
 			return nil, err
@@ -372,19 +435,58 @@ START:
 		rp.Reason = f[2]
 	}
 
-	if f[0] == "HTTP/1.0" {
+	proto := f[0]
+	if !bytes.Equal(proto[0:7], []byte("HTTP/1.")) {
+		errl.Printf("Invalid response status line: %s\n", string(f[0]))
+		return nil, errMalformResponse
+	}
+	if proto[7] == '1' {
+		rp.raw.Write(s)
+	} else if proto[7] == '0' {
 		// Should return HTTP version as 1.1 to client since closed connection
 		// will be converted to chunked encoding
-		rp.raw.WriteString(rp.genStatusLine())
+		rp.raw.Write(rp.genStatusLine())
 	} else {
-		rp.raw.WriteString(s)
+		errl.Printf("Response protocol not supported: %s\n", string(f[0]))
+		return nil, errNotSupported
 	}
-	rp.raw.Write(CRLFbytes)
+	rp.raw.WriteString(CRLF)
 
-	if err = rp.parseHeader(reader, &rp.raw, "Connection: Keep-Alive\r\n", r.URL); err != nil {
+	if err = rp.parseHeader(reader, &rp.raw, r.URL); err != nil {
 		errl.Printf("Reading response header: %v %v\n", err, r)
 		return nil, err
 	}
+	// Connection close, no content length specification
+	// Use chunked encoding to pass content back to client
+	if !rp.ConnectionKeepAlive && !rp.Chunking && rp.ContLen == -1 {
+		rp.raw.WriteString("Transfer-Encoding: chunked\r\n")
+	}
+	if !rp.ConnectionKeepAlive {
+		rp.raw.WriteString("Connection: keep-alive\r\n")
+	}
+	rp.raw.WriteString(CRLF)
 
 	return rp, nil
+}
+
+func unquote(s string) string {
+	return strings.Trim(s, "\"")
+}
+
+func parseKeyValueList(str string) map[string]string {
+	list := strings.Split(str, ",")
+	if len(list) == 1 && list[0] == "" {
+		return nil
+	}
+	res := make(map[string]string)
+	for _, ele := range list {
+		kv := strings.SplitN(strings.TrimSpace(ele), "=", 2)
+		if len(kv) != 2 {
+			errl.Println("no equal sign in key value list element:", ele)
+			return nil
+		}
+		key, val := kv[0], unquote(kv[1])
+		res[key] = val
+	}
+	return res
 }

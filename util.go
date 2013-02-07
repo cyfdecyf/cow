@@ -2,39 +2,17 @@ package main
 
 import (
 	"bufio"
-	// "fmt"
+	"crypto/md5"
 	"errors"
+	"fmt"
 	"io"
-	"log"
 	"net"
 	"os"
-	"os/user"
+	"path"
 	"runtime"
+	"strconv"
+	"strings"
 )
-
-// Almost same with net/textproto/reader.go ReadLine
-func ReadLine(r *bufio.Reader) (string, error) {
-	var line []byte
-	for {
-		l, more, err := r.ReadLine()
-		if err != nil {
-			return "", err
-		}
-
-		if line == nil && !more {
-			return string(l), nil
-		}
-		line = append(line, l...)
-		if !more {
-			break
-		}
-	}
-	return string(line), nil
-}
-
-func IsDigit(b byte) bool {
-	return '0' <= b && b <= '9'
-}
 
 type notification chan byte
 
@@ -55,6 +33,101 @@ func (n notification) hasNotified() bool {
 		return false
 	}
 	return false
+}
+
+// ReadLine read till '\n' is found or encounter error. The returned line does
+// not include ending '\r' and '\n'. If returns err != nil if and only if
+// len(line) == 0.
+func ReadLine(r *bufio.Reader) (string, error) {
+	l, err := ReadLineBytes(r)
+	return string(l), err
+}
+
+// ReadLineBytes read till '\n' is found or encounter error. The returned line
+// does not include ending '\r\n' or '\n'. Returns err != nil if and only if
+// len(line) == 0. Note the returned byte should not be used for append and
+// maybe overwritten by next I/O operation. Copied code of readLineSlice from
+// $GOROOT/src/pkg/net/textproto/reader.go
+func ReadLineBytes(r *bufio.Reader) (line []byte, err error) {
+	for {
+		l, more, err := r.ReadLine()
+		if err != nil {
+			return nil, err
+		}
+		// Avoid the copy if the first call produced a full line.
+		if line == nil && !more {
+			return l, nil
+		}
+		line = append(line, l...)
+		if !more {
+			break
+		}
+	}
+	return line, nil
+}
+
+func ASCIIToUpperInplace(b []byte) {
+	for i := 0; i < len(b); i++ {
+		if 97 <= b[i] && b[i] <= 122 {
+			b[i] -= 32
+		}
+	}
+}
+
+func ASCIIToUpper(b []byte) []byte {
+	buf := make([]byte, len(b))
+	copy(buf, b)
+	ASCIIToUpperInplace(buf)
+	return buf
+}
+
+func ASCIIToLowerInplace(b []byte) {
+	for i := 0; i < len(b); i++ {
+		if 65 <= b[i] && b[i] <= 90 {
+			b[i] += 32
+		}
+	}
+}
+
+func ASCIIToLower(b []byte) []byte {
+	buf := make([]byte, len(b))
+	copy(buf, b)
+	ASCIIToLowerInplace(buf)
+	return buf
+}
+
+func IsDigit(b byte) bool {
+	return '0' <= b && b <= '9'
+}
+
+var spaceTbl = [...]bool{
+	9:  true, // ht
+	10: true, // lf
+	13: true, // cr
+	32: true, // sp
+}
+
+func IsSpace(b byte) bool {
+	if 9 <= b && b <= 32 {
+		return spaceTbl[b]
+	}
+	return false
+}
+
+func TrimSpace(s []byte) []byte {
+	if len(s) == 0 {
+		return s
+	}
+	st := 0
+	end := len(s) - 1
+	for ; st < len(s) && IsSpace(s[st]); st++ {
+	}
+	if st == len(s) {
+		return s[:0]
+	}
+	for ; end >= 0 && IsSpace(s[end]); end-- {
+	}
+	return s[st : end+1]
 }
 
 func isWindows() bool {
@@ -93,13 +166,13 @@ func isDirExists(path string) (bool, error) {
 func hostIP() (addrs []string, err error) {
 	name, err := os.Hostname()
 	if err != nil {
-		errl.Printf("Error get host name: %v\n", err)
+		fmt.Printf("Error get host name: %v\n", err)
 		return
 	}
 
 	addrs, err = net.LookupHost(name)
 	if err != nil {
-		errl.Printf("Error getting host IP address: %v\n", err)
+		fmt.Printf("Error getting host IP address: %v\n", err)
 		return
 	}
 	return
@@ -112,46 +185,45 @@ func trimLastDot(s string) string {
 	return s
 }
 
-func getUserHomeDir() (home string, err error) {
-	u, err := user.Current()
-	if err != nil {
-		return
+func getUserHomeDir() string {
+	home := os.Getenv("HOME")
+	if home == "" {
+		fmt.Println("HOME environment variable is empty")
 	}
-	return u.HomeDir, nil
+	return home
 }
 
-func expandTilde(path string) string {
-	if len(path) > 0 && path[0] == '~' {
-		home, err := getUserHomeDir()
-		if err != nil {
-			log.Println("expandTilde can't get user home directory:", err)
-		}
-		return home + path[1:]
+func expandTilde(pth string) string {
+	if len(pth) > 0 && pth[0] == '~' {
+		home := getUserHomeDir()
+		return path.Join(home, pth[1:])
 	}
-	return path
+	return pth
 }
 
-func hostIsIP(host string) bool {
-	host, _ = splitHostPort(host)
-	return net.ParseIP(host) != nil
-}
-
+// copyN copys N bytes from r to w, using the specified buf as buffer. pre and
+// end are written to w before and after the n bytes. contBuf is used to store
+// the content that's written for later reuse. copyN will try to minimize
+// number of writes.
 func copyN(r io.Reader, w, contBuf io.Writer, n int, buf, pre, end []byte) (err error) {
+	// XXX well, this is complicated in order to save writes
 	var nn int
 	bufLen := len(buf)
 	var b []byte
 	for n != 0 {
 		if pre != nil {
 			if len(pre) >= bufLen {
+				// pre is larger than bufLen, can't save write operation here
 				if _, err = w.Write(pre); err != nil {
 					return
 				}
 				pre = nil
 				continue
 			}
-			// append pre to buf
+			// append pre to buf to save one write
 			copy(buf, pre)
 			if len(pre)+n < bufLen {
+				// only need to read n bytes
 				b = buf[len(pre) : len(pre)+n]
 			} else {
 				b = buf[len(pre):]
@@ -168,9 +240,11 @@ func copyN(r io.Reader, w, contBuf io.Writer, n int, buf, pre, end []byte) (err 
 		}
 		n -= nn
 		if pre != nil {
+			// nn is how much we need to write next
 			nn += len(pre)
 			pre = nil
 		}
+		// see if we can append end in buffer to save one write
 		if n == 0 && end != nil && nn+len(end) <= bufLen {
 			copy(buf[nn:], end)
 			nn += len(end)
@@ -189,4 +263,89 @@ func copyN(r io.Reader, w, contBuf io.Writer, n int, buf, pre, end []byte) (err 
 		}
 	}
 	return
+}
+
+func md5sum(ss ...string) string {
+	h := md5.New()
+	for _, s := range ss {
+		io.WriteString(h, s)
+	}
+	return fmt.Sprintf("%x", h.Sum(nil))
+}
+
+// only handles IPv4 address now
+func hostIsIP(host string) bool {
+	parts := strings.Split(host, ".")
+	if len(parts) != 4 {
+		return false
+	}
+	for _, i := range parts {
+		if len(i) == 0 || len(i) > 3 {
+			return false
+		}
+		n, err := strconv.Atoi(i)
+		if err != nil || n < 0 || n > 255 {
+			return false
+		}
+	}
+	return true
+}
+
+// NetNbitIPv4Mask returns a IPMask with highest n bit set.
+func NewNbitIPv4Mask(n int) net.IPMask {
+	if n > 32 {
+		panic("NewNbitIPv4Mask: bit number > 32")
+	}
+	mask := []byte{0, 0, 0, 0}
+	for id := 0; id < 4; id++ {
+		if n >= 8 {
+			mask[id] = 0xff
+		} else {
+			mask[id] = ^byte(1<<(uint8(8-n)) - 1)
+			break
+		}
+		n -= 8
+	}
+	return net.IPMask(mask)
+}
+
+var topLevelDomain = map[string]bool{
+	"ac":  true,
+	"co":  true,
+	"org": true,
+	"com": true,
+	"net": true,
+	"edu": true,
+}
+
+// host2Domain returns the domain of a host. It will recognize domains like
+// google.com.hk. Returns empty string for simple host.
+func host2Domain(host string) (domain string) {
+	host, _ = splitHostPort(host)
+	if hostIsIP(host) {
+		return ""
+	}
+	host = trimLastDot(host)
+	lastDot := strings.LastIndex(host, ".")
+	if lastDot == -1 {
+		return ""
+	}
+	// Find the 2nd last dot
+	dot2ndLast := strings.LastIndex(host[:lastDot], ".")
+	if dot2ndLast == -1 {
+		return host
+	}
+
+	part := host[dot2ndLast+1 : lastDot]
+	// If the 2nd last part of a domain name equals to a top level
+	// domain, search for the 3rd part in the host name.
+	// So domains like bbc.co.uk will not be recorded as co.uk
+	if topLevelDomain[part] {
+		dot3rdLast := strings.LastIndex(host[:dot2ndLast], ".")
+		if dot3rdLast == -1 {
+			return host
+		}
+		return host[dot3rdLast+1:]
+	}
+	return host[dot2ndLast+1:]
 }

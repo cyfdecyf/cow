@@ -1,129 +1,97 @@
-# COW (Climb Over the Wall) proxy  #
+# COW (Climb Over the Wall) proxy
 
-COW is a HTTP proxy that tries to automatically identify blocked websites and use a parent proxy when visiting those sites. For non-blocked sites, COW will use direct access.
+COW 是一个利用二级代理帮助自动化翻墙的 HTTP 代理服务器。它能自动检测被墙网站，且仅对被墙网站使用二级代理。
 
-If you are tired of switching proxy configuration or editing blocked site list, you can give COW a try.
+**版本 0.5 更新重要说明**
 
-## Features ##
+- **配置文件修改**
+  - 请删除下列选项: `autoRetry`, `updateDirect`, `updateBlocked`
+  - 请将 `socks` 选项改名为 `socksParent`
+  - 以后的版本遇到这些选项将报错，目前只是给出修改提示（很抱歉对配置文件格式进行修改）
+- `chou`, `auto-direct`, `auto-blocked` 文件不再需要
+  - COW 默认行为就能处理抽风网站，参考[功能](#%E5%8A%9F%E8%83%BD)中的第二项
+  - 经常访问的网站现在记录在一个 json 文件中，参考[访问网站记录](#%E8%AE%BF%E9%97%AE%E7%BD%91%E7%AB%99%E8%AE%B0%E5%BD%95)
 
-- **Automatically identify blocked websites**
-- **Record which sites are blocked, which can be directly accessed**
-  - Can also manually specify blocked and directly accessible sites
-- **Generate and serve PAC file**
-  - Contains domains that can be directly accessed
-- **Special handling for temporarily blocked site**
-  - Use parent proxy when blockage detected, try direct access after 2 minutes
-- **Convert socks proxy to HTTP proxy**
-  - Can start socks proxy server by ssh, requires public key authentication
-- **Support [shadowsocks](https://github.com/clowwindy/shadowsocks-nodejs/)**
-  - COW itself can act as shadowsocks client, but provides HTTP proxy
+## 功能
 
-# Installation #
+- 支持 HTTP, SOCKS5 和 [shadowsocks](https://github.com/shadowsocks/shadowsocks-go/) 作为二级代理
+  - 可使用 goagent 作为二级代理
+  - 可以帮助执行 ssh 命令创建 SOCKS5 代理，断开后重连（需要公钥认证）
+  - 无需安装 shadowsocks client，提供 HTTP 代理
+- 自动检测网站是否被墙，仅对被墙网站使用二级代理
+  - 对未知网站，先尝试直接连接，失败后使用二级代理重试请求，2 分钟后再尝试直接
+  - 内置[常见被墙网站](https://github.com/cyfdecyf/cow/blob/master/site_blocked.go)，减少检测被墙所需时间，也可手工添加被墙网站
+- 自动记录经常访问网站是否被墙
+- 提供 PAC 文件，直连网站绕过 COW
+  - 内置[常见可直连网站](https://github.com/cyfdecyf/cow/blob/master/site_direct.go)，如国内社交、视频、银行、电商等网站，也可手工添加
 
-## Pre-compiled binary
+## 限制
 
-The following pre-compiled binaries are provided for systems running on Intel processors:
+- COW 没有提供 cache
+- 被墙网站检测在糟糕的网络连接环境下不可靠
 
-- 64-bit binary for OS X
-- 64-bit and 32-bit binaries for Linux
-- 32-bit binary for Windows
+# 安装
 
-For OS X and Linux, run the following command to install pre-compiled binary (re-run to update)
+## 二进制文件
+
+目前为运行在 x86 处理器上的 OS X, Linux, Windows 提供二进制文件。二进制文件发布在 [Google Code](http://code.google.com/p/cow-proxy/downloads/list)。
+
+OS X 和 Linux 上，推荐使用下面的命令来下载二进制文件和样例配置（也可用来更新）：
 
     curl -s -L https://github.com/cyfdecyf/cow/raw/master/install-cow.sh | bash
 
-Experimental windows binary is also provided, look at the [downloads page on Google Code](http://code.google.com/p/cow-proxy/downloads/list).
+该脚本在 OS X 上会帮助将 COW 设置为登录时启动。
 
-The install script will do the following:
+## 从源码安装
 
-1. Ask you the installation directory
-2. Download the matching binary
-   - Will run sudo if no write permission to the installation directory
-3. If `~/.cow` does not exist, it will create that directory and download sample configuration files
-4. On OS X, if you confirmed to start COW upon login, it will also install a plist file into `~/Library/LaunchAgents`
-
-## From source ##
+安装 Go，设置好 `GOPATH`，执行以下命令（`go get -u` 来更新）：
 
     go get github.com/cyfdecyf/cow
 
-# Usage #
+# 使用说明
 
-Configuration file is located at `~/.cow/rc`. In COW's source code directory, `doc/sample-config` contains complete example with comments, you can simply copy it to `~/.cow` and modify it according to your settings.
+配置文件在 Unix 系统上为 `~/.cow/rc`，Windows 上为 COW 所在目录的 `rc` 文件。 **[样例配置](https://github.com/cyfdecyf/cow/blob/master/doc/sample-config/rc) 包含了所有选项以及详细的说明**，建议下载然后修改。
 
-Here's an example with the most important options:
+启动 COW：
 
-    # proxy listen address
-    listen = 127.0.0.1:7777
-    # parent socks proxy address
-    socks = 127.0.0.1:1080
-    # ssh to the server to start socks proxy (requires public key authentication)
-    # If option is not empty, COW will run the following command:
-    # "ssh -n -N -D <port in socks option> <sshServer>"
-    sshServer =
-    # empty path means stdout, use /dev/null to disable output
-    logFile = ~/.cow/log
+- Unix 系统在命令行上执行 `cow`
+- Windows 上双击 `cow.exe` 执行即可
 
-To start cow, just execute `cow` on the command line.
+PAC url 为 `http://<listen address>/pac`。
 
-- The PAC file can be accessed at `http://<listen>/pac`
-  - For the above example: `http://127.0.0.1:7777/pac`
-- Command line options can override options in the configuration file
-  - For more details, see the output of `cow -h`
+命令行选项可以覆盖配置文件中的选项，执行 `cow -h` 来获取更多信息。
 
-## OS X: Start COW on login ##
+## 手动指定被墙和直连网站
 
-1. Put `doc/osx/info.chenyufei.cow.plist` in `~/Library/LaunchAgents` directory
-2. Edit this plist file, change `COWBINARY` to where cow is installed
+`~/.cow/blocked` 和 `~/.cow/direct` 可指定被墙和直连网站：
 
-After this, COW will be started when you login. It will also be restarted upon exit by `launchd` (if network is available).
+- 每行一个域名或者主机名（COW 会先检查主机名是否在列表中，再检查域名）
+- 可以使用类似 `google.com.hk` 这样的域名
 
-## Blocked and directly accessible sites list ##
+注意：对 IPv4 地址，COW 默认尝试直接连接，生成的 PAC 也让浏览器直接访问 IPv4 url。(这个功能的设计初衷是开发人员经常会访问本地或局域网 IP 地址。)
 
-Blocked and directly accessible web sites are specified using their domain names. **COW can't always reliably detect blocked or directly accessible web sites, so you may need to edit these domain list files manually.**
+# 访问网站记录
 
-- You can manually specify blocked and directly accessible domains. Just edit `~/.cow/blocked` and `~/.cow/direct`. **You can put sites that will be incorrectly identified as blocked or directly accessible into these files**.
-  - One line for each domain
-  - You can use domains like `google.com.hk`
-- When `updateBlocked` and `updateDirect` option is enabled (default behavior), COW will update `~/.cow/auto-blocked` and `~/.cow/auto-direct` on exit
-  - They will only contain domains which you visit
-  - Generated PAC file will contain domains in both `direct` and `auto-direct`
-- **For domains which will be temporarily blocked, put them in `~/.cow/chou`**. (They will always go through COW, and COW will decide whether to use parent socks server. If you are Chinese, chou stands for 抽风)
-  - `doc/sample-config/chou` contains several such sites
-- Domains appear in `blocked/direct/chou` will not be modified by COW, and will be automatically removed from `auto-blocked` and `auto-direct`
-  - Domains appear in both `blocked` and `direct` are taken as blocked, COW will output an error message for such domains
-  - You'd better maintain consistency of `blocked/direct/chou` yourself
+COW 在 `~/.cow/stat` json 文件中记录经常访问网站被墙和直连访问的次数。
 
-# How does COW detect blocked sites
+- 直连访问成功一定次数后相应的 host 会包含到 PAC 文件
+  - 使用 PAC 可以获得更好的性能， **但若某网站变成被封网站，浏览器会依然尝试直连**。遇到这种情况可以暂时总是使用 COW 代理，让 COW 学习到新的被封网站
+- host 被墙一定次数后会直接用二级代理访问
+  - 为避免误判，会以一定概率再次尝试直连访问
+- host 若一段时间没有访问会自动被删除
+- 内置网站列表和用户指定的网站不会出现在统计文件中
 
-Upon the following error, one domain is considered to be blocked
-  - Server connection reset
-  - Connection to server timeout
-  - Read from server timeout
+# COW 如何检测被墙网站
 
-Server connection reset is usually reliable in detecting blocked sites. But timeout is not. **When network condition is bad, connecting to or reading from directly accessible sites may also timeout even if it's not blocked**. Because of this, COW treats connection reset and timeout differently:
+COW 将以下错误认为是墙在作怪：
 
-- For connection reset, COW will add the domain into blocked domain list and retry HTTP request if no response has been sent to client
-- For timeout error, COW will send back an error page. That page will let the user decide whether the domain should be added to blocked list or direct list
-  - **If parts of a web page contains elements from a blocked sites, the browser may not display the error page.** In that case, user won't have the chance to add domain to blocked list. Enabling auto retry upon timeout would solve this problem
+- 服务器连接被重置 (connection reset)
+- 创建连接超时
+- 服务器读操作超时
 
-**You can let COW retry HTTP request upon timeout error by setting the `autoRetry` option to true**. But don't enable this if you would use COW in a non-reliable network.
+无论是普通的 HTTP GET 等请求还是 CONNECT 请求，失败后 COW 都会自动重试请求。（如果已经有内容发送回 client 则不会重试而是直接断开连接。）
 
-## Detecting blocked SSL connection ##
+用连接被重置来判断被墙通常来说比较可靠，超时则不可靠。COW 每隔一分钟会尝试估算合适的超时间隔，避免在网络连接差的情况下把直连网站由于超时也当成被墙。
+COW 默认配置下检测到被墙后，过两分钟再次尝试直连也是为了避免误判。
 
-Browsers send HTTP CONNECT method to proxy to create SSL connection to server. As a proxy only passes network traffic between the client and server after the connection is created, it does not know what happens in the connection.
-
-- Upon server connection reset or timeout for HTTP CONNECT request, if the server has never sent any response to the client, COW will retry the request using socks server
-- One unreliable mechanism used by COW to detect SSL error is based on the following observation: **upon SSL error, the client will close the connection immediately**. If COW notices such situation, it will consider the requested host as blocked. When the client retry the request later, COW will use socks server to create connection to the server
-
-Because COW can not send back error page for HTTP CONNECT method after connection is established, it can't let the user decide whether a domain should be added to blocked list. So when detected blocked site, COW will directly add it to blocked list regardless of the `autoRetry` option.
-
-# Limitations #
-
-- Designed to run on your own computer
-  - COW can serve multiple users, but no authentication is provided now
-- No caching, COW just passes traffic between clients and web servers
-  - For web browsing, browsers have their own cache
-- Blocked site detection is not always reliable
-- Beta quality now
-  - Stable enough for myself. I'm using COW as system wide proxy on OS X 10.8 everyday
-  - **Issue reporting is welcomed**
+如果超时自动重试给你造成了问题，请参考[样例配置](https://github.com/cyfdecyf/cow/blob/master/doc/sample-config/rc)高级选项中的 `readTimeout`, `dialTimeout` 选项。

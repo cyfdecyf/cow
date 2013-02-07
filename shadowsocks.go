@@ -2,35 +2,43 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
+	"os"
 )
-
-var hasShadowSocksServer = false
 
 var noShadowSocksErr = errors.New("No shadowsocks configuration")
 
-var encTbl *ss.EncryptTable
+var cipher ss.Cipher
 
 func initShadowSocks() {
 	if config.ShadowSocks != "" && config.ShadowPasswd != "" {
-		hasShadowSocksServer = true
-		debug.Println("shadowsocks server:", config.ShadowSocks)
-		encTbl = ss.GetTable(config.ShadowPasswd)
+		var err error
+		if err = ss.SetDefaultCipher(config.ShadowMethod); err != nil {
+			fmt.Println("Initializing shadowsocks:", err)
+			os.Exit(1)
+		}
+		if cipher, err = ss.NewCipher(config.ShadowPasswd); err != nil {
+			fmt.Println("Creating shadowsocks cipher:", err)
+			os.Exit(1)
+		}
+		fmt.Println("shadowsocks server:", config.ShadowSocks)
 		return
 	}
 	if (config.ShadowSocks != "" && config.ShadowPasswd == "") ||
 		(config.ShadowSocks == "" && config.ShadowPasswd != "") {
-		errl.Println("Missing option: shadowSocks and shadowPasswd should be both given")
+		fmt.Println("Missing option: shadowSocks and shadowPasswd should be both given")
+		os.Exit(1)
 	}
 }
 
-func createShadowSocksConnection(hostFull string) (cn conn, err error) {
-	if !hasShadowSocksServer {
+func createShadowSocksConnection(url *URL) (cn conn, err error) {
+	if len(config.ShadowSocks) == 0 {
 		return zeroConn, noShadowSocksErr
 	}
-	c, err := ss.Dial(hostFull, config.ShadowSocks, encTbl)
+	c, err := ss.Dial(url.HostPort, config.ShadowSocks, cipher.Copy())
 	if err != nil {
-		debug.Printf("Can't create shadowsocks connection for: %s %v\n", hostFull, err)
+		errl.Printf("Can't create shadowsocks connection for: %s %v\n", url.HostPort, err)
 		return zeroConn, err
 	}
 	// debug.Println("shadowsocks connection created to:", hostFull)

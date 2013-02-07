@@ -1,12 +1,12 @@
 package main
 
 import (
+	// "flag"
 	"os"
 	"os/signal"
 	"runtime"
-	"syscall"
-	// "syscall"
 	// "runtime/pprof"
+	"syscall"
 )
 
 // var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
@@ -18,9 +18,14 @@ func sigHandler() {
 
 	for sig := range sigChan {
 		info.Printf("%v caught, exit\n", sig)
-		writeDomainSet()
+		storeSiteStat()
 		break
 	}
+	/*
+		if *cpuprofile != "" {
+			pprof.StopCPUProfile()
+		}
+	*/
 	os.Exit(0)
 }
 
@@ -35,24 +40,21 @@ func main() {
 	}
 
 	parseConfig(cmdLineConfig.RcFile)
-	// need to update config
 	updateConfig(cmdLineConfig)
 
 	initLog()
-
-	initProxyServerAddr()
+	initAuth()
 	initSocksServer()
 	initShadowSocks()
+	initSiteStat()
+	initPAC()
 
-	if !hasSocksServer && !hasShadowSocksServer {
-		info.Println("no socks/shadowsocks server, can't handle blocked sites")
+	if len(parentProxyCreator) == 0 {
+		info.Println("no parent proxy server, can't handle blocked sites")
 	} else {
 		hasParentProxy = true
 	}
 
-	setSelfURL()
-
-	loadDomainSet()
 	/*
 		if *cpuprofile != "" {
 			f, err := os.Create(*cpuprofile)
@@ -61,22 +63,26 @@ func main() {
 				os.Exit(1)
 			}
 			pprof.StartCPUProfile(f)
-			signal.Notify(c, os.Interrupt)
-			go func() {
-				for sig := range c {
-					info.Printf("captured %v, stopping profiler and exiting..", sig)
-					pprof.StopCPUProfile()
-					os.Exit(0)
-				}
-			}()
 		}
 	*/
 
-	runtime.GOMAXPROCS(config.Core)
+	if config.Core > 0 {
+		runtime.GOMAXPROCS(config.Core)
+	}
 
 	go sigHandler()
 	go runSSH()
+	go runEstimateTimeout()
 
-	py := NewProxy(config.ListenAddr)
-	py.Serve()
+	done := make(chan byte, 1)
+	// save 1 goroutine (a few KB) for the common case with only 1 listen address
+	if len(config.ListenAddr) > 1 {
+		for _, addr := range config.ListenAddr[1:] {
+			go NewProxy(addr).Serve(done)
+		}
+	}
+	NewProxy(config.ListenAddr[0]).Serve(done)
+	for i := 0; i < len(config.ListenAddr); i++ {
+		<-done
+	}
 }

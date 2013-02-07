@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/binary"
 	"errors"
 	"io"
 	"net"
@@ -29,17 +30,14 @@ var socksMsgVerMethodSelection = []byte{
 	0,   // no authorization required
 }
 
-var hasSocksServer = false
-
 func initSocksServer() {
-	hasSocksServer = (config.SocksAddr != "")
-	if hasSocksServer {
-		debug.Println("has socks server:", config.SocksAddr)
+	if len(config.SocksParent) != 0 {
+		debug.Println("has socks server:", config.SocksParent)
 	}
 }
 
-func createctSocksConnection(hostFull string) (cn conn, err error) {
-	c, err := net.Dial("tcp", config.SocksAddr)
+func createctSocksConnection(url *URL) (cn conn, err error) {
+	c, err := net.Dial("tcp", config.SocksParent)
 	if err != nil {
 		debug.Printf("Can't connect to socks server %v\n", err)
 		return
@@ -60,7 +58,7 @@ func createctSocksConnection(hostFull string) (cn conn, err error) {
 	}
 
 	// version/method selection
-	repBuf := make([]byte, 2, 2)
+	repBuf := make([]byte, 2)
 	_, err = c.Read(repBuf)
 	if err != nil {
 		errl.Printf("read ver/method selection error %v\n", err)
@@ -76,8 +74,8 @@ func createctSocksConnection(hostFull string) (cn conn, err error) {
 	// debug.Println("Socks version selection done")
 
 	// send connect request
-	host, portStr := splitHostPort(hostFull)
-	port, err := strconv.Atoi(portStr)
+	host := url.Host
+	port, err := strconv.Atoi(url.Port)
 	if err != nil {
 		errl.Printf("Should not happen, port error %v\n", port)
 		hasErr = true
@@ -86,15 +84,14 @@ func createctSocksConnection(hostFull string) (cn conn, err error) {
 
 	hostLen := len(host)
 	bufLen := 5 + hostLen + 2 // last 2 is port
-	reqBuf := make([]byte, bufLen, bufLen)
+	reqBuf := make([]byte, bufLen)
 	reqBuf[0] = 5 // version 5
 	reqBuf[1] = 1 // cmd: connect
 	// reqBuf[2] = 0 // rsv: set to 0 when initializing
 	reqBuf[3] = 3 // atyp: domain name
 	reqBuf[4] = byte(hostLen)
 	copy(reqBuf[5:], host)
-	reqBuf[5+hostLen] = byte(port >> 8 & 0xFF)
-	reqBuf[5+hostLen+1] = byte(port) & 0xFF
+	binary.BigEndian.PutUint16(reqBuf[5+hostLen:5+hostLen+2], uint16(port))
 
 	/*
 		if debug {
@@ -110,7 +107,7 @@ func createctSocksConnection(hostFull string) (cn conn, err error) {
 
 	// I'm not clear why the buffer is fixed at 10. The rfc document does not say this.
 	// Polipo set this to 10 and I also observed the reply is always 10.
-	replyBuf := make([]byte, 10, 10)
+	replyBuf := make([]byte, 10)
 	if n, err = c.Read(replyBuf); err != nil {
 		// Seems that socks server will close connection if it can't find host
 		if err != io.EOF {
@@ -122,17 +119,17 @@ func createctSocksConnection(hostFull string) (cn conn, err error) {
 	// debug.Printf("Socks reply length %d\n", n)
 
 	if replyBuf[0] != 5 {
-		errl.Printf("Socks reply connect %s VER %d not supported\n", hostFull, replyBuf[0])
+		errl.Printf("Socks reply connect %s VER %d not supported\n", url.HostPort, replyBuf[0])
 		hasErr = true
 		return zeroConn, socksProtocolErr
 	}
 	if replyBuf[1] != 0 {
-		errl.Printf("Socks reply connect %s error %d\n", hostFull, socksError[replyBuf[1]])
+		errl.Printf("Socks reply connect %s error %d\n", url.HostPort, socksError[replyBuf[1]])
 		hasErr = true
 		return zeroConn, socksProtocolErr
 	}
 	if replyBuf[3] != 1 {
-		errl.Printf("Socks reply connect %s ATYP %d\n", hostFull, replyBuf[3])
+		errl.Printf("Socks reply connect %s ATYP %d\n", url.HostPort, replyBuf[3])
 		hasErr = true
 		return zeroConn, socksProtocolErr
 	}

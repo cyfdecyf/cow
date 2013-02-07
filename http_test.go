@@ -6,19 +6,20 @@ import (
 
 func TestSplitHostPort(t *testing.T) {
 	var testData = []struct {
-		host       string
+		hostPort   string
 		hostNoPort string
 		port       string
 	}{
 		{"google.com", "google.com", ""},
 		{"google.com:80", "google.com", "80"},
 		{"google.com80", "google.com80", ""},
+		{":7777", "", "7777"},
 	}
 
 	for _, td := range testData {
-		h, p := splitHostPort(td.host)
+		h, p := splitHostPort(td.hostPort)
 		if h != td.hostNoPort || p != td.port {
-			t.Errorf("%s returns %v %v", td.host, td.hostNoPort, td.port)
+			t.Errorf("%s returns %v:%v", td.hostPort, td.hostNoPort, td.port)
 		}
 	}
 }
@@ -28,17 +29,21 @@ func TestParseRequestURI(t *testing.T) {
 		rawurl string
 		url    *URL
 	}{
-		{"http://google.com", &URL{"google.com:80", "/", "http"}},
-		{"http://google.com/", &URL{"google.com:80", "/", "http"}},
-		{"https://google.com:80", &URL{"google.com:80", "/", "http"}},
-		{"http://google.com:80/", &URL{"google.com:80", "/", "http"}},
-		{"http://google.com:80/ncr", &URL{"google.com:80", "/ncr", "http"}},
-		{"https://google.com/ncr/tree", &URL{"google.com:443", "/ncr/tree", "http"}},
-		{"google.com:80/", &URL{"google.com:80", "/", "http"}},
-		{"google.com:80", &URL{"google.com:80", "/", "http"}},
-		{"google.com", &URL{"google.com:80", "/", "http"}},
-		{"google.com:80/ncr", &URL{"google.com:80", "/ncr", "http"}},
-		{"google.com/ncr/tree", &URL{"google.com:80", "/ncr/tree", "http"}},
+		// I'm really tired of typing google.com ...
+		{"http://www.g.com", &URL{"www.g.com:80", "www.g.com", "80", "g.com", "", "http"}},
+		{"http://plus.g.com/", &URL{"plus.g.com:80", "plus.g.com", "80", "g.com", "/", "http"}},
+		{"https://g.com:80", &URL{"g.com:80", "g.com", "80", "g.com", "", "http"}},
+		{"http://mail.g.com:80/", &URL{"mail.g.com:80", "mail.g.com", "80", "g.com", "/", "http"}},
+		{"http://g.com:80/ncr", &URL{"g.com:80", "g.com", "80", "g.com", "/ncr", "http"}},
+		{"https://g.com/ncr/tree", &URL{"g.com:443", "g.com", "443", "g.com", "/ncr/tree", "http"}},
+		{"www.g.com.hk:80/", &URL{"www.g.com.hk:80", "www.g.com.hk", "80", "g.com.hk", "/", "http"}},
+		{"g.com.jp:80", &URL{"g.com.jp:80", "g.com.jp", "80", "g.com.jp", "", "http"}},
+		{"g.com", &URL{"g.com:80", "g.com", "80", "g.com", "", "http"}},
+		{"g.com:8000/ncr", &URL{"g.com:8000", "g.com", "8000", "g.com", "/ncr", "http"}},
+		{"g.com/ncr/tree", &URL{"g.com:80", "g.com", "80", "g.com", "/ncr/tree", "http"}},
+		{"simplehost", &URL{"simplehost:80", "simplehost", "80", "", "", "http"}},
+		{"simplehost:8080", &URL{"simplehost:8080", "simplehost", "8080", "", "", "http"}},
+		{"192.168.1.1:8080/", &URL{"192.168.1.1:8080", "192.168.1.1", "8080", "", "/", "http"}},
 	}
 	for _, td := range testData {
 		url, err := ParseRequestURI(td.rawurl)
@@ -54,26 +59,20 @@ func TestParseRequestURI(t *testing.T) {
 		if err != nil {
 			t.Error(td.rawurl, "non nil URL should not report error")
 		}
+		if url.HostPort != td.url.HostPort {
+			t.Error(td.rawurl, "parsed hostPort wrong:", td.url.HostPort, "got", url.HostPort)
+		}
 		if url.Host != td.url.Host {
 			t.Error(td.rawurl, "parsed host wrong:", td.url.Host, "got", url.Host)
 		}
+		if url.Port != td.url.Port {
+			t.Error(td.rawurl, "parsed port wrong:", td.url.Port, "got", url.Port)
+		}
+		if url.Domain != td.url.Domain {
+			t.Error(td.rawurl, "parsed domain wrong:", td.url.Domain, "got", url.Domain)
+		}
 		if url.Path != td.url.Path {
 			t.Error(td.rawurl, "parsed path wrong:", td.url.Path, "got", url.Path)
-		}
-	}
-}
-
-func TestURLToURI(t *testing.T) {
-	var testData = []struct {
-		url URL
-		uri string
-	}{
-		{URL{"google.com", "/ncr", "http"}, "http://google.com/ncr"},
-		{URL{"www.google.com", "/ncr", "https"}, "https://www.google.com/ncr"},
-	}
-	for _, td := range testData {
-		if td.url.toURI() != td.uri {
-			t.Error("URL", td.url.String(), "toURI got", td.url.toURI(), "should be", td.uri)
 		}
 	}
 }

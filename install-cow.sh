@@ -1,27 +1,27 @@
 #!/bin/bash
 
-version=0.3.5
+version=0.5
 
-cpu=`uname -m`
-case $cpu in
+arch=`uname -m`
+case $arch in
     "x86_64")
-        cpu="64"
+        arch="64"
         ;;
-    "i386" | "i486" | "i686")
-        cpu="32"
+    "i386" | "i586" | "i486" | "i686")
+        arch="32"
         ;;
     *)
-        echo "$cpu currently has no precompiled binary"
+        echo "$arch currently has no precompiled binary"
         ;;
 esac
 
 os=`uname -s`
 case $os in
     "Darwin")
-        binary="mac"
+        os="mac"
         ;;
     "Linux")
-        binary="linux"
+        os="linux"
         ;;
     *)
         echo "$os currently has no precompiled binary"
@@ -71,11 +71,13 @@ if [ $os == "Darwin" ]; then
 fi
 
 # Download COW binary
+bin=cow-$os$arch-$version
 tmpbin=/tmp/cow
-binary_url="https://cow-proxy.googlecode.com/files/cow-$binary$cpu-$version"
-echo "Downloading cow binary $binary_url to $tmpbin"
-curl -L "$binary_url" -o $tmpbin || \
+binary_url="https://cow-proxy.googlecode.com/files/$bin.gz"
+echo "Downloading cow binary $binary_url to $tmpbin.gz"
+curl -L "$binary_url" -o $tmpbin.gz || \
     exit_on_fail "Downloading cow binary failed"
+gunzip $tmpbin.gz || exit_on_fail "gunzip $tmpbin.gz failed"
 chmod +x $tmpbin ||
     exit_on_fail "Can't chmod for $tmpbin"
 
@@ -86,7 +88,7 @@ if [ ! -e $config_dir ]; then
     sample_config_base="${doc_base}/sample-config"
     echo "Downloading sample config file to $config_dir" 
     mkdir -p $config_dir || exit_on_fail "Can't create $config_dir directory"
-    for f in rc blocked direct; do
+    for f in rc chou; do
         echo "Downloading $sample_config_base/$f to $config_dir/$f"
         curl -s -L "$sample_config_base/$f" -o $config_dir/$f || \
             exit_on_fail "Downloading sample config file $f failed"

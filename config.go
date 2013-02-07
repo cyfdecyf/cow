@@ -10,32 +10,32 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
-)
-
-var (
-	selfURL127 string // 127.0.0.1:listenAddr
-	selfURLLH  string // localhost:listenAddr
+	"time"
 )
 
 const (
-	version           = "0.3.5"
+	version           = "0.5"
 	defaultListenAddr = "127.0.0.1:7777"
 )
 
 type Config struct {
 	RcFile        string // config file
-	ListenAddr    string
-	SocksAddr     string
+	ListenAddr    []string
+	SocksParent   string
+	HttpParent    string
 	Core          int
 	SshServer     string
-	UpdateBlocked bool
-	UpdateDirect  bool
-	AutoRetry     bool
 	DetectSSLErr  bool
 	LogFile       string
 	AlwaysProxy   bool
 	ShadowSocks   string
 	ShadowPasswd  string
+	ShadowMethod  string // shadowsocks encryption method
+	UserPasswd    string
+	AllowedClient string
+	AuthTimeout   time.Duration
+	DialTimeout   time.Duration
+	ReadTimeout   time.Duration
 
 	// not configurable in config file
 	PrintVer bool
@@ -45,11 +45,9 @@ var config Config
 
 var dsFile struct {
 	dir           string // directory containing config file and blocked site list
-	blocked       string // contains blocked domains
-	direct        string // contains sites that can be directly accessed
-	alwaysDirect  string
-	alwaysBlocked string
-	chou          string // chou feng, sites which will be temporary blocked
+	alwaysBlocked string // blocked sites specified by user
+	alwaysDirect  string // direct sites specified by user
+	stat          string // site visit statistics
 }
 
 func printVersion() {
@@ -60,29 +58,33 @@ func init() {
 	initConfigDir()
 	// fmt.Println("home dir:", homeDir)
 
-	dsFile.blocked = path.Join(dsFile.dir, blockedFname)
-	dsFile.direct = path.Join(dsFile.dir, directFname)
 	dsFile.alwaysBlocked = path.Join(dsFile.dir, alwaysBlockedFname)
 	dsFile.alwaysDirect = path.Join(dsFile.dir, alwaysDirectFname)
-	dsFile.chou = path.Join(dsFile.dir, chouFname)
+	dsFile.stat = path.Join(dsFile.dir, statFname)
 
-	config.UpdateBlocked = true
-	config.UpdateDirect = true
-	config.AutoRetry = false
-	config.DetectSSLErr = true
+	config.DetectSSLErr = false
 	config.AlwaysProxy = false
+
+	config.AuthTimeout = 2 * time.Hour
+	config.DialTimeout = defaultDialTimeout
+	config.ReadTimeout = defaultReadTimeout
 }
 
 func parseCmdLineConfig() *Config {
 	var c Config
+	var listenAddr string
 	flag.StringVar(&c.RcFile, "rc", path.Join(dsFile.dir, rcFname), "configuration file")
-	flag.StringVar(&c.ListenAddr, "listen", "", "proxy server listen address, default to "+defaultListenAddr)
-	flag.StringVar(&c.SocksAddr, "socks", "", "socks proxy address")
+	// Specifying listen default value to StringVar would override config file options
+	flag.StringVar(&listenAddr, "listen", "", "proxy server listen address, default to "+defaultListenAddr)
+	flag.StringVar(&c.SocksParent, "socksParent", "", "parent socks proxy address")
+	flag.StringVar(&c.HttpParent, "httpParent", "", "parent http proxy address")
 	flag.IntVar(&c.Core, "core", 2, "number of cores to use")
-	flag.StringVar(&c.SshServer, "sshServer", "", "remote server which will ssh to and provide sock server")
-	flag.StringVar(&c.LogFile, "logFile", "", "write output to file, empty means stdout")
+	flag.StringVar(&c.SshServer, "sshServer", "", "remote server which will ssh to and provide socks server")
+	flag.StringVar(&c.LogFile, "logFile", "", "write output to file")
 	flag.StringVar(&c.ShadowSocks, "shadowSocks", "", "shadowsocks server address")
 	flag.StringVar(&c.ShadowPasswd, "shadowPasswd", "", "shadowsocks password")
+	flag.StringVar(&c.ShadowMethod, "shadowMethod", "", "shadowsocks encryption method, empty string or rc4")
+	flag.StringVar(&c.UserPasswd, "userPasswd", "", "user name and password for authentication")
 	flag.BoolVar(&c.PrintVer, "version", false, "print version")
 
 	// Bool options can't be specified on command line because the flag
@@ -90,38 +92,73 @@ func parseCmdLineConfig() *Config {
 	// given on command line, so we don't know if the option in config file
 	// should be override.
 
-	// flag.BoolVar(&c.AutoRetry, "autoRetry", false, "automatically retry timeout requests using socks proxy")
-	// flag.BoolVar(&c.UpdateBlocked, "updateBlocked", true, "update blocked site list")
-	// flag.BoolVar(&c.UpdateDirect, "updateDirect", true, "update direct site list")
 	// flag.BoolVar(&c.DetectSSLErr, "detectSSLErr", true, "detect SSL error based on how soon client closes connection")
 	// flag.BoolVar(&c.AlwaysProxy, "alwaysProxy", false, "always use parent proxy")
 
 	flag.Parse()
+	if listenAddr != "" {
+		c.ListenAddr = []string{listenAddr}
+	}
 	return &c
 }
 
-func parseBool(v string, msg string) bool {
+func parseBool(v, msg string) bool {
 	switch v {
 	case "true":
 		return true
 	case "false":
 		return false
 	default:
-		fmt.Printf("%s should be true or false\n", msg)
+		fmt.Printf("Config error: %s should be true or false\n", msg)
 		os.Exit(1)
 	}
 	return false
 }
 
+func parseInt(val, msg string) (i int) {
+	var err error
+	if i, err = strconv.Atoi(val); err != nil {
+		fmt.Printf("Config error: %s should be an integer\n", msg)
+		os.Exit(1)
+	}
+	return
+}
+
+func parseDuration(val, msg string) (d time.Duration) {
+	var err error
+	if d, err = time.ParseDuration(val); err != nil {
+		fmt.Printf("Config error: %s %v\n", msg, err)
+		os.Exit(1)
+	}
+	return
+}
+
 type configParser struct{}
 
 func (p configParser) ParseListen(val string) {
-	config.ListenAddr = val
+	arr := strings.Split(val, ",")
+	config.ListenAddr = make([]string, len(arr))
+	for i, s := range arr {
+		s = strings.TrimSpace(s)
+		host, port := splitHostPort(s)
+		if port == "" {
+			fmt.Printf("listen address %s has no port\n", s)
+			os.Exit(1)
+		}
+		if host == "" || host == "0.0.0.0" {
+			if len(arr) > 1 {
+				fmt.Printf("Too much listen addresses: "+
+					"%s represents all ip addresses on this host.\n", s)
+				os.Exit(1)
+			}
+		}
+		config.ListenAddr[i] = s
+	}
 }
 
 func isServerAddrValid(val string) bool {
 	if val == "" {
-		return true
+		return false
 	}
 	_, port := splitHostPort(val)
 	if port == "" {
@@ -130,24 +167,36 @@ func isServerAddrValid(val string) bool {
 	return true
 }
 
+var hasSocksOrShadowSocksProxy bool
+var hasHttpParentProxy bool
+
 func (p configParser) ParseSocks(val string) {
+	fmt.Println("socks option is going to be renamed to socksParent in the future, please change it")
+	p.ParseSocksParent(val)
+}
+
+func (p configParser) ParseSocksParent(val string) {
 	if !isServerAddrValid(val) {
-		fmt.Println("socks server must have port specified")
+		fmt.Println("parent socks server must have port specified")
 		os.Exit(1)
 	}
-	config.SocksAddr = val
+	config.SocksParent = val
+	hasSocksOrShadowSocksProxy = true
+	parentProxyCreator = append(parentProxyCreator, createctSocksConnection)
+}
+
+func (p configParser) ParseHttpParent(val string) {
+	if !isServerAddrValid(val) {
+		fmt.Println("parent http server must have port specified")
+		os.Exit(1)
+	}
+	config.HttpParent = val
+	hasHttpParentProxy = true
+	parentProxyCreator = append(parentProxyCreator, createHttpProxyConnection)
 }
 
 func (p configParser) ParseCore(val string) {
-	if val == "" {
-		return
-	}
-	var err error
-	config.Core, err = strconv.Atoi(val)
-	if err != nil {
-		fmt.Printf("Config error: core number %s %v", val, err)
-		os.Exit(1)
-	}
+	config.Core = parseInt(val, "core")
 }
 
 func (p configParser) ParseSshServer(val string) {
@@ -155,15 +204,18 @@ func (p configParser) ParseSshServer(val string) {
 }
 
 func (p configParser) ParseUpdateBlocked(val string) {
-	config.UpdateBlocked = parseBool(val, "updateBlocked")
+	// config.UpdateBlocked = parseBool(val, "updateBlocked")
+	fmt.Println("updateBlocked option will be removed in future, please remove it")
 }
 
 func (p configParser) ParseUpdateDirect(val string) {
-	config.UpdateDirect = parseBool(val, "updateDirect")
+	// config.UpdateDirect = parseBool(val, "updateDirect")
+	fmt.Println("updateDirect option will be removed in future, please remove it")
 }
 
 func (p configParser) ParseAutoRetry(val string) {
-	config.AutoRetry = parseBool(val, "autoRetry")
+	// config.AutoRetry = parseBool(val, "autoRetry")
+	fmt.Println("autoRetry option will be removed in future, please remove it")
 }
 
 func (p configParser) ParseDetectSSLErr(val string) {
@@ -184,10 +236,39 @@ func (p configParser) ParseShadowSocks(val string) {
 		os.Exit(1)
 	}
 	config.ShadowSocks = val
+	hasSocksOrShadowSocksProxy = true
+	parentProxyCreator = append(parentProxyCreator, createShadowSocksConnection)
 }
 
 func (p configParser) ParseShadowPasswd(val string) {
 	config.ShadowPasswd = val
+}
+
+func (p configParser) ParseShadowMethod(val string) {
+	config.ShadowMethod = val
+}
+
+// Put actual authentication related config parsing in auth.go, so config.go
+// doesn't need to know the details of authentication implementation.
+
+func (p configParser) ParseUserPasswd(val string) {
+	config.UserPasswd = val
+}
+
+func (p configParser) ParseAllowedClient(val string) {
+	config.AllowedClient = val
+}
+
+func (p configParser) ParseAuthTimeout(val string) {
+	config.AuthTimeout = parseDuration(val, "authTimeout")
+}
+
+func (p configParser) ParseReadTimeout(val string) {
+	config.ReadTimeout = parseDuration(val, "readTimeout")
+}
+
+func (p configParser) ParseDialTimeout(val string) {
+	config.DialTimeout = parseDuration(val, "dialTimeout")
 }
 
 func parseConfig(path string) {
@@ -220,13 +301,8 @@ func parseConfig(path string) {
 			os.Exit(1)
 		}
 
-		if line == "" {
-			continue
-		}
-
 		line = strings.TrimSpace(line)
-		// Ignore comment
-		if line[0] == '#' {
+		if line == "" || line[0] == '#' {
 			continue
 		}
 
@@ -236,6 +312,9 @@ func parseConfig(path string) {
 			os.Exit(1)
 		}
 		key, val := strings.TrimSpace(v[0]), strings.TrimSpace(v[1])
+		if val == "" {
+			continue
+		}
 
 		methodName := "Parse" + strings.ToUpper(key[0:1]) + key[1:]
 		method := parser.MethodByName(methodName)
@@ -248,8 +327,8 @@ func parseConfig(path string) {
 	}
 }
 
-func updateConfig(new *Config) {
-	newVal := reflect.ValueOf(new).Elem()
+func updateConfig(nc *Config) {
+	newVal := reflect.ValueOf(nc).Elem()
 	oldVal := reflect.ValueOf(&config).Elem()
 
 	// typeOfT := newVal.Type()
@@ -271,13 +350,28 @@ func updateConfig(new *Config) {
 			}
 		}
 	}
-	if config.ListenAddr == "" {
-		config.ListenAddr = defaultListenAddr
+	if nc.ListenAddr != nil {
+		config.ListenAddr = nc.ListenAddr
+	}
+	if config.ListenAddr == nil {
+		config.ListenAddr = []string{defaultListenAddr}
 	}
 }
 
-func setSelfURL() {
-	_, port := splitHostPort(config.ListenAddr)
-	selfURL127 = "127.0.0.1:" + port
-	selfURLLH = "localhost:" + port
+func mkConfigDir() (err error) {
+	if dsFile.dir == "" {
+		return os.ErrNotExist
+	}
+	exists, err := isDirExists(dsFile.dir)
+	if err != nil {
+		errl.Printf("Error checking config directory: %v\n", err)
+		return
+	}
+	if exists {
+		return
+	}
+	if err = os.Mkdir(dsFile.dir, 0755); err != nil {
+		errl.Printf("Error create config directory %s: %v\n", dsFile.dir, err)
+	}
+	return
 }
