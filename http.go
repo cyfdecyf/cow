@@ -93,6 +93,7 @@ func (rp *Response) String() string {
 type URL struct {
 	HostPort string // must contain port
 	Host     string // no port
+	Port     string
 	Domain   string
 	Path     string
 	Scheme   string
@@ -169,12 +170,14 @@ func ParseRequestURI(rawurl string) (*URL, error) {
 	if port == "" {
 		if len(scheme) == 4 {
 			hostport = net.JoinHostPort(host, "80")
+			port = "80"
 		} else {
 			hostport = net.JoinHostPort(host, "443")
+			port = "443"
 		}
 	}
 
-	return &URL{hostport, host, host2Domain(host), path, scheme}, nil
+	return &URL{hostport, host, port, host2Domain(host), path, scheme}, nil
 }
 
 // headers of interest to a proxy

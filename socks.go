@@ -30,17 +30,14 @@ var socksMsgVerMethodSelection = []byte{
 	0,   // no authorization required
 }
 
-var hasSocksServer = false
-
 func initSocksServer() {
-	hasSocksServer = (config.SocksAddr != "")
-	if hasSocksServer {
-		debug.Println("has socks server:", config.SocksAddr)
+	if len(config.SocksParent) != 0 {
+		debug.Println("has socks server:", config.SocksParent)
 	}
 }
 
-func createctSocksConnection(hostFull string) (cn conn, err error) {
-	c, err := net.Dial("tcp", config.SocksAddr)
+func createctSocksConnection(url *URL) (cn conn, err error) {
+	c, err := net.Dial("tcp", config.SocksParent)
 	if err != nil {
 		debug.Printf("Can't connect to socks server %v\n", err)
 		return
@@ -77,8 +74,8 @@ func createctSocksConnection(hostFull string) (cn conn, err error) {
 	// debug.Println("Socks version selection done")
 
 	// send connect request
-	host, portStr := splitHostPort(hostFull)
-	port, err := strconv.Atoi(portStr)
+	host := url.Host
+	port, err := strconv.Atoi(url.Port)
 	if err != nil {
 		errl.Printf("Should not happen, port error %v\n", port)
 		hasErr = true
@@ -122,17 +119,17 @@ func createctSocksConnection(hostFull string) (cn conn, err error) {
 	// debug.Printf("Socks reply length %d\n", n)
 
 	if replyBuf[0] != 5 {
-		errl.Printf("Socks reply connect %s VER %d not supported\n", hostFull, replyBuf[0])
+		errl.Printf("Socks reply connect %s VER %d not supported\n", url.HostPort, replyBuf[0])
 		hasErr = true
 		return zeroConn, socksProtocolErr
 	}
 	if replyBuf[1] != 0 {
-		errl.Printf("Socks reply connect %s error %d\n", hostFull, socksError[replyBuf[1]])
+		errl.Printf("Socks reply connect %s error %d\n", url.HostPort, socksError[replyBuf[1]])
 		hasErr = true
 		return zeroConn, socksProtocolErr
 	}
 	if replyBuf[3] != 1 {
-		errl.Printf("Socks reply connect %s ATYP %d\n", hostFull, replyBuf[3])
+		errl.Printf("Socks reply connect %s ATYP %d\n", url.HostPort, replyBuf[3])
 		hasErr = true
 		return zeroConn, socksProtocolErr
 	}

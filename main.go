@@ -46,15 +46,14 @@ func main() {
 	initAuth()
 	initSocksServer()
 	initShadowSocks()
+	initSiteStat()
+	initPAC()
 
-	if !hasSocksServer && !hasShadowSocksServer {
-		info.Println("no socks/shadowsocks server, can't handle blocked sites")
+	if len(parentProxyCreator) == 0 {
+		info.Println("no parent proxy server, can't handle blocked sites")
 	} else {
 		hasParentProxy = true
 	}
-
-	initSiteStat()
-	initPAC()
 
 	/*
 		if *cpuprofile != "" {

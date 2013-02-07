@@ -482,21 +482,23 @@ func maybeBlocked(err error) bool {
 	return isErrTimeout(err) || isErrConnReset(err)
 }
 
-const connFailedErrCode = "504 Connection failed"
+type parentProxyConnectionFunc func(*URL) (conn, error)
+
+var parentProxyCreator = []parentProxyConnectionFunc{}
+
+func createHttpProxyConnection(url *URL) (cn conn, err error) {
+	// TODO
+	return zeroConn, nil
+}
 
 func createParentProxyConnection(url *URL) (srvconn conn, err error) {
-	// Try shadowsocks server first
-	if hasShadowSocksServer {
-		if srvconn, err = createShadowSocksConnection(url.HostPort); err == nil {
+	// Try parent proxy in the order specified in the config
+	for _, f := range parentProxyCreator {
+		if srvconn, err = f(url); err == nil {
 			return
 		}
 	}
-	if hasSocksServer {
-		if srvconn, err = createctSocksConnection(url.HostPort); err == nil {
-			return
-		}
-	}
-	if hasParentProxy {
+	if len(parentProxyCreator) != 0 {
 		return zeroConn, errFailedParentProxy
 	}
 	return zeroConn, errNoParentProxy
@@ -551,7 +553,7 @@ fail:
 	if r.Method == "CONNECT" {
 		return zeroConn, errShouldClose
 	}
-	sendErrorPage(c, connFailedErrCode, err.Error(),
+	sendErrorPage(c, "504 Connection failed", err.Error(),
 		genErrMsg(r, "Connection failed."))
 	return zeroConn, errPageSent
 }
