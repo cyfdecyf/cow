@@ -5,7 +5,6 @@ var blockedDomainList = []string{
 	"j.mp",
 	"bitly.com",
 	"fbcdn.net",
-	"facebook.net",
 	"facebook.com",
 	"plus.google.com",
 	"t.co",
