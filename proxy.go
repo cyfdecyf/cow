@@ -280,7 +280,7 @@ func (c *clientConn) serve() {
 				if r.canRetry() {
 					goto retry
 				}
-				debug.Println("Can't retry tryCnt=%d responseNotSent=%v\n", r.tryCnt, r.responseNotSent())
+				debug.Printf("Can't retry tryCnt=%d responseNotSent=%v\n", r.tryCnt, r.responseNotSent())
 				if r.responseNotSent() {
 					sendErrorPage(c, "502 retry failed", "Can't finish HTTP request",
 						genErrMsg(r, "Has tried several times."))

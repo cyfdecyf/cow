@@ -167,7 +167,6 @@ func isServerAddrValid(val string) bool {
 	return true
 }
 
-var hasSocksOrShadowSocksProxy bool
 var hasHttpParentProxy bool
 
 func (p configParser) ParseSocks(val string) {
@@ -181,7 +180,6 @@ func (p configParser) ParseSocksParent(val string) {
 		os.Exit(1)
 	}
 	config.SocksParent = val
-	hasSocksOrShadowSocksProxy = true
 	parentProxyCreator = append(parentProxyCreator, createctSocksConnection)
 }
 
@@ -236,7 +234,6 @@ func (p configParser) ParseShadowSocks(val string) {
 		os.Exit(1)
 	}
 	config.ShadowSocks = val
-	hasSocksOrShadowSocksProxy = true
 	parentProxyCreator = append(parentProxyCreator, createShadowSocksConnection)
 }
 

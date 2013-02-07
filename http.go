@@ -348,7 +348,7 @@ func parseRequest(c *clientConn) (r *Request, err error) {
 	}
 	if r.Method == "CONNECT" {
 		r.isConnect = true
-	} else if hasSocksOrShadowSocksProxy {
+	} else {
 		// Generate normal HTTP request line
 		r.raw.WriteString(r.Method + " ")
 		r.raw.WriteString(r.URL.Path)
