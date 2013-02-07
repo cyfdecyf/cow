@@ -158,7 +158,7 @@ func (p configParser) ParseListen(val string) {
 
 func isServerAddrValid(val string) bool {
 	if val == "" {
-		return true
+		return false
 	}
 	_, port := splitHostPort(val)
 	if port == "" {
@@ -166,6 +166,9 @@ func isServerAddrValid(val string) bool {
 	}
 	return true
 }
+
+var hasSocksOrShadowSocksProxy bool
+var hasHttpParentProxy bool
 
 func (p configParser) ParseSocks(val string) {
 	fmt.Println("socks option is going to be renamed to socksParent in the future, please change it")
@@ -178,6 +181,7 @@ func (p configParser) ParseSocksParent(val string) {
 		os.Exit(1)
 	}
 	config.SocksParent = val
+	hasSocksOrShadowSocksProxy = true
 	parentProxyCreator = append(parentProxyCreator, createctSocksConnection)
 }
 
@@ -187,6 +191,7 @@ func (p configParser) ParseHttpParent(val string) {
 		os.Exit(1)
 	}
 	config.HttpParent = val
+	hasHttpParentProxy = true
 	parentProxyCreator = append(parentProxyCreator, createHttpProxyConnection)
 }
 
@@ -231,6 +236,7 @@ func (p configParser) ParseShadowSocks(val string) {
 		os.Exit(1)
 	}
 	config.ShadowSocks = val
+	hasSocksOrShadowSocksProxy = true
 	parentProxyCreator = append(parentProxyCreator, createShadowSocksConnection)
 }
 

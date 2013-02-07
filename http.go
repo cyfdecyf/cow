@@ -31,10 +31,12 @@ const (
 )
 
 type Request struct {
-	Method  string
-	URL     *URL
-	contBuf *bytes.Buffer // will be non nil when retrying request
-	raw     bytes.Buffer
+	Method      string
+	URL         *URL
+	contBuf     *bytes.Buffer // will be non nil when retrying request
+	raw         bytes.Buffer
+	origReqLine []byte // original request line from client, used for http parent proxy
+	headerStart int    // start of header in raw
 	Header
 	isConnect bool
 	state     rqState
@@ -114,7 +116,6 @@ func (url *URL) HostIsIP() bool {
 // For port, return empty string if no port specified.
 func splitHostPort(s string) (host, port string) {
 	// Common case should has no port, check the last char first
-	// Update: as port is always added, this is no longer common case in COW
 	if !IsDigit(s[len(s)-1]) {
 		return s, ""
 	}
@@ -156,13 +157,14 @@ func ParseRequestURI(rawurl string) (*URL, error) {
 	}
 
 	var hostport, host, port, path string
-	f = strings.SplitN(rest, "/", 2)
-	hostport = f[0]
-	if len(f) == 1 || f[1] == "" {
-		path = "/"
+	id := strings.Index(rest, "/")
+	if id == -1 {
+		hostport = rest
 	} else {
-		path = "/" + f[1]
+		hostport = rest[:id]
+		path = rest[id:]
 	}
+
 	// Must add port in host so it can be used as key to find the correct
 	// server connection.
 	// e.g. google.com:80 and google.com:443 should use different connections.
@@ -346,12 +348,20 @@ func parseRequest(c *clientConn) (r *Request, err error) {
 		return
 	}
 	if r.Method == "CONNECT" {
-		// Consume remaining header and just return. Headers are not used for
-		// CONNECT method.
 		r.isConnect = true
+	} else if hasSocksOrShadowSocksProxy {
+		// Generate normal HTTP request line
+		r.raw.WriteString(r.Method + " ")
+		r.raw.WriteString(r.URL.Path)
+		r.raw.WriteString(" HTTP/1.1\r\n")
 	}
 
-	r.genRequestLine()
+	// for http parent proxy, always need the initial request line
+	if hasHttpParentProxy {
+		r.origReqLine = make([]byte, len(s))
+		copy(r.origReqLine, s)
+		r.headerStart = r.raw.Len()
+	}
 
 	// Read request header
 	if err = r.parseHeader(reader, &r.raw, r.URL); err != nil {
@@ -364,11 +374,6 @@ func parseRequest(c *clientConn) (r *Request, err error) {
 	}
 	r.raw.WriteString(CRLF)
 	return
-}
-
-func (r *Request) genRequestLine() {
-	r.raw.WriteString(r.Method + " " + r.URL.Path)
-	r.raw.WriteString(" HTTP/1.1\r\n")
 }
 
 func (r *Request) responseNotSent() bool {
