@@ -21,7 +21,8 @@ const (
 type Config struct {
 	RcFile        string // config file
 	ListenAddr    []string
-	SocksAddr     string
+	SocksParent   string
+	HttpParent    string
 	Core          int
 	SshServer     string
 	DetectSSLErr  bool
@@ -75,9 +76,10 @@ func parseCmdLineConfig() *Config {
 	flag.StringVar(&c.RcFile, "rc", path.Join(dsFile.dir, rcFname), "configuration file")
 	// Specifying listen default value to StringVar would override config file options
 	flag.StringVar(&listenAddr, "listen", "", "proxy server listen address, default to "+defaultListenAddr)
-	flag.StringVar(&c.SocksAddr, "socks", "", "socks proxy address")
+	flag.StringVar(&c.SocksParent, "socksParent", "", "parent socks proxy address")
+	flag.StringVar(&c.HttpParent, "httpParent", "", "parent http proxy address")
 	flag.IntVar(&c.Core, "core", 2, "number of cores to use")
-	flag.StringVar(&c.SshServer, "sshServer", "", "remote server which will ssh to and provide sock server")
+	flag.StringVar(&c.SshServer, "sshServer", "", "remote server which will ssh to and provide socks server")
 	flag.StringVar(&c.LogFile, "logFile", "", "write output to file")
 	flag.StringVar(&c.ShadowSocks, "shadowSocks", "", "shadowsocks server address")
 	flag.StringVar(&c.ShadowPasswd, "shadowPasswd", "", "shadowsocks password")
@@ -156,7 +158,7 @@ func (p configParser) ParseListen(val string) {
 
 func isServerAddrValid(val string) bool {
 	if val == "" {
-		return true
+		return false
 	}
 	_, port := splitHostPort(val)
 	if port == "" {
@@ -165,12 +167,32 @@ func isServerAddrValid(val string) bool {
 	return true
 }
 
+var hasSocksOrShadowSocksProxy bool
+var hasHttpParentProxy bool
+
 func (p configParser) ParseSocks(val string) {
+	fmt.Println("socks option is going to be renamed to socksParent in the future, please change it")
+	p.ParseSocksParent(val)
+}
+
+func (p configParser) ParseSocksParent(val string) {
 	if !isServerAddrValid(val) {
-		fmt.Println("socks server must have port specified")
+		fmt.Println("parent socks server must have port specified")
 		os.Exit(1)
 	}
-	config.SocksAddr = val
+	config.SocksParent = val
+	hasSocksOrShadowSocksProxy = true
+	parentProxyCreator = append(parentProxyCreator, createctSocksConnection)
+}
+
+func (p configParser) ParseHttpParent(val string) {
+	if !isServerAddrValid(val) {
+		fmt.Println("parent http server must have port specified")
+		os.Exit(1)
+	}
+	config.HttpParent = val
+	hasHttpParentProxy = true
+	parentProxyCreator = append(parentProxyCreator, createHttpProxyConnection)
 }
 
 func (p configParser) ParseCore(val string) {
@@ -214,6 +236,8 @@ func (p configParser) ParseShadowSocks(val string) {
 		os.Exit(1)
 	}
 	config.ShadowSocks = val
+	hasSocksOrShadowSocksProxy = true
+	parentProxyCreator = append(parentProxyCreator, createShadowSocksConnection)
 }
 
 func (p configParser) ParseShadowPasswd(val string) {

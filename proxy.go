@@ -40,6 +40,7 @@ const (
 	ctDirectConn
 	ctSocksConn
 	ctShadowctSocksConn
+	ctHttpProxyConn
 )
 
 type serverConnState byte
@@ -471,8 +472,8 @@ func createctDirectConnection(url *URL, si *SiteInfo) (conn, error) {
 	c, err := net.DialTimeout("tcp", url.HostPort, to)
 	if err != nil {
 		// Time out is very likely to be caused by GFW
-		debug.Printf("Connecting to: %s %v\n", url.HostPort, err)
-		return conn{nil, ctNilConn}, err
+		debug.Printf("Error connecting to: %s %v\n", url.HostPort, err)
+		return zeroConn, err
 	}
 	debug.Println("Connected to", url.HostPort)
 	return conn{c, ctDirectConn}, nil
@@ -482,21 +483,28 @@ func maybeBlocked(err error) bool {
 	return isErrTimeout(err) || isErrConnReset(err)
 }
 
-const connFailedErrCode = "504 Connection failed"
+type parentProxyConnectionFunc func(*URL) (conn, error)
+
+var parentProxyCreator = []parentProxyConnectionFunc{}
+
+func createHttpProxyConnection(url *URL) (cn conn, err error) {
+	c, err := net.Dial("tcp", config.HttpParent)
+	if err != nil {
+		debug.Printf("Error connecting to: %s %v\n", url.HostPort, err)
+		return zeroConn, err
+	}
+	debug.Println("Connected to http parent proxy")
+	return conn{c, ctHttpProxyConn}, nil
+}
 
 func createParentProxyConnection(url *URL) (srvconn conn, err error) {
-	// Try shadowsocks server first
-	if hasShadowSocksServer {
-		if srvconn, err = createShadowSocksConnection(url.HostPort); err == nil {
+	// Try parent proxy in the order specified in the config
+	for _, f := range parentProxyCreator {
+		if srvconn, err = f(url); err == nil {
 			return
 		}
 	}
-	if hasSocksServer {
-		if srvconn, err = createctSocksConnection(url.HostPort); err == nil {
-			return
-		}
-	}
-	if hasParentProxy {
+	if len(parentProxyCreator) != 0 {
 		return zeroConn, errFailedParentProxy
 	}
 	return zeroConn, errNoParentProxy
@@ -551,7 +559,7 @@ fail:
 	if r.Method == "CONNECT" {
 		return zeroConn, errShouldClose
 	}
-	sendErrorPage(c, connFailedErrCode, err.Error(),
+	sendErrorPage(c, "504 Connection failed", err.Error(),
 		genErrMsg(r, "Connection failed."))
 	return zeroConn, errPageSent
 }
@@ -645,6 +653,7 @@ func copyServer2Client(sv *serverConn, c *clientConn, r *Request) (err error) {
 	directVisited := false
 	const directThreshold = 4096
 	for {
+		// debug.Println("srv->cli")
 		sv.setReadTimeout("srv->cli")
 		if n, err = sv.Read(buf); err != nil {
 			if err == io.EOF {
@@ -768,10 +777,20 @@ var connEstablished = []byte("HTTP/1.0 200 Connection established\r\nProxy-agent
 func (sv *serverConn) doConnect(r *Request, c *clientConn) (err error) {
 	r.state = rsCreated
 
-	if !r.isRetry() {
+	if sv.connType == ctHttpProxyConn {
+		// debug.Printf("%s Sending CONNECT request to http proxy server\n", c.RemoteAddr())
+		if err = sv.sendHTTPProxyRequest(r, c); err != nil {
+			if debug {
+				debug.Printf("%s Error sending CONNECT request to http proxy server: %v\n",
+					c.RemoteAddr(), err)
+			}
+		}
+	} else if !r.isRetry() {
 		// debug.Printf("send connection confirmation to %s->%s\n", c.RemoteAddr(), r.URL.HostPort)
 		if _, err = c.Write(connEstablished); err != nil {
-			debug.Printf("%v Error sending 200 Connecion established: %v\n", c.RemoteAddr(), err)
+			if debug {
+				debug.Printf("%v Error sending 200 Connecion established: %v\n", c.RemoteAddr(), err)
+			}
 			sv.Close()
 			return err
 		}
@@ -802,6 +821,16 @@ func (sv *serverConn) doConnect(r *Request, c *clientConn) (err error) {
 	return
 }
 
+func (sv *serverConn) sendHTTPProxyRequest(r *Request, c *clientConn) (err error) {
+	if _, err = sv.Write(r.origReqLine); err != nil {
+		return c.handleServerWriteError(r, sv, err, "sending proxy request line to server")
+	}
+	if _, err = sv.Write(r.raw.Bytes()[r.headerStart:]); err != nil {
+		return c.handleServerWriteError(r, sv, err, "sending proxy request header to server")
+	}
+	return
+}
+
 // Do HTTP request other that CONNECT
 func (sv *serverConn) doRequest(r *Request, c *clientConn) (err error) {
 	if c.buf == nil {
@@ -810,8 +839,14 @@ func (sv *serverConn) doRequest(r *Request, c *clientConn) (err error) {
 	}
 	r.state = rsCreated
 	// Send request to the server
-	if _, err = sv.Write(r.raw.Bytes()); err != nil {
-		return c.handleServerWriteError(r, sv, err, "sending request to server")
+	if sv.connType != ctHttpProxyConn {
+		if _, err = sv.Write(r.raw.Bytes()); err != nil {
+			return c.handleServerWriteError(r, sv, err, "sending request to server")
+		}
+	} else {
+		if err = sv.sendHTTPProxyRequest(r, c); err != nil {
+			return
+		}
 	}
 
 	// Send request body

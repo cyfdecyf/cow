@@ -1,5 +1,6 @@
-0.5 (2013-02-01)
+0.5 (not released)
 
+    * Support parent HTTP proxy (such as goagent)
     * Work more automatically: because of this, updateBlocked, updateDirect, 
     autoRetry options and chou file are removed
     * Record direct/blocked visit count to make blocked/direct site handling
