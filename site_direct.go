@@ -84,6 +84,7 @@ var directDomainList = []string{
 	"huaban.com", // 又拍云的几个
 	"yupoo.com",
 	"upyun.com",
+	"upaiyun.com",
 
 	// 新闻门户
 	"ifanr.cn",
