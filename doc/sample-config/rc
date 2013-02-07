@@ -7,8 +7,8 @@ listen = 127.0.0.1:7777
 # 日志文件路径，空字符串表示 stdout
 logFile =
 
-# COW 默认仅对被墙网站使用二级代理（可以是 SOCKS5 或 shadowsocks 代理）
-# 总使用二级代理设置为 true 后，所有网站都通过二级代理访问
+# COW 默认仅对被墙网站使用二级代理
+# 下面选项设置为 true 后，所有网站都通过二级代理访问
 #alwaysProxy = false
 
 # 若同时指定多个二级代理，COW 将按照配置文件中出现的顺序尝试连接二级代理
@@ -18,10 +18,9 @@ logFile =
 #############################
 
 # SOCKS5 代理地址
-socksParent = 127.0.0.1:1080
+#socksParent = 127.0.0.1:1080
 
-# 你可以注释掉下面的选项，自己启动 socks 代理
-# 或者让 COW 执行 ssh 命令创建本地 socks 代理，并在 ssh 断开后重连
+# 下面的选项可以让 COW 执行 ssh 命令创建本地 socks 代理，并在 ssh 断开后重连
 # 注意这一功能需要配置好 ssh public key authentication
 #
 # 若指定该选项，COW 将执行以下命令：
@@ -41,6 +40,13 @@ socksParent = 127.0.0.1:1080
 #shadowPasswd = barfoo!
 # shadowsocks 加密方法, 空字符串或者 rc4
 #shadowMethod = 
+
+#############################
+# HTTP 代理
+#############################
+
+# 可使用 goagent 等 HTTP 代理作为二级代理翻墙
+#httpParent = 127.0.0.1:8087
 
 #############################
 # 认证
