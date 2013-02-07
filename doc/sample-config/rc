@@ -12,7 +12,7 @@ socks = 127.0.0.1:1080
 #sshServer = user@server[:port]
 
 # shadowsocks server address
-shadowsocks = 1.1.1.1:8838
+shadowSocks = 1.1.1.1:8838
 # shadowsocks password
 shadowPasswd = barfoo!
 
