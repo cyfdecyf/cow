@@ -71,12 +71,13 @@ if [ $os == "Darwin" ]; then
 fi
 
 # Download COW binary
-bin=cow-$os$arch-$version.gz
-tmpbin=/tmp/$bin
-binary_url="https://cow-proxy.googlecode.com/files/$bin"
-echo "Downloading cow binary $binary_url to $tmpbin"
-curl -L "$binary_url" -o $tmpbin || \
+bin=cow-$os$arch-$version
+tmpbin=/tmp/cow
+binary_url="https://cow-proxy.googlecode.com/files/$bin.gz"
+echo "Downloading cow binary $binary_url to $tmpbin.gz"
+curl -L "$binary_url" -o $tmpbin.gz || \
     exit_on_fail "Downloading cow binary failed"
+gunzip $tmpbin.gz || exit_on_fail "gunzip $tmpbin.gz failed"
 chmod +x $tmpbin ||
     exit_on_fail "Can't chmod for $tmpbin"
 
@@ -108,7 +109,6 @@ fi
 
 # Move binary to install directory
 echo "Move $tmpbin to $install_dir (will run sudo if no write permission to install directory)"
-gunzip $tmpbin
 if [ -w $install_dir ]; then
     mv $tmpbin $install_dir
 else

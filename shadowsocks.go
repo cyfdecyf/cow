@@ -22,7 +22,7 @@ func initShadowSocks() {
 			fmt.Println("Creating shadowsocks cipher:", err)
 			os.Exit(1)
 		}
-		debug.Println("shadowsocks server:", config.ShadowSocks)
+		fmt.Println("shadowsocks server:", config.ShadowSocks)
 		return
 	}
 	if (config.ShadowSocks != "" && config.ShadowPasswd == "") ||
