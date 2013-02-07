@@ -7,13 +7,17 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"reflect"
+	// "reflect"
 	"strconv"
 	"strings"
 	"time"
 )
 
-var _ = reflect.TypeOf
+// var _ = reflect.TypeOf
+
+// Explicitly specify buffer size to avoid unnecessary copy using
+// bufio.Reader's Read
+const bufSize = 4096
 
 // Close client connection it no new request received in 1 minute.
 const clientConnTimeout = 60 * time.Second
@@ -145,10 +149,6 @@ func (py *Proxy) Serve(done chan byte) {
 		go c.serve()
 	}
 }
-
-// Explicitly specify buffer size to avoid unnecessary copy using
-// bufio.Reader's Read
-const bufSize = 4096
 
 func newClientConn(rwc net.Conn, proxy *Proxy) *clientConn {
 	c := &clientConn{
@@ -627,6 +627,8 @@ func (sv *serverConn) mayBeClosed() bool {
 }
 
 func copyServer2Client(sv *serverConn, c *clientConn, r *Request) (err error) {
+	// For connect, the data read each time is usually less than 4096. Little
+	// benefit to increase this to 8192.
 	buf := make([]byte, bufSize)
 	sv.bufRd = nil
 	var n int
@@ -803,6 +805,7 @@ func (sv *serverConn) doConnect(r *Request, c *clientConn) (err error) {
 // Do HTTP request other that CONNECT
 func (sv *serverConn) doRequest(r *Request, c *clientConn) (err error) {
 	if c.buf == nil {
+		// It's common for response to have content-length larger than 4096
 		c.buf = make([]byte, bufSize*2)
 	}
 	r.state = rsCreated
