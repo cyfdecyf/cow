@@ -65,7 +65,7 @@ func (r *Request) canRetry() bool {
 }
 
 type Response struct {
-	Status []byte
+	Status int
 	Reason []byte
 
 	Header
@@ -73,11 +73,11 @@ type Response struct {
 	raw bytes.Buffer
 }
 
-func (rp *Response) genStatusLine() (res []byte) {
+func (rp *Response) genStatusLine() (res string) {
 	if len(rp.Reason) == 0 {
-		res = bytes.Join([][]byte{[]byte("HTTP/1.1"), rp.Status}, []byte{' '})
+		res = strings.Join([]string{"HTTP/1.1", strconv.Itoa(rp.Status)}, " ")
 	} else {
-		res = bytes.Join([][]byte{[]byte("HTTP/1.1"), rp.Status, rp.Reason}, []byte{' '})
+		res = strings.Join([]string{"HTTP/1.1", strconv.Itoa(rp.Status), string(rp.Reason)}, " ")
 	}
 	return
 }
@@ -296,6 +296,7 @@ func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, url *URL) 
 		if name, val, err = splitHeader(s); err != nil {
 			return
 		}
+		// Wait Go to solve/provide the string<->[]byte optimization
 		kn := string(name)
 		if parseFunc, ok := headerParser[kn]; ok {
 			lastLine = s
@@ -392,11 +393,11 @@ func readCheckCRLF(reader *bufio.Reader) error {
 
 // If an http response may have message body
 func (rp *Response) hasBody(method string) bool {
-	// when we have tenary search tree, can optimize this a little
-	return !(method == "HEAD" ||
-		bytes.Equal(rp.Status, []byte("304")) ||
-		bytes.Equal(rp.Status, []byte("204")) ||
-		bytes.HasPrefix(rp.Status, []byte("1")))
+	if method == "HEAD" || rp.Status == 304 || rp.Status == 204 ||
+		(100 <= rp.Status && rp.Status < 200) {
+		return false
+	}
+	return true
 }
 
 // Parse response status and headers.
@@ -430,7 +431,13 @@ START:
 		}
 		goto START
 	}
-	rp.Status = f[1]
+	// Currently, one have to convert []byte to string to use strconv
+	// Refer to: http://code.google.com/p/go/issues/detail?id=2632
+	rp.Status, err = strconv.Atoi(string(f[1]))
+	if err != nil {
+		errl.Printf("response status not valid: %s %v\n", f[1], err)
+		return
+	}
 	if len(f) == 3 {
 		rp.Reason = f[2]
 	}
@@ -445,7 +452,7 @@ START:
 	} else if proto[7] == '0' {
 		// Should return HTTP version as 1.1 to client since closed connection
 		// will be converted to chunked encoding
-		rp.raw.Write(rp.genStatusLine())
+		rp.raw.WriteString(rp.genStatusLine())
 	} else {
 		errl.Printf("Response protocol not supported: %s\n", string(f[0]))
 		return nil, errNotSupported
