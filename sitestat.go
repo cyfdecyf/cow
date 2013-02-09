@@ -25,8 +25,8 @@ func init() {
 const (
 	directDelta  = 30
 	blockedDelta = 20
-	maxCnt       = 100 // no protect to update visit cnt, so value may exceed maxCnt
-	userCnt      = -1  // this represents user specified host or domain
+	maxCnt       = 80 // no protect to update visit cnt, use a small value to avoid overflow
+	userCnt      = -1 // this represents user specified host or domain
 )
 
 type siteVisitMethod int
@@ -75,14 +75,6 @@ func newVisitCntWithTime(direct, blocked vcntint, t time.Time) *visitCnt {
 	return &visitCnt{direct, blocked, Date(t), true}
 }
 
-func newVisitCntBlocked() *visitCnt {
-	return newVisitCnt(0, 1)
-}
-
-func newVisitCntDirect() *visitCnt {
-	return newVisitCnt(1, 0)
-}
-
 func (vc *visitCnt) userSpecified() bool {
 	return vc.Blocked == userCnt || vc.Direct == userCnt
 }
@@ -115,13 +107,9 @@ var visitLock sync.Mutex
 
 // visit updates visit cnt
 func (vc *visitCnt) visit(inc *vcntint) {
-	// Possible for *inc to overflow and become negative, but very unlikely. Even
-	// if becomes negative, it should get chance to increase back to positive.
+	// Possible for *inc to overflow and become negative, but very unlikely.
 	if *inc < maxCnt {
 		*inc++
-	}
-	if *inc > maxCnt {
-		*inc = maxCnt
 	}
 
 	if !vc.rUpdated {
@@ -177,30 +165,35 @@ func newSiteStat() *SiteStat {
 	}
 }
 
-func (vs *SiteStat) get(s string) *visitCnt {
-	vs.vcLock.RLock()
-	Vcnt, ok := vs.Vcnt[s]
-	vs.vcLock.RUnlock()
+func (ss *SiteStat) get(s string) *visitCnt {
+	ss.vcLock.RLock()
+	Vcnt, ok := ss.Vcnt[s]
+	ss.vcLock.RUnlock()
 	if ok {
 		return Vcnt
 	}
 	return nil
 }
 
-// Caller guarantee that always direct url should not be attempt blocked
-// visit.
+func (ss *SiteStat) getOrCreate(s string) (vcnt *visitCnt) {
+	if vcnt = ss.get(s); vcnt != nil {
+		return
+	}
+	vcnt = newVisitCnt(0, 0)
+	ss.vcLock.Lock()
+	ss.Vcnt[s] = vcnt
+	ss.vcLock.Unlock()
+	return
+}
+
+// Caller should guarantee that always direct url does not attempt
+// blocked visit.
 func (ss *SiteStat) BlockedVisit(url *URL) {
 	debug.Printf("%s blocked\n", url.Host)
 	ss.tempBlocked.add(url.Host)
 
-	vcnt := ss.get(url.Host)
-	if vcnt != nil {
-		vcnt.blockedVisit()
-	} else {
-		ss.vcLock.Lock()
-		ss.Vcnt[url.Host] = newVisitCntBlocked()
-		ss.vcLock.Unlock()
-	}
+	vcnt := ss.getOrCreate(url.Host)
+	vcnt.blockedVisit()
 
 	// Mistakenly consider a partial blocked domain as direct will make that
 	// domain into PAC and never have a chance to correct the error.
@@ -219,15 +212,8 @@ func (ss *SiteStat) BlockedVisit(url *URL) {
 }
 
 func (ss *SiteStat) DirectVisit(url *URL) {
-	vcnt := ss.get(url.Host)
-	if vcnt != nil {
-		vcnt.directVisit()
-	} else {
-		ss.vcLock.Lock()
-		ss.Vcnt[url.Host] = newVisitCntDirect()
-		ss.vcLock.Unlock()
-	}
-
+	vcnt := ss.getOrCreate(url.Host)
+	vcnt.directVisit()
 }
 
 type SiteInfo struct {
