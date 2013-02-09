@@ -209,6 +209,7 @@ end:
 
 func (c *clientConn) handleRetry(r *Request, sv *serverConn) (err error) {
 	if !r.responseNotSent() {
+		debug.Printf("%v has sent response, can't retry\n", r)
 		return errShouldClose
 	}
 	if !r.tooMuchRetry() {
@@ -619,6 +620,18 @@ func (sv *serverConn) maybeFake() bool {
 	return sv.state == svConnected && sv.directConnection() && !sv.siteInfo.AlwaysDirect()
 }
 
+func setConnReadTimeout(cn net.Conn, d time.Duration, msg string) {
+	if cn.SetReadDeadline(time.Now().Add(d)) != nil {
+		errl.Println("Set readtimeout:", msg)
+	}
+}
+
+func unsetConnReadTimeout(cn net.Conn, msg string) {
+	if cn.SetReadDeadline(zeroTime) != nil {
+		errl.Println("Unset readtimeout:", msg)
+	}
+}
+
 // setReadTimeout will only set timeout if the server connection maybe fake.
 // In case it's not fake, this will unset timeout.
 func (sv *serverConn) setReadTimeout(msg string) {
@@ -628,9 +641,7 @@ func (sv *serverConn) setReadTimeout(msg string) {
 			// use shorter readTimeout for potential blocked sites
 			to /= 2
 		}
-		if sv.SetReadDeadline(time.Now().Add(to)) != nil {
-			errl.Println("Set server read timeout:", msg)
-		}
+		setConnReadTimeout(sv, to, msg)
 		sv.timeoutSet = true
 	} else {
 		sv.unsetReadTimeout(msg)
@@ -640,9 +651,7 @@ func (sv *serverConn) setReadTimeout(msg string) {
 func (sv *serverConn) unsetReadTimeout(msg string) {
 	if sv.timeoutSet {
 		sv.timeoutSet = false
-		if sv.SetReadDeadline(zeroTime) != nil {
-			errl.Println("Unset server read timeout:", msg)
-		}
+		unsetConnReadTimeout(sv, msg)
 	}
 }
 
@@ -725,9 +734,14 @@ func copy2Server(sv *serverConn, r *Request, p []byte) (err error) {
 }
 
 func copyClient2Server(c *clientConn, sv *serverConn, r *Request, srvStopped notification, done chan byte) (err error) {
+	// sv.maybeFake may change during execution in this function.
+	// So need a variable to record the whether timeout is set.
+	deadlineIsSet := false
 	defer func() {
-		// may need to retry, should unset timeout here
-		sv.unsetReadTimeout("cli->srv after err")
+		if deadlineIsSet {
+			// maybe need to retry, should unset timeout here because
+			unsetConnReadTimeout(c, "cli->srv after err")
+		}
 		done <- 1
 	}()
 
@@ -761,7 +775,14 @@ func copyClient2Server(c *clientConn, sv *serverConn, r *Request, srvStopped not
 	}
 	for {
 		// debug.Println("cli->srv")
-		sv.setReadTimeout("cli->srv")
+		if sv.maybeFake() {
+			setConnReadTimeout(c, time.Second, "cli->srv")
+			deadlineIsSet = true
+		} else if deadlineIsSet {
+			// maybeFake may trun to false after timeout, but timeout should be unset
+			unsetConnReadTimeout(c, "cli->srv before read")
+			deadlineIsSet = false
+		}
 		if n, err = c.Read(buf); err != nil {
 			if config.DetectSSLErr && (isErrConnReset(err) || err == io.EOF) && sv.maybeSSLErr(start) {
 				debug.Println("client connection closed very soon, taken as SSL error:", r)
