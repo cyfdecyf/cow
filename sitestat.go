@@ -208,9 +208,6 @@ func (ss *SiteStat) BlockedVisit(url *URL) {
 	// it's block visit count decrease to 0. As hasBlockedHost is not saved,
 	// upon next start up of COW, the information will reflect the current
 	// status of that host.
-	if url.Domain == "" {
-		return
-	}
 	ss.hbhLock.RLock()
 	t := ss.hasBlockedHost[url.Domain]
 	ss.hbhLock.RUnlock()
@@ -270,6 +267,9 @@ func (ss *SiteStat) GetSiteInfo(url *URL) *SiteInfo {
 			}
 		}
 		return &SiteInfo{alwaysDirect, alwaysBlocked, onceBlocked, visitMethod}
+	}
+	if len(url.Domain) == len(url.Host) {
+		return &SiteInfo{false, false, false, vmUnknown}
 	}
 	vcnt = ss.get(url.Domain)
 	if vcnt != nil {
