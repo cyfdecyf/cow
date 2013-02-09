@@ -29,22 +29,26 @@ func TestDateMarshal(t *testing.T) {
 }
 
 func TestSiteStatLoadStore(t *testing.T) {
-	st := newSiteStat()
+	ss := newSiteStat()
 
 	d1, _ := ParseRequestURI("www.foobar.com")
 	d2, _ := ParseRequestURI("img.foobar.com")
-	st.DirectVisit(d1)
-	st.DirectVisit(d1)
-	st.DirectVisit(d1)
-	st.DirectVisit(d2)
+	sd1 := ss.GetVisitCnt(d1)
+	sd1.DirectVisit()
+	sd1.DirectVisit()
+	sd1.DirectVisit()
+	sd2 := ss.GetVisitCnt(d2)
+	sd2.DirectVisit()
 
 	b1, _ := ParseRequestURI("blocked.com")
 	b2, _ := ParseRequestURI("blocked2.com")
-	st.BlockedVisit(b1)
-	st.BlockedVisit(b2)
+	si1 := ss.GetVisitCnt(b1)
+	si1.BlockedVisit()
+	si2 := ss.GetVisitCnt(b2)
+	si2.BlockedVisit()
 
 	const stfile = "testdata/stat"
-	if err := st.store(stfile); err != nil {
+	if err := ss.store(stfile); err != nil {
 		t.Fatal("store error:", err)
 	}
 
@@ -67,22 +71,13 @@ func TestSiteStatLoadStore(t *testing.T) {
 
 	// test bulitin site
 	ap, _ := ParseRequestURI("apple.com")
-	si := ld.GetSiteInfo(ap)
-	if si.visitMethod != vmDirect {
-		t.Error("builtin site apple.com should use direct access")
+	si := ld.GetVisitCnt(ap)
+	if !si.AlwaysDirect() {
+		t.Error("builtin site apple.com should always use direct access")
 	}
 	tw, _ := ParseRequestURI("twitter.com")
-	blockeVisit := false
-	// there're some randomness in treating a site as blocked
-	// so try several times
-	for i := 0; i < 2*blockedDelta; i++ {
-		si = ld.GetSiteInfo(tw)
-		if si.visitMethod == vmBlocked {
-			blockeVisit = true
-			break
-		}
-	}
-	if blockeVisit == false {
+	si = ld.GetVisitCnt(tw)
+	if !si.AsBlocked() || !si.AlwaysBlocked() {
 		t.Error("builtin site twitter.com should use blocked access")
 	}
 	if len(ld.GetDirectList()) == 0 {
@@ -91,18 +86,21 @@ func TestSiteStatLoadStore(t *testing.T) {
 	os.Remove(stfile)
 }
 
-func TestSiteStatVisit(t *testing.T) {
+func TestSiteStatVisitCnt(t *testing.T) {
 	ss := newSiteStat()
 
 	g1, _ := ParseRequestURI("www.gtemp.com")
 	g2, _ := ParseRequestURI("calendar.gtemp.com")
 	g3, _ := ParseRequestURI("docs.gtemp.com")
 
+	sg1 := ss.GetVisitCnt(g1)
 	for i := 0; i < 10; i++ {
-		ss.DirectVisit(g1)
+		sg1.DirectVisit()
 	}
-	ss.DirectVisit(g2)
-	ss.DirectVisit(g3)
+	sg2 := ss.GetVisitCnt(g2)
+	sg2.DirectVisit()
+	sg3 := ss.GetVisitCnt(g3)
+	sg3.DirectVisit()
 
 	if ss.hasBlockedHost[g1.Domain] {
 		t.Errorf("direct domain %s should not have host at first\n", g1.Domain)
@@ -110,7 +108,7 @@ func TestSiteStatVisit(t *testing.T) {
 
 	vc := ss.get(g1.Host)
 	if vc == nil {
-		t.Fatalf("no visitCnt for %s\n", g1.Host)
+		t.Fatalf("no VisitCnt for %s\n", g1.Host)
 	}
 	if vc.Direct != 10 {
 		t.Errorf("direct cnt for %s not correct, should be 3, got: %d\n", g1.Host, vc.Direct)
@@ -119,10 +117,10 @@ func TestSiteStatVisit(t *testing.T) {
 		t.Errorf("block cnt for %s not correct, should be 0 before blocked visit, got: %d\n", g1.Host, vc.Blocked)
 	}
 	if vc.rUpdated != true {
-		t.Errorf("visitCnt lvUpdated should be true after visit")
+		t.Errorf("VisitCnt lvUpdated should be true after visit")
 	}
 
-	ss.BlockedVisit(g1)
+	vc.BlockedVisit()
 	if vc.Blocked != 1 {
 		t.Errorf("blocked cnt for %s after 1 blocked visit should be 1, got: %d\n", g1.Host, vc.Blocked)
 	}
@@ -132,16 +130,17 @@ func TestSiteStatVisit(t *testing.T) {
 
 	// test blocked visit
 	g4, _ := ParseRequestURI("plus.gtemp.com")
-	ss.BlockedVisit(g4)
-	ss.BlockedVisit(g4)
+	si := ss.GetVisitCnt(g4)
+	ss.TempBlocked(g4)
 	// should be blocked for 2 minutes
-	si := ss.GetSiteInfo(g4)
-	if si.visitMethod != vmTempBlocked {
+	if !si.AsTempBlocked() {
 		t.Error("should be blocked for 2 minutes after blocked visit")
 	}
+	si.BlockedVisit()
+	si.BlockedVisit()
 	vc = ss.get(g4.Host)
 	if vc == nil {
-		t.Fatal("no visitCnt for ", g4.Host)
+		t.Fatal("no VisitCnt for ", g4.Host)
 	}
 	if vc.Blocked != 2 {
 		t.Errorf("blocked cnt for %s not correct, should be 2, got: %d\n", g4.Host, vc.Blocked)
@@ -154,13 +153,20 @@ func TestSiteStatVisit(t *testing.T) {
 	}
 }
 
-func TestSiteStatGetSiteInfo(t *testing.T) {
+func TestSiteStatGetVisitCnt(t *testing.T) {
 	ss := newSiteStat()
 
 	g, _ := ParseRequestURI("gtemp.com")
-	si := ss.GetSiteInfo(g)
-	if si.visitMethod != vmUnknown {
-		t.Error("should get unknown visit method")
+	si := ss.GetVisitCnt(g)
+	if si.AsBlocked() || si.AsDirect() || si.AsTempBlocked() {
+		t.Error("never visited site should not be considered as blocked/direct/temp blocked")
+	}
+	si.DirectVisit()
+	gw, _ := ParseRequestURI("www.gtemp.com")
+	sig := ss.GetVisitCnt(gw)
+	// gtemp.com is not user specified, www.gtemp.com should get separate visitCnt
+	if sig == si {
+		t.Error("host should get separate visitCnt for not user specified domain")
 	}
 
 	b, _ := ParseRequestURI("www.btemp.com")
@@ -172,59 +178,59 @@ func TestSiteStatGetSiteInfo(t *testing.T) {
 	if !vc.shouldDrop() {
 		t.Error("user specified should be dropped")
 	}
-	si = ss.GetSiteInfo(b)
-	if !si.alwaysDirect {
+	si = ss.GetVisitCnt(b)
+	if !si.AlwaysDirect() {
 		t.Errorf("%s should alwaysDirect\n", b.Host)
 	}
-	if si.alwaysBlocked {
+	if si.AlwaysBlocked() {
 		t.Errorf("%s should not alwaysBlocked\n", b.Host)
 	}
-	if si.onceBlocked {
+	if si.OnceBlocked() {
 		t.Errorf("%s should not onceBlocked\n", b.Host)
 	}
-	if si.visitMethod != vmDirect {
+	if !si.AsDirect() {
 		t.Errorf("%s should use direct visit\n", b.Host)
 	}
 
 	tw, _ := ParseRequestURI("www.tblocked.com")
 	ss.Vcnt[tw.Domain] = newVisitCnt(0, userCnt)
-	si = ss.GetSiteInfo(tw)
-	if si.visitMethod != vmBlocked {
+	si = ss.GetVisitCnt(tw)
+	if !si.AsBlocked() {
 		t.Errorf("%s should use blocked visit\n", tw.Host)
 	}
-	if si.alwaysDirect {
+	if si.AlwaysDirect() {
 		t.Errorf("%s should not alwaysDirect\n", tw.Host)
 	}
-	if !si.alwaysBlocked {
+	if !si.AlwaysBlocked() {
 		t.Errorf("%s should not alwaysBlocked\n", tw.Host)
 	}
-	if !si.onceBlocked {
+	if !si.OnceBlocked() {
 		t.Errorf("%s should onceBlocked\n", tw.Host)
 	}
 
 	g1, _ := ParseRequestURI("www.shoulddirect.com")
-	si = ss.GetSiteInfo(g1)
-	if si.visitMethod != vmUnknown {
+	si = ss.GetVisitCnt(g1)
+	if si.AsBlocked() || si.AsDirect() || si.AsTempBlocked() {
 		t.Errorf("%s not visited, should return unknow visit method\n", g1.Host)
 	}
-	ss.DirectVisit(g1)
-	si = ss.GetSiteInfo(g1)
-	if si.visitMethod != vmUnknown {
+	si.DirectVisit()
+	si = ss.GetVisitCnt(g1)
+	if si.AsDirect() || si.AsBlocked() || si.AsTempBlocked() {
 		t.Errorf("%s visited only once, should still return unknow visit method\n", g1.Host)
 	}
 	for i := 0; i < directDelta; i++ {
-		ss.DirectVisit(g1)
+		si.DirectVisit()
 	}
-	si = ss.GetSiteInfo(g1)
-	if si.visitMethod != vmDirect {
+	si = ss.GetVisitCnt(g1)
+	if !si.AsDirect() {
 		t.Errorf("%s direct %d times, should use direct visit\n", g1.Host, directDelta+1)
 	}
-	if si.onceBlocked {
+	if si.OnceBlocked() {
 		t.Errorf("%s has not blocked visit, should not has once blocked\n", g1.Host)
 	}
-	ss.BlockedVisit(g1)
-	si = ss.GetSiteInfo(g1)
-	if !si.onceBlocked {
+	si = ss.GetVisitCnt(g1)
+	si.BlockedVisit()
+	if !si.OnceBlocked() {
 		t.Errorf("%s has one blocked visit, should has once blocked\n", g1.Host)
 	}
 }
