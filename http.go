@@ -60,8 +60,8 @@ func (r *Request) tryOnce() {
 	r.tryCnt++
 }
 
-func (r *Request) canRetry() bool {
-	return r.tryCnt <= 5 && r.responseNotSent()
+func (r *Request) tooMuchRetry() bool {
+	return r.tryCnt > 3
 }
 
 type Response struct {
@@ -319,16 +319,12 @@ func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, url *URL) 
 func parseRequest(c *clientConn) (r *Request, err error) {
 	var s []byte
 	reader := c.bufRd
-	if err = c.SetReadDeadline(time.Now().Add(clientConnTimeout)); err != nil {
-		errl.Println("Set readtimeout for parseRequest:", err)
-	}
+	setConnReadTimeout(c, clientConnTimeout, "parseRequest")
 	// parse initial request line
 	if s, err = ReadLineBytes(reader); err != nil {
 		return nil, err
 	}
-	if err = c.SetReadDeadline(zeroTime); err != nil {
-		errl.Println("Unset readtimeout for parseRequest:", err)
-	}
+	unsetConnReadTimeout(c, "parseRequest")
 	// debug.Printf("Request initial line %s", s)
 
 	r = new(Request)

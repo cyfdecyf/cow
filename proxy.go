@@ -43,6 +43,14 @@ const (
 	ctHttpProxyConn
 )
 
+var ctName = [...]string{
+	ctNilConn:           "nil",
+	ctDirectConn:        "direct",
+	ctSocksConn:         "socks5",
+	ctShadowctSocksConn: "shadowsocks",
+	ctHttpProxyConn:     "http parent",
+}
+
 type serverConnState byte
 
 const (
@@ -74,22 +82,21 @@ type writerOnly struct {
 
 type serverConn struct {
 	conn
-	bufRd        *bufio.Reader
-	url          *URL
-	state        serverConnState
-	willCloseOn  time.Time
-	alwaysDirect bool
-	onceBlocked  bool
-	timeoutSet   bool
+	bufRd       *bufio.Reader
+	url         *URL
+	state       serverConnState
+	willCloseOn time.Time
+	siteInfo    *VisitCnt
+	visited     bool
+	timeoutSet  bool
 }
 
-func newServerConn(c conn, url *URL, si *SiteInfo) *serverConn {
+func newServerConn(c conn, url *URL, siteInfo *VisitCnt) *serverConn {
 	return &serverConn{
-		conn:         c,
-		url:          url,
-		bufRd:        bufio.NewReaderSize(c, bufSize),
-		alwaysDirect: si.alwaysDirect,
-		onceBlocked:  si.onceBlocked,
+		conn:     c,
+		url:      url,
+		bufRd:    bufio.NewReaderSize(c, bufSize),
+		siteInfo: siteInfo,
 	}
 }
 
@@ -200,6 +207,30 @@ end:
 	return errPageSent
 }
 
+func (c *clientConn) handleRetry(r *Request, sv *serverConn) (err error) {
+	if !r.responseNotSent() {
+		debug.Printf("%v has sent response, can't retry\n", r)
+		return errShouldClose
+	}
+	if !r.tooMuchRetry() {
+		return errRetry
+	}
+	if sv.maybeFake() {
+		// Sometimes GFW reset will got EOF error leading to retry too many times
+		// In that case, try parent proxy.
+		siteStat.TempBlocked(r.URL)
+		r.tryCnt = 0
+		return errRetry
+	}
+	debug.Printf("Can't retry %v tryCnt=%d\n", r, r.tryCnt)
+	if !r.isConnect {
+		sendErrorPage(c, "502 retry failed", "Can't finish HTTP request",
+			genErrMsg(r, sv, "Has tried several times."))
+		return errPageSent
+	}
+	return errShouldClose
+}
+
 func (c *clientConn) serve() {
 	defer c.close()
 
@@ -258,8 +289,8 @@ func (c *clientConn) serve() {
 
 		if r.isConnect {
 			if err = sv.doConnect(r, c); err == errRetry {
-				if r.canRetry() {
-					// connection for CONNECT is not reused, no need to remove
+				// connection for CONNECT is not reused, no need to remove
+				if err = c.handleRetry(r, sv); err == errRetry {
 					goto retry
 				}
 			}
@@ -277,16 +308,12 @@ func (c *clientConn) serve() {
 		if err = sv.doRequest(r, c); err != nil {
 			c.removeServerConn(sv)
 			if err == errRetry {
-				if r.canRetry() {
+				err = c.handleRetry(r, sv)
+				if err == errRetry {
 					goto retry
 				}
-				debug.Printf("Can't retry tryCnt=%d responseNotSent=%v\n", r.tryCnt, r.responseNotSent())
-				if r.responseNotSent() {
-					sendErrorPage(c, "502 retry failed", "Can't finish HTTP request",
-						genErrMsg(r, "Has tried several times."))
-					continue
-				}
-			} else if err == errPageSent {
+			}
+			if err == errPageSent {
 				continue
 			}
 			return
@@ -299,16 +326,12 @@ func (c *clientConn) serve() {
 	}
 }
 
-func genErrMsg(r *Request, what string) string {
-	return fmt.Sprintf("<p>HTTP Request <strong>%v</strong></p> <p>%s</p>", r, what)
-}
-
-func genBlockedSiteMsg(r *Request) string {
-	if !r.URL.HostIsIP() {
-		return fmt.Sprintf(
-			"<p>Domain <strong>%s</strong> maybe blocked.</p>", r.URL.Domain)
+func genErrMsg(r *Request, sv *serverConn, what string) string {
+	if sv == nil {
+		return fmt.Sprintf("<p>HTTP Request <strong>%v</strong></p> <p>%s</p>", r, what)
 	}
-	return ""
+	return fmt.Sprintf("<p>HTTP Request <strong>%v</strong></p> <p>%s</p> <p>Using %s connection.</p>",
+		r, what, ctName[sv.connType])
 }
 
 const (
@@ -318,7 +341,7 @@ const (
 )
 
 func (c *clientConn) handleBlockedRequest(r *Request) error {
-	siteStat.BlockedVisit(r.URL)
+	siteStat.TempBlocked(r.URL)
 	return errRetry
 }
 
@@ -326,15 +349,15 @@ func (c *clientConn) handleServerReadError(r *Request, sv *serverConn, err error
 	var errMsg string
 	if err == io.EOF {
 		if debug {
-			debug.Printf("client %s; %s read from server EOF, retry\n", c.RemoteAddr(), msg)
+			debug.Printf("client %s; %s read from server EOF\n", c.RemoteAddr(), msg)
 		}
 		return errRetry
 	}
-	errMsg = genErrMsg(r, msg)
 	if sv.maybeFake() && maybeBlocked(err) {
 		return c.handleBlockedRequest(r)
 	}
 	if r.responseNotSent() {
+		errMsg = genErrMsg(r, sv, msg)
 		sendErrorPage(c, "502 read error", err.Error(), errMsg)
 		return errPageSent
 	}
@@ -346,7 +369,7 @@ func (c *clientConn) handleServerWriteError(r *Request, sv *serverConn, err erro
 	// This function is only called in doRequest, no response is sent to client.
 	// So if visiting blocked site, can always retry request.
 	if sv.maybeFake() && isErrConnReset(err) {
-		siteStat.BlockedVisit(r.URL)
+		siteStat.TempBlocked(r.URL)
 	}
 	return errRetry
 }
@@ -464,9 +487,9 @@ func (c *clientConn) removeServerConn(sv *serverConn) {
 	delete(c.serverConn, sv.url.HostPort)
 }
 
-func createctDirectConnection(url *URL, si *SiteInfo) (conn, error) {
+func createctDirectConnection(url *URL, siteInfo *VisitCnt) (conn, error) {
 	to := dialTimeout
-	if si.onceBlocked && to >= defaultDialTimeout {
+	if siteInfo.OnceBlocked() && to >= defaultDialTimeout {
 		to /= 2
 	}
 	c, err := net.DialTimeout("tcp", url.HostPort, to)
@@ -510,30 +533,30 @@ func createParentProxyConnection(url *URL) (srvconn conn, err error) {
 	return zeroConn, errNoParentProxy
 }
 
-func (c *clientConn) createConnection(r *Request, si *SiteInfo) (srvconn conn, err error) {
+func (c *clientConn) createConnection(r *Request, siteInfo *VisitCnt) (srvconn conn, err error) {
 	if config.AlwaysProxy {
 		if srvconn, err = createParentProxyConnection(r.URL); err == nil {
 			return
 		}
 		goto fail
 	}
-	if si.visitMethod == vmBlocked && hasParentProxy {
+	if siteInfo.AsBlocked() && hasParentProxy {
 		// In case of connection error to socks server, fallback to direct connection
 		if srvconn, err = createParentProxyConnection(r.URL); err == nil {
 			return
 		}
-		if si.alwaysBlocked {
+		if siteInfo.AlwaysBlocked() || siteInfo.AsTempBlocked() {
 			goto fail
 		}
-		if srvconn, err = createctDirectConnection(r.URL, si); err == nil {
+		if srvconn, err = createctDirectConnection(r.URL, siteInfo); err == nil {
 			return
 		}
 	} else {
-		// In case of error on direction connection, try socks server
-		if srvconn, err = createctDirectConnection(r.URL, si); err == nil {
+		// In case of error on direction connection, try parent server
+		if srvconn, err = createctDirectConnection(r.URL, siteInfo); err == nil {
 			return
 		}
-		if !hasParentProxy || si.alwaysDirect {
+		if !hasParentProxy || siteInfo.AlwaysDirect() {
 			goto fail
 		}
 		// debug.Printf("type of err %v\n", reflect.TypeOf(err))
@@ -543,13 +566,9 @@ func (c *clientConn) createConnection(r *Request, si *SiteInfo) (srvconn conn, e
 			// Try to create socks connection
 			var socksErr error
 			if srvconn, socksErr = createParentProxyConnection(r.URL); socksErr == nil {
-				handRes := c.handleBlockedRequest(r)
-				if handRes == errRetry {
-					debug.Println("direct connection failed, use socks connection for", r)
-					return srvconn, nil
-				}
-				srvconn.Close()
-				return zeroConn, handRes
+				c.handleBlockedRequest(r)
+				debug.Println("direct connection failed, use socks connection for", r)
+				return srvconn, nil
 			}
 		}
 	}
@@ -560,17 +579,17 @@ fail:
 		return zeroConn, errShouldClose
 	}
 	sendErrorPage(c, "504 Connection failed", err.Error(),
-		genErrMsg(r, "Connection failed."))
+		genErrMsg(r, nil, "Connection failed."))
 	return zeroConn, errPageSent
 }
 
 func (c *clientConn) createServerConn(r *Request) (*serverConn, error) {
-	si := siteStat.GetSiteInfo(r.URL)
-	srvconn, err := c.createConnection(r, si)
+	siteInfo := siteStat.GetVisitCnt(r.URL)
+	srvconn, err := c.createConnection(r, siteInfo)
 	if err != nil {
 		return nil, err
 	}
-	sv := newServerConn(srvconn, r.URL, si)
+	sv := newServerConn(srvconn, r.URL, siteInfo)
 	if r.isConnect {
 		// Don't put connection for CONNECT method for reuse
 		return sv, nil
@@ -585,12 +604,32 @@ func (sv *serverConn) directConnection() bool {
 	return sv.connType == ctDirectConn
 }
 
-func (sv *serverConn) shouldUpdateDirectStat() bool {
-	return !sv.alwaysDirect && sv.directConnection()
+func (sv *serverConn) updateVisit() {
+	if sv.visited || sv.siteInfo.userSpecified() {
+		return
+	}
+	sv.visited = true
+	if sv.directConnection() {
+		sv.siteInfo.DirectVisit()
+	} else {
+		sv.siteInfo.BlockedVisit()
+	}
 }
 
 func (sv *serverConn) maybeFake() bool {
-	return sv.state == svConnected && sv.directConnection() && !sv.alwaysDirect
+	return sv.state == svConnected && sv.directConnection() && !sv.siteInfo.AlwaysDirect()
+}
+
+func setConnReadTimeout(cn net.Conn, d time.Duration, msg string) {
+	if cn.SetReadDeadline(time.Now().Add(d)) != nil {
+		errl.Println("Set readtimeout:", msg)
+	}
+}
+
+func unsetConnReadTimeout(cn net.Conn, msg string) {
+	if cn.SetReadDeadline(zeroTime) != nil {
+		errl.Println("Unset readtimeout:", msg)
+	}
 }
 
 // setReadTimeout will only set timeout if the server connection maybe fake.
@@ -598,13 +637,11 @@ func (sv *serverConn) maybeFake() bool {
 func (sv *serverConn) setReadTimeout(msg string) {
 	if sv.maybeFake() {
 		to := readTimeout
-		if sv.onceBlocked && to >= defaultReadTimeout {
+		if sv.siteInfo.OnceBlocked() && to >= defaultReadTimeout {
 			// use shorter readTimeout for potential blocked sites
 			to /= 2
 		}
-		if sv.SetReadDeadline(time.Now().Add(to)) != nil {
-			errl.Println("Set server read timeout:", msg)
-		}
+		setConnReadTimeout(sv, to, msg)
 		sv.timeoutSet = true
 	} else {
 		sv.unsetReadTimeout(msg)
@@ -614,9 +651,7 @@ func (sv *serverConn) setReadTimeout(msg string) {
 func (sv *serverConn) unsetReadTimeout(msg string) {
 	if sv.timeoutSet {
 		sv.timeoutSet = false
-		if sv.SetReadDeadline(zeroTime) != nil {
-			errl.Println("Unset server read timeout:", msg)
-		}
+		unsetConnReadTimeout(sv, msg)
 	}
 }
 
@@ -650,20 +685,16 @@ func copyServer2Client(sv *serverConn, c *clientConn, r *Request) (err error) {
 	*/
 
 	total := 0
-	directVisited := false
 	const directThreshold = 4096
 	for {
 		// debug.Println("srv->cli")
 		sv.setReadTimeout("srv->cli")
 		if n, err = sv.Read(buf); err != nil {
 			if err == io.EOF {
-				if r.responseNotSent() {
-					return errRetry
-				}
-				return
+				return errRetry
 			}
 			if sv.maybeFake() && maybeBlocked(err) {
-				siteStat.BlockedVisit(r.URL)
+				siteStat.TempBlocked(r.URL)
 				debug.Printf("srv->cli blocked site %s detected, err: %v retry\n", r.URL.HostPort, err)
 				return errRetry
 			}
@@ -682,9 +713,8 @@ func copyServer2Client(sv *serverConn, c *clientConn, r *Request) (err error) {
 		r.state = rsRecvBody
 		sv.state = svSendRecvResponse
 		sv.unsetReadTimeout("srv->cli")
-		if !directVisited && sv.shouldUpdateDirectStat() && total > directThreshold {
-			directVisited = true
-			siteStat.DirectVisit(r.URL)
+		if total > directThreshold {
+			sv.updateVisit()
 		}
 	}
 	return
@@ -704,9 +734,14 @@ func copy2Server(sv *serverConn, r *Request, p []byte) (err error) {
 }
 
 func copyClient2Server(c *clientConn, sv *serverConn, r *Request, srvStopped notification, done chan byte) (err error) {
+	// sv.maybeFake may change during execution in this function.
+	// So need a variable to record the whether timeout is set.
+	deadlineIsSet := false
 	defer func() {
-		// may need to retry, should unset timeout here
-		sv.unsetReadTimeout("cli->srv after err")
+		if deadlineIsSet {
+			// maybe need to retry, should unset timeout here because
+			unsetConnReadTimeout(c, "cli->srv after err")
+		}
 		done <- 1
 	}()
 
@@ -740,11 +775,18 @@ func copyClient2Server(c *clientConn, sv *serverConn, r *Request, srvStopped not
 	}
 	for {
 		// debug.Println("cli->srv")
-		sv.setReadTimeout("cli->srv")
+		if sv.maybeFake() {
+			setConnReadTimeout(c, time.Second, "cli->srv")
+			deadlineIsSet = true
+		} else if deadlineIsSet {
+			// maybeFake may trun to false after timeout, but timeout should be unset
+			unsetConnReadTimeout(c, "cli->srv before read")
+			deadlineIsSet = false
+		}
 		if n, err = c.Read(buf); err != nil {
 			if config.DetectSSLErr && (isErrConnReset(err) || err == io.EOF) && sv.maybeSSLErr(start) {
 				debug.Println("client connection closed very soon, taken as SSL error:", r)
-				siteStat.BlockedVisit(r.URL)
+				siteStat.TempBlocked(r.URL)
 			} else if isErrTimeout(err) && !srvStopped.hasNotified() {
 				// debug.Printf("cli(%s)->srv(%s) timeout\n", c.RemoteAddr(), r.URL.HostPort)
 				continue
@@ -758,7 +800,7 @@ func copyClient2Server(c *clientConn, sv *serverConn, r *Request, srvStopped not
 			// XXX is it enough to only do block detection in copyServer2Client?
 			/*
 				if sv.maybeFake() && isErrConnReset(err) {
-					siteStat.BlockedVisit(r.URL)
+					siteStat.TempBlocked(r.URL)
 					errl.Printf("copyClient2Server blocked site %d detected, retry\n", r.URL.HostPort)
 					return errRetry
 				}
@@ -873,8 +915,8 @@ func (sv *serverConn) doRequest(r *Request, c *clientConn) (err error) {
 	}
 	r.state = rsSent
 	err = c.readResponse(sv, r)
-	if err == nil && sv.shouldUpdateDirectStat() {
-		siteStat.DirectVisit(r.URL)
+	if err == nil {
+		sv.updateVisit()
 	}
 	return
 }
