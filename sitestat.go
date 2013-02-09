@@ -115,13 +115,13 @@ var visitLock sync.Mutex
 
 // visit updates visit cnt
 func (vc *visitCnt) visit(inc *vcntint) {
-	// Possible for *inc to overflow and become negative, but not likely. Even
+	// Possible for *inc to overflow and become negative, but very unlikely. Even
 	// if becomes negative, it should get chance to increase back to positive.
 	if *inc < maxCnt {
 		*inc++
 	}
 	if *inc > maxCnt {
-		*inc = 0
+		*inc = maxCnt
 	}
 
 	if !vc.rUpdated {
