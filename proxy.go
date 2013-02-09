@@ -208,6 +208,29 @@ end:
 	return errPageSent
 }
 
+func (c *clientConn) handleRetry(r *Request, sv *serverConn) (err error) {
+	if !r.responseNotSent() {
+		return errShouldClose
+	}
+	if !r.tooMuchRetry() {
+		return errRetry
+	}
+	if sv.maybeFake() {
+		// Sometimes GFW reset will got EOF error leading to retry too many times
+		// In that case, try parent proxy.
+		siteStat.BlockedVisit(r.URL)
+		r.tryCnt = 0
+		return errRetry
+	}
+	debug.Printf("Can't retry %v tryCnt=%d\n", r, r.tryCnt)
+	if !r.isConnect {
+		sendErrorPage(c, "502 retry failed", "Can't finish HTTP request",
+			genErrMsg(r, sv, "Has tried several times."))
+		return errPageSent
+	}
+	return errShouldClose
+}
+
 func (c *clientConn) serve() {
 	defer c.close()
 
@@ -266,8 +289,8 @@ func (c *clientConn) serve() {
 
 		if r.isConnect {
 			if err = sv.doConnect(r, c); err == errRetry {
-				if r.canRetry() {
-					// connection for CONNECT is not reused, no need to remove
+				// connection for CONNECT is not reused, no need to remove
+				if err = c.handleRetry(r, sv); err == errRetry {
 					goto retry
 				}
 			}
@@ -285,16 +308,12 @@ func (c *clientConn) serve() {
 		if err = sv.doRequest(r, c); err != nil {
 			c.removeServerConn(sv)
 			if err == errRetry {
-				if r.canRetry() {
+				err = c.handleRetry(r, sv)
+				if err == errRetry {
 					goto retry
 				}
-				debug.Printf("Can't retry tryCnt=%d responseNotSent=%v\n", r.tryCnt, r.responseNotSent())
-				if r.responseNotSent() {
-					sendErrorPage(c, "502 retry failed", "Can't finish HTTP request",
-						genErrMsg(r, sv, "Has tried several times."))
-					continue
-				}
-			} else if err == errPageSent {
+			}
+			if err == errPageSent {
 				continue
 			}
 			return
@@ -330,7 +349,7 @@ func (c *clientConn) handleServerReadError(r *Request, sv *serverConn, err error
 	var errMsg string
 	if err == io.EOF {
 		if debug {
-			debug.Printf("client %s; %s read from server EOF, retry\n", c.RemoteAddr(), msg)
+			debug.Printf("client %s; %s read from server EOF\n", c.RemoteAddr(), msg)
 		}
 		return errRetry
 	}
@@ -521,19 +540,19 @@ func (c *clientConn) createConnection(r *Request, si *SiteInfo) (srvconn conn, e
 		}
 		goto fail
 	}
-	if si.visitMethod == vmBlocked && hasParentProxy {
+	if si.visitMethod >= vmBlocked && hasParentProxy {
 		// In case of connection error to socks server, fallback to direct connection
 		if srvconn, err = createParentProxyConnection(r.URL); err == nil {
 			return
 		}
-		if si.alwaysBlocked {
+		if si.alwaysBlocked || si.visitMethod == vmTempBlocked {
 			goto fail
 		}
 		if srvconn, err = createctDirectConnection(r.URL, si); err == nil {
 			return
 		}
 	} else {
-		// In case of error on direction connection, try socks server
+		// In case of error on direction connection, try parent server
 		if srvconn, err = createctDirectConnection(r.URL, si); err == nil {
 			return
 		}
@@ -547,13 +566,9 @@ func (c *clientConn) createConnection(r *Request, si *SiteInfo) (srvconn conn, e
 			// Try to create socks connection
 			var socksErr error
 			if srvconn, socksErr = createParentProxyConnection(r.URL); socksErr == nil {
-				handRes := c.handleBlockedRequest(r)
-				if handRes == errRetry {
-					debug.Println("direct connection failed, use socks connection for", r)
-					return srvconn, nil
-				}
-				srvconn.Close()
-				return zeroConn, handRes
+				c.handleBlockedRequest(r)
+				debug.Println("direct connection failed, use socks connection for", r)
+				return srvconn, nil
 			}
 		}
 	}
@@ -661,10 +676,7 @@ func copyServer2Client(sv *serverConn, c *clientConn, r *Request) (err error) {
 		sv.setReadTimeout("srv->cli")
 		if n, err = sv.Read(buf); err != nil {
 			if err == io.EOF {
-				if r.responseNotSent() {
-					return errRetry
-				}
-				return
+				return errRetry
 			}
 			if sv.maybeFake() && maybeBlocked(err) {
 				siteStat.BlockedVisit(r.URL)

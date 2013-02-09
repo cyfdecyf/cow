@@ -60,8 +60,8 @@ func (r *Request) tryOnce() {
 	r.tryCnt++
 }
 
-func (r *Request) canRetry() bool {
-	return r.tryCnt <= 5 && r.responseNotSent()
+func (r *Request) tooMuchRetry() bool {
+	return r.tryCnt > 3
 }
 
 type Response struct {

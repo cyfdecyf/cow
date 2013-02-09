@@ -136,7 +136,7 @@ func TestSiteStatVisit(t *testing.T) {
 	ss.BlockedVisit(g4)
 	// should be blocked for 2 minutes
 	si := ss.GetSiteInfo(g4)
-	if si.visitMethod != vmBlocked {
+	if si.visitMethod != vmTempBlocked {
 		t.Error("should be blocked for 2 minutes after blocked visit")
 	}
 	vc = ss.get(g4.Host)

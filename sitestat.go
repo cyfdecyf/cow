@@ -35,6 +35,7 @@ const (
 	vmUnknown siteVisitMethod = iota
 	vmDirect
 	vmBlocked
+	vmTempBlocked
 )
 
 type vcntint int8
@@ -244,7 +245,7 @@ func (ss *SiteStat) GetSiteInfo(url *URL) *SiteInfo {
 		return &SiteInfo{true, false, false, vmDirect}
 	}
 	if ss.tempBlocked.has(url.Host) {
-		return &SiteInfo{false, false, true, vmBlocked}
+		return &SiteInfo{false, false, true, vmTempBlocked}
 	}
 	vcnt := ss.get(url.Host)
 	var alwaysDirect, alwaysBlocked, onceBlocked bool
