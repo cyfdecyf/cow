@@ -43,6 +43,14 @@ const (
 	ctHttpProxyConn
 )
 
+var ctName = [...]string{
+	ctNilConn:           "nil",
+	ctDirectConn:        "direct",
+	ctSocksConn:         "socks5",
+	ctShadowctSocksConn: "shadowsocks",
+	ctHttpProxyConn:     "http parent",
+}
+
 type serverConnState byte
 
 const (
@@ -283,7 +291,7 @@ func (c *clientConn) serve() {
 				debug.Printf("Can't retry tryCnt=%d responseNotSent=%v\n", r.tryCnt, r.responseNotSent())
 				if r.responseNotSent() {
 					sendErrorPage(c, "502 retry failed", "Can't finish HTTP request",
-						genErrMsg(r, "Has tried several times."))
+						genErrMsg(r, sv, "Has tried several times."))
 					continue
 				}
 			} else if err == errPageSent {
@@ -299,16 +307,12 @@ func (c *clientConn) serve() {
 	}
 }
 
-func genErrMsg(r *Request, what string) string {
-	return fmt.Sprintf("<p>HTTP Request <strong>%v</strong></p> <p>%s</p>", r, what)
-}
-
-func genBlockedSiteMsg(r *Request) string {
-	if !r.URL.HostIsIP() {
-		return fmt.Sprintf(
-			"<p>Domain <strong>%s</strong> maybe blocked.</p>", r.URL.Domain)
+func genErrMsg(r *Request, sv *serverConn, what string) string {
+	if sv == nil {
+		return fmt.Sprintf("<p>HTTP Request <strong>%v</strong></p> <p>%s</p>", r, what)
 	}
-	return ""
+	return fmt.Sprintf("<p>HTTP Request <strong>%v</strong></p> <p>%s</p> <p>Using %s connection.</p>",
+		r, what, ctName[sv.connType])
 }
 
 const (
@@ -330,11 +334,11 @@ func (c *clientConn) handleServerReadError(r *Request, sv *serverConn, err error
 		}
 		return errRetry
 	}
-	errMsg = genErrMsg(r, msg)
 	if sv.maybeFake() && maybeBlocked(err) {
 		return c.handleBlockedRequest(r)
 	}
 	if r.responseNotSent() {
+		errMsg = genErrMsg(r, sv, msg)
 		sendErrorPage(c, "502 read error", err.Error(), errMsg)
 		return errPageSent
 	}
@@ -560,7 +564,7 @@ fail:
 		return zeroConn, errShouldClose
 	}
 	sendErrorPage(c, "504 Connection failed", err.Error(),
-		genErrMsg(r, "Connection failed."))
+		genErrMsg(r, nil, "Connection failed."))
 	return zeroConn, errPageSent
 }
 
