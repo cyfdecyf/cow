@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"math/rand"
 	"net"
 	"os"
 	"strconv"
@@ -104,7 +103,6 @@ func initAuth() {
 		return
 	}
 
-	rand.Seed(time.Now().Unix())
 	auth.authed = NewTimeoutSet(time.Duration(config.AuthTimeout) * time.Hour)
 
 	if auth.user == "" {
