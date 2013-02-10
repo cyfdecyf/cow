@@ -151,7 +151,7 @@ func (vc *VisitCnt) DirectVisit() {
 }
 
 func (vc *VisitCnt) BlockedVisit() {
-	if vc.userSpecified() {
+	if vc.userSpecified() && !vc.AsTempBlocked() {
 		return
 	}
 	vc.visit(&vc.Blocked)
