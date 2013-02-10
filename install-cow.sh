@@ -53,7 +53,7 @@ done
 
 # Ask OS X user whehter to start COW upon login
 start_on_login="n"
-if [ $os == "Darwin" ]; then
+if [ $os == "mac" ]; then
     while true; do
         echo -n "Start COW upon login? (If yes, download a plist file to ~/Library/LaunchAgents) [Y/n] "
         read start_on_login </dev/tty
