@@ -80,6 +80,11 @@ func TestSiteStatLoadStore(t *testing.T) {
 	if !si.AsBlocked() || !si.AlwaysBlocked() {
 		t.Error("builtin site twitter.com should use blocked access")
 	}
+	plus, _ := ParseRequestURI("plus.google.com")
+	si = ld.GetVisitCnt(plus)
+	if !si.AsBlocked() || !si.AlwaysBlocked() {
+		t.Error("builtin site plus.google.com should use blocked access")
+	}
 	if len(ld.GetDirectList()) == 0 {
 		t.Error("builtin site should appear in direct site list")
 	}
@@ -136,14 +141,17 @@ func TestSiteStatVisitCnt(t *testing.T) {
 	if !si.AsTempBlocked() {
 		t.Error("should be blocked for 2 minutes after blocked visit")
 	}
-	si.BlockedVisit()
+	if si.Blocked != 1 { // temp blocked should set blocked count to 1
+		t.Errorf("blocked cnt for %s not correct, should be 1, got: %d\n", g4.Host, vc.Blocked)
+	}
+	si.BlockedVisit() // these should not update visit count
 	si.BlockedVisit()
 	vc = ss.get(g4.Host)
 	if vc == nil {
 		t.Fatal("no VisitCnt for ", g4.Host)
 	}
-	if vc.Blocked != 2 {
-		t.Errorf("blocked cnt for %s not correct, should be 2, got: %d\n", g4.Host, vc.Blocked)
+	if vc.Blocked != 1 {
+		t.Errorf("blocked cnt after temp blocked should not change, %s not correct, should be 1, got: %d\n", g4.Host, vc.Blocked)
 	}
 	if vc.Direct != 0 {
 		t.Errorf("direct cnt for %s not correct, should be 0, got: %d\n", g4.Host, vc.Direct)
