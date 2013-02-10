@@ -7,6 +7,7 @@ var blockedDomainList = []string{
 	"fbcdn.net",
 	"facebook.com",
 	"plus.google.com",
+	"plusone.google.com",
 	"t.co",
 	"twimg.com",
 	"twitpic.com",

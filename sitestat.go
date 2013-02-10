@@ -78,7 +78,8 @@ const siteStaleThreshold = 15 * 24 * time.Hour
 // shouldDrop returns true if the a VisitCnt is not visited for a long time
 // (several days) or is specified by user.
 func (vc *VisitCnt) shouldDrop() bool {
-	return vc.userSpecified() || time.Now().Sub(time.Time(vc.Recent)) > siteStaleThreshold
+	return vc.userSpecified() || time.Now().Sub(time.Time(vc.Recent)) > siteStaleThreshold ||
+		(vc.Blocked == 0 && vc.Direct == 0)
 }
 
 const tmpBlockedTimeout = 2 * time.Minute
@@ -113,6 +114,7 @@ func (vc *VisitCnt) OnceBlocked() bool {
 }
 
 func (vc *VisitCnt) tempBlocked() {
+	vc.BlockedVisit() // first blocked visit, then set it as temp blocked
 	vc.blockedOn = time.Now()
 }
 
@@ -151,7 +153,7 @@ func (vc *VisitCnt) DirectVisit() {
 }
 
 func (vc *VisitCnt) BlockedVisit() {
-	if vc.userSpecified() && !vc.AsTempBlocked() {
+	if vc.userSpecified() || vc.AsTempBlocked() {
 		return
 	}
 	vc.visit(&vc.Blocked)
