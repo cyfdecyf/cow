@@ -605,7 +605,7 @@ func (sv *serverConn) directConnection() bool {
 }
 
 func (sv *serverConn) updateVisit() {
-	if sv.visited || sv.siteInfo.userSpecified() {
+	if sv.visited {
 		return
 	}
 	sv.visited = true
