@@ -102,6 +102,7 @@ var directDomainList = []string{
 	"bing.com.cn",
 	"baidu.com",
 	"bdstatic.com",
+	"bdimg.com",
 	"youdao.com",
 	"sogou.com",
 
