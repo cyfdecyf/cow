@@ -77,11 +77,11 @@ func main() {
 	done := make(chan byte, 1)
 	// save 1 goroutine (a few KB) for the common case with only 1 listen address
 	if len(config.ListenAddr) > 1 {
-		for _, addr := range config.ListenAddr[1:] {
-			go NewProxy(addr).Serve(done)
+		for i, addr := range config.ListenAddr[1:] {
+			go NewProxy(addr, config.AddrInPAC[i+1]).Serve(done)
 		}
 	}
-	NewProxy(config.ListenAddr[0]).Serve(done)
+	NewProxy(config.ListenAddr[0], config.AddrInPAC[0]).Serve(done)
 	for i := 0; i < len(config.ListenAddr); i++ {
 		<-done
 	}

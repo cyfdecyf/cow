@@ -100,8 +100,11 @@ var pacHeader = []byte("HTTP/1.1 200 OK\r\nServer: cow-proxy\r\n" +
 func genPAC(c *clientConn) []byte {
 	buf := new(bytes.Buffer)
 
-	host, _ := splitHostPort(c.LocalAddr().String())
-	proxyAddr := net.JoinHostPort(host, c.proxy.port)
+	proxyAddr := c.proxy.addrInPAC
+	if proxyAddr == "" {
+		host, _ := splitHostPort(c.LocalAddr().String())
+		proxyAddr = net.JoinHostPort(host, c.proxy.port)
+	}
 
 	if *pac.directList == "" {
 		// Empty direct domain list

@@ -30,8 +30,9 @@ const sslLeastDuration = time.Second
 // Some code are learnt from the http package
 
 type Proxy struct {
-	addr string // listen address, contains port
-	port string
+	addr      string // listen address, contains port
+	port      string
+	addrInPAC string // proxy server address to use in PAC
 }
 
 type connType byte
@@ -125,9 +126,9 @@ var (
 	errAuthRequired    = errors.New("Authentication requried")
 )
 
-func NewProxy(addr string) *Proxy {
+func NewProxy(addr, addrInPAC string) *Proxy {
 	_, port := splitHostPort(addr)
-	return &Proxy{addr: addr, port: port}
+	return &Proxy{addr: addr, port: port, addrInPAC: addrInPAC}
 }
 
 func (py *Proxy) Serve(done chan byte) {
@@ -142,8 +143,10 @@ func (py *Proxy) Serve(done chan byte) {
 	host, port := splitHostPort(py.addr)
 	if host == "" || host == "0.0.0.0" {
 		info.Printf("COW proxy address %s, PAC url http://<hostip>:%s/pac\n", py.addr, port)
-	} else {
+	} else if py.addrInPAC == "" {
 		info.Printf("COW proxy address %s, PAC url http://%s/pac\n", py.addr, py.addr)
+	} else {
+		info.Printf("COW proxy address %s, PAC url http://%s/pac\n", py.addr, py.addrInPAC)
 	}
 
 	for {
