@@ -52,7 +52,7 @@ OS X 和 Linux 上，推荐使用下面的命令来下载二进制文件和样�
 
 # 使用说明
 
-配置文件在 Unix 系统上为 `~/.cow/rc`，Windows 上为 COW 所在目录的 `rc` 文件。 **[样例配置](https://github.com/cyfdecyf/cow/blob/master/doc/sample-config/rc) 包含了所有选项以及详细的说明**，建议下载然后修改。
+配置文件在 Unix 系统上为 `~/.cow/rc`，Windows 上为 COW 所在目录的 `rc.txt` 文件。 **[样例配置](https://github.com/cyfdecyf/cow/blob/master/doc/sample-config/rc) 包含了所有选项以及详细的说明**，建议下载然后修改。
 
 启动 COW：
 

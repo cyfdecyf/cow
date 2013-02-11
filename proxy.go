@@ -30,7 +30,8 @@ const sslLeastDuration = time.Second
 // Some code are learnt from the http package
 
 type Proxy struct {
-	addr string // listen address
+	addr string // listen address, contains port
+	port string
 }
 
 type connType byte
@@ -125,7 +126,8 @@ var (
 )
 
 func NewProxy(addr string) *Proxy {
-	return &Proxy{addr: addr}
+	_, port := splitHostPort(addr)
+	return &Proxy{addr: addr, port: port}
 }
 
 func (py *Proxy) Serve(done chan byte) {

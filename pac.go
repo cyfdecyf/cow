@@ -101,8 +101,7 @@ func genPAC(c *clientConn) []byte {
 	buf := new(bytes.Buffer)
 
 	host, _ := splitHostPort(c.LocalAddr().String())
-	_, port := splitHostPort(c.proxy.addr)
-	proxyAddr := net.JoinHostPort(host, port)
+	proxyAddr := net.JoinHostPort(host, c.proxy.port)
 
 	if *pac.directList == "" {
 		// Empty direct domain list
