@@ -668,9 +668,6 @@ func (sv *serverConn) maybeSSLErr(cliStart time.Time) bool {
 }
 
 func (sv *serverConn) mayBeClosed() bool {
-	if sv.connType == ctSocksConn {
-		return false
-	}
 	return time.Now().After(sv.willCloseOn)
 }
 
@@ -831,6 +828,8 @@ func (sv *serverConn) doConnect(r *Request, c *clientConn) (err error) {
 				debug.Printf("%s Error sending CONNECT request to http proxy server: %v\n",
 					c.RemoteAddr(), err)
 			}
+			sv.Close()
+			return err
 		}
 	} else if !r.isRetry() {
 		// debug.Printf("send connection confirmation to %s->%s\n", c.RemoteAddr(), r.URL.HostPort)
@@ -927,19 +926,19 @@ func (sv *serverConn) doRequest(r *Request, c *clientConn) (err error) {
 }
 
 // Send response body if header specifies content length
-func sendBodyWithContLen(c *clientConn, r io.Reader, w, contBuf io.Writer, contLen int) (err error) {
+func sendBodyWithContLen(buf []byte, r io.Reader, w, contBuf io.Writer, contLen int) (err error) {
 	// debug.Println("Sending body with content length", contLen)
 	if contLen == 0 {
 		return
 	}
-	if err = copyN(r, w, contBuf, contLen, c.buf, nil, nil); err != nil {
+	if err = copyN(r, w, contBuf, contLen, buf, nil, nil); err != nil {
 		debug.Println("sendBodyWithContLen error:", err)
 	}
 	return
 }
 
 // Send response body if header specifies chunked encoding
-func sendBodyChunked(c *clientConn, r *bufio.Reader, w, contBuf io.Writer) (err error) {
+func sendBodyChunked(buf []byte, r *bufio.Reader, w, contBuf io.Writer) (err error) {
 	// debug.Println("Sending chunked body")
 	for {
 		var s []byte
@@ -973,7 +972,7 @@ func sendBodyChunked(c *clientConn, r *bufio.Reader, w, contBuf io.Writer) (err 
 		chunkLen := make([]byte, len(s)+2)
 		copy(chunkLen, s)
 		copy(chunkLen[len(s):], CRLF)
-		if err = copyN(r, w, contBuf, int(size)+2, c.buf, chunkLen, nil); err != nil {
+		if err = copyN(r, w, contBuf, int(size)+2, buf, chunkLen, nil); err != nil {
 			debug.Println("Copying chunked data:", err)
 			return
 		}
@@ -987,12 +986,12 @@ const chunkEnd = "0\r\n\r\n"
 // Client can't use closed connection to indicate end of request, so must
 // content length or use chunked encoding. Thus contBuf is not necessary for
 // sendBodySplitIntoChunk.
-func sendBodySplitIntoChunk(c *clientConn, r io.Reader, w io.Writer) (err error) {
-	// debug.Printf("client %s sendBodySplitIntoChunk called\n", c.RemoteAddr())
+func sendBodySplitIntoChunk(buf []byte, r io.Reader, w io.Writer) (err error) {
+	// debug.Printf("sendBodySplitIntoChunk called\n")
 	var n int
-	bufLen := len(c.buf)
+	bufLen := len(buf)
 	for {
-		n, err = r.Read(c.buf[:bufLen-2]) // make sure we have space to add CRLF
+		n, err = r.Read(buf[:bufLen-2]) // make sure we have space to add CRLF
 		// debug.Println("split into chunk n =", n, "err =", err)
 		if err != nil {
 			if err == io.EOF {
@@ -1012,8 +1011,8 @@ func sendBodySplitIntoChunk(c *clientConn, r io.Reader, w io.Writer) (err error)
 			debug.Printf("Writing chunk size %v\n", err)
 			return
 		}
-		copy(c.buf[n:], CRLF)
-		if _, err = w.Write(c.buf[:n+len(CRLF)]); err != nil {
+		copy(buf[n:], CRLF)
+		if _, err = w.Write(buf[:n+len(CRLF)]); err != nil {
 			debug.Println("Writing chunk data:", err)
 			return
 		}
@@ -1045,14 +1044,14 @@ func sendBody(c *clientConn, sv *serverConn, req *Request, rp *Response) (err er
 	// chunked encoding has precedence over content length
 	// COW does not sanitize response header, but should correctly handle it
 	if chunk {
-		err = sendBodyChunked(c, bufRd, w, contBuf)
+		err = sendBodyChunked(c.buf, bufRd, w, contBuf)
 	} else if contLen >= 0 {
-		err = sendBodyWithContLen(c, bufRd, w, contBuf, contLen)
+		err = sendBodyWithContLen(c.buf, bufRd, w, contBuf, contLen)
 	} else {
 		if req != nil {
 			errl.Println("Should not happen! Client request with body but no length specified.")
 		}
-		err = sendBodySplitIntoChunk(c, bufRd, w)
+		err = sendBodySplitIntoChunk(c.buf, bufRd, w)
 	}
 	return
 }
