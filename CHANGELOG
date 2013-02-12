@@ -1,3 +1,12 @@
+0.5.2 (not released)
+
+    * Allow user to specify proxy address in PAC
+
+0.5.1 (2013-02-10)
+
+    * Handle blocked site that will return EOF
+    * Small bug fixes
+
 0.5 (2013-02-07)
 
     * Support parent HTTP proxy (such as goagent)

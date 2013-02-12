@@ -21,6 +21,7 @@ const (
 type Config struct {
 	RcFile        string // config file
 	ListenAddr    []string
+	AddrInPAC     []string
 	SocksParent   string
 	HttpParent    string
 	Core          int
@@ -76,7 +77,7 @@ func parseCmdLineConfig() *Config {
 	flag.StringVar(&c.RcFile, "rc", path.Join(dsFile.dir, rcFname), "configuration file")
 	// Specifying listen default value to StringVar would override config file options
 	flag.StringVar(&listenAddr, "listen", "", "proxy server listen address, default to "+defaultListenAddr)
-	flag.StringVar(&c.SocksParent, "socksParent", "", "parent socks proxy address")
+	flag.StringVar(&c.SocksParent, "socksParent", "", "parent socks5 proxy address")
 	flag.StringVar(&c.HttpParent, "httpParent", "", "parent http proxy address")
 	flag.IntVar(&c.Core, "core", 2, "number of cores to use")
 	flag.StringVar(&c.SshServer, "sshServer", "", "remote server which will ssh to and provide socks server")
@@ -97,7 +98,7 @@ func parseCmdLineConfig() *Config {
 
 	flag.Parse()
 	if listenAddr != "" {
-		c.ListenAddr = []string{listenAddr}
+		configParser{}.ParseListen(listenAddr)
 	}
 	return &c
 }
@@ -136,6 +137,10 @@ func parseDuration(val, msg string) (d time.Duration) {
 type configParser struct{}
 
 func (p configParser) ParseListen(val string) {
+	// Has specified command line options
+	if config.ListenAddr != nil {
+		return
+	}
 	arr := strings.Split(val, ",")
 	config.ListenAddr = make([]string, len(arr))
 	for i, s := range arr {
@@ -153,6 +158,27 @@ func (p configParser) ParseListen(val string) {
 			}
 		}
 		config.ListenAddr[i] = s
+	}
+}
+
+func (p configParser) ParseAddrInPAC(val string) {
+	arr := strings.Split(val, ",")
+	config.AddrInPAC = make([]string, len(arr))
+	for i, s := range arr {
+		if s == "" {
+			continue
+		}
+		s = strings.TrimSpace(s)
+		host, port := splitHostPort(s)
+		if port == "" {
+			fmt.Printf("proxy address in PAC %s has no port\n", s)
+			os.Exit(1)
+		}
+		if host == "0.0.0.0" {
+			fmt.Println("Can't use 0.0.0.0 as proxy address in PAC")
+			os.Exit(1)
+		}
+		config.AddrInPAC[i] = s
 	}
 }
 
@@ -347,11 +373,16 @@ func updateConfig(nc *Config) {
 			}
 		}
 	}
-	if nc.ListenAddr != nil {
-		config.ListenAddr = nc.ListenAddr
-	}
 	if config.ListenAddr == nil {
 		config.ListenAddr = []string{defaultListenAddr}
+	}
+	if config.AddrInPAC != nil {
+		if len(config.AddrInPAC) != len(config.ListenAddr) {
+			fmt.Println("Number of listen addresses and addr in PAC not match.")
+			os.Exit(1)
+		}
+	} else {
+		config.AddrInPAC = make([]string, len(config.ListenAddr))
 	}
 }
 

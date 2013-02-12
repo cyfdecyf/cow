@@ -2,6 +2,7 @@ var direct = 'DIRECT';
 var httpProxy = 'PROXY';
 
 var directList = [
+	"", // corresponds to simple host name
 	"taobao.com",
 	"www.baidu.com",
 ];
@@ -67,6 +68,12 @@ function FindProxyForURL(url, host) {
 
 if (FindProxyForURL("", "192.168.1.1") != direct) {
 	console.log("ip should return direct");
+}
+if (FindProxyForURL("", "localhost") != direct) {
+	console.log("localhost should return direct");
+}
+if (FindProxyForURL("", "simple") != direct) {
+	console.log("simple host name should return direct");
 }
 if (FindProxyForURL("", "taobao.com") != direct) {
 	console.log("taobao.com should return direct");
