@@ -92,6 +92,7 @@ var directDomainList = []string{
 	"163.com",
 	"hexun.com",
 	"sina.com.cn",
+	"sinaapp.com",
 	"sinaimg.cn",
 	"sinajs.cn",
 	"sohu.com",
