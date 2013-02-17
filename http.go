@@ -234,7 +234,7 @@ func (h *Header) parseConnection(s []byte, raw *bytes.Buffer) error {
 }
 
 func (h *Header) parseContentLength(s []byte, raw *bytes.Buffer) (err error) {
-	h.ContLen, err = strconv.ParseInt(string(TrimSpace(s)), 10, 64)
+	h.ContLen, err = ParseIntFromBytes(TrimSpace(s), 10)
 	return err
 }
 

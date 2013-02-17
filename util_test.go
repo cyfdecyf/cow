@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"io"
 	"testing"
 )
@@ -122,6 +123,39 @@ func TestTrimSpace(t *testing.T) {
 		trimed := string(TrimSpace([]byte(td.old)))
 		if trimed != td.trimed {
 			t.Errorf("%s trimmed to %s, wrong", td.old, trimed)
+		}
+	}
+}
+
+func TestParseIntFromBytes(t *testing.T) {
+	errDummy := errors.New("dummy error")
+	testData := []struct {
+		raw  []byte
+		base int
+		err  error
+		val  int64
+	}{
+		{[]byte("123"), 10, nil, 123},
+		{[]byte("+123"), 10, nil, 123},
+		{[]byte("-123"), 10, nil, -123},
+		{[]byte("0"), 10, nil, 0},
+		{[]byte("a"), 10, errDummy, 0},
+		{[]byte("aBc"), 16, nil, 0xabc},
+		{[]byte("+aBc"), 16, nil, 0xabc},
+		{[]byte("-aBc"), 16, nil, -0xabc},
+		{[]byte("213e"), 16, nil, 0x213e},
+		{[]byte("213n"), 16, errDummy, 0},
+	}
+	for _, td := range testData {
+		val, err := ParseIntFromBytes(td.raw, td.base)
+		if err != nil && td.err == nil {
+			t.Errorf("%s base %d should NOT return error: %v\n", td.raw, td.base, err)
+		}
+		if err == nil && td.err != nil {
+			t.Errorf("%s base %d should return error\n", td.raw, td.base)
+		}
+		if val != td.val {
+			t.Errorf("%s base %d got wrong value: %d\n", td.raw, td.base, val)
 		}
 	}
 }

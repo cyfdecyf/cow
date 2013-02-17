@@ -8,7 +8,6 @@ import (
 	"io"
 	"net"
 	// "reflect"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -950,11 +949,14 @@ func sendBodyChunked(buf []byte, r *bufio.Reader, w, contBuf io.Writer) (err err
 		// debug.Println("Chunk size line", s)
 		f := bytes.SplitN(s, []byte{';'}, 2)
 		var size int64
-		if size, err = strconv.ParseInt(string(TrimSpace(f[0])), 16, 64); err != nil {
+		if size, err = ParseIntFromBytes(TrimSpace(f[0]), 16); err != nil {
 			errl.Println("Chunk size invalid:", err)
 			return
 		}
-		if size == 0 { // end of chunked data, TODO should ignore trailers
+		// end of chunked data. As we remove trailer header in request sending
+		// to server, there should be no trailer in response.
+		// TODO: Is it possible for client request body to have trailers in it?
+		if size == 0 {
 			if err = readCheckCRLF(r); err != nil {
 				errl.Println("Check CRLF after chunked size 0:", err)
 			}
@@ -967,7 +969,7 @@ func sendBodyChunked(buf []byte, r *bufio.Reader, w, contBuf io.Writer) (err err
 			return
 		}
 		// Read chunked data and the following CRLF. If server is not
-		// returning correct data, the next call to strconv.ParseInt is likely
+		// returning correct data, the next call to ParseIntFromBytes is likely
 		// to discover the error.
 		chunkLen := make([]byte, len(s)+2)
 		copy(chunkLen, s)

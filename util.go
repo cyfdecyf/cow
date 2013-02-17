@@ -130,6 +130,55 @@ func TrimSpace(s []byte) []byte {
 	return s[st : end+1]
 }
 
+// ParseIntFromBytes parse hexidecimal number from given bytes.
+// No prefix (e.g. 0xdeadbeef) should given.
+// base can only be 10 or 16.
+func ParseIntFromBytes(b []byte, base int) (n int64, err error) {
+	if base != 10 && base != 16 {
+		err = errors.New(fmt.Sprintf("Invalid base: %d\n", base))
+		return
+	}
+	if len(b) == 0 {
+		err = errors.New("Parse int from empty string")
+		return
+	}
+
+	neg := false
+	if b[0] == '+' {
+		b = b[1:]
+	} else if b[0] == '-' {
+		b = b[1:]
+		neg = true
+	}
+
+	for _, d := range b {
+		var v byte
+		switch {
+		case '0' <= d && d <= '9':
+			v += d - '0'
+		case 'a' <= d && d <= 'f':
+			v += d - 'a' + 10
+		case 'A' <= d && d <= 'F':
+			v += d - 'A' + 10
+		default:
+			n = 0
+			err = errors.New(fmt.Sprintf("Invalid number: %s", b))
+			return
+		}
+		if int(v) >= base {
+			n = 0
+			err = errors.New(fmt.Sprintf("Invalid base %d number: %s", base, b))
+			return
+		}
+		n *= int64(base)
+		n += int64(v)
+	}
+	if neg {
+		n = -n
+	}
+	return
+}
+
 func isWindows() bool {
 	return runtime.GOOS == "windows"
 }
