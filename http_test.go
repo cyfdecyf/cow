@@ -93,13 +93,15 @@ func TestParseHeader(t *testing.T) {
 			"Connection: keep-alive\r\nTransfer-Encoding: chunked\r\n",
 			&Header{ContLen: -1, Chunking: true, ConnectionKeepAlive: true,
 				KeepAlive: 10 * time.Second}},
-		{"Connection: keep-alive\r\nKeep-Alive: max=5,\r\n timeout=10\r\n\r\n", // test multi-line header
-			"Connection: keep-alive\r\n",
-			&Header{ContLen: -1, Chunking: false, ConnectionKeepAlive: true,
-				KeepAlive: 10 * time.Second}},
-		{"Connection: \r\n keep-alive\r\n\r\n", // test multi-line header
-			"Connection: keep-alive\r\n",
-			&Header{ContLen: -1, Chunking: false, ConnectionKeepAlive: true}},
+		/*
+			{"Connection: keep-alive\r\nKeep-Alive: max=5,\r\n timeout=10\r\n\r\n", // test multi-line header
+				"Connection: keep-alive\r\n",
+				&Header{ContLen: -1, Chunking: false, ConnectionKeepAlive: true,
+					KeepAlive: 10 * time.Second}},
+			{"Connection: \r\n keep-alive\r\n\r\n", // test multi-line header
+				"Connection: keep-alive\r\n",
+				&Header{ContLen: -1, Chunking: false, ConnectionKeepAlive: true}},
+		*/
 	}
 	for _, td := range testData {
 		var h Header

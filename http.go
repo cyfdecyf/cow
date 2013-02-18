@@ -280,6 +280,7 @@ func splitHeader(s []byte) (name, val []byte, err error) {
 // Only add headers that are of interest for a proxy into request's header map.
 func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, url *URL) (err error) {
 	h.ContLen = -1
+	dummyLastLine := []byte{'a'}
 	// Read request header and body
 	var s, name, val, lastLine []byte
 	for {
@@ -291,9 +292,12 @@ func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, url *URL) 
 		}
 		trimmed := TrimSpace(s)
 		if (s[0] == ' ' || s[0] == '\t') && lastLine != nil { // multi-line header
-			debug.Printf("Encounter multi-line header: %v %s", url, s)
+			// I've never seen multi-line header used in headers that's of interest.
+			// Disable multi-line support to avoid copy for now.
+			errl.Printf("Multi-line support disabled: %v %s", url, s)
+			return errNotSupported
 			// combine previous line with current line
-			trimmed = bytes.Join([][]byte{lastLine, []byte{' '}, trimmed}, nil)
+			// trimmed = bytes.Join([][]byte{lastLine, []byte{' '}, trimmed}, nil)
 		}
 		if name, val, err = splitHeader(trimmed); err != nil {
 			return
@@ -301,7 +305,8 @@ func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, url *URL) 
 		// Wait Go to solve/provide the string<->[]byte optimization
 		kn := string(name)
 		if parseFunc, ok := headerParser[kn]; ok {
-			lastLine = trimmed
+			// lastLine = append([]byte(nil), trimmed...) // copy to avoid next read invalidating the trimmed line
+			lastLine = dummyLastLine
 			val = TrimSpace(val)
 			if len(val) == 0 {
 				continue
