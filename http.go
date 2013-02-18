@@ -79,6 +79,7 @@ func (rp *Response) genStatusLine() (res string) {
 	} else {
 		res = strings.Join([]string{"HTTP/1.1", strconv.Itoa(rp.Status), string(rp.Reason)}, " ")
 	}
+	res += CRLF
 	return
 }
 
@@ -234,7 +235,7 @@ func (h *Header) parseConnection(s []byte, raw *bytes.Buffer) error {
 }
 
 func (h *Header) parseContentLength(s []byte, raw *bytes.Buffer) (err error) {
-	h.ContLen, err = strconv.ParseInt(string(TrimSpace(s)), 10, 64)
+	h.ContLen, err = ParseIntFromBytes(s, 10)
 	return err
 }
 
@@ -245,14 +246,14 @@ func (h *Header) parseKeepAlive(s []byte, raw *bytes.Buffer) (err error) {
 		end := id
 		for ; end < len(s) && IsDigit(s[end]); end++ {
 		}
-		delta, _ := strconv.Atoi(string(s[id:end]))
+		delta, _ := ParseIntFromBytes(s[id:end], 10)
 		h.KeepAlive = time.Second * time.Duration(delta)
 	}
 	return nil
 }
 
 func (h *Header) parseProxyAuthorization(s []byte, raw *bytes.Buffer) error {
-	h.ProxyAuthorization = string(TrimSpace(s))
+	h.ProxyAuthorization = string(s)
 	return nil
 }
 
@@ -279,27 +280,38 @@ func splitHeader(s []byte) (name, val []byte, err error) {
 
 // Only add headers that are of interest for a proxy into request's header map.
 func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, url *URL) (err error) {
+	h.ContLen = -1
+	dummyLastLine := []byte{'a'}
 	// Read request header and body
 	var s, name, val, lastLine []byte
 	for {
-		if s, err = ReadLineBytes(reader); err != nil {
+		if s, err = reader.ReadSlice('\n'); err != nil {
 			return
 		}
-		if len(s) == 0 { // end of headers
+		if len(s) == 2 { // only CRLF, end of headers
 			return
 		}
+		trimmed := TrimSpace(s)
 		if (s[0] == ' ' || s[0] == '\t') && lastLine != nil { // multi-line header
-			info.Printf("Encounter multi-line header: %v %s", url, string(s))
+			// I've never seen multi-line header used in headers that's of interest.
+			// Disable multi-line support to avoid copy for now.
+			errl.Printf("Multi-line support disabled: %v %s", url, s)
+			return errNotSupported
 			// combine previous line with current line
-			s = bytes.Join([][]byte{lastLine, []byte{' '}, s}, nil)
+			// trimmed = bytes.Join([][]byte{lastLine, []byte{' '}, trimmed}, nil)
 		}
-		if name, val, err = splitHeader(s); err != nil {
+		if name, val, err = splitHeader(trimmed); err != nil {
 			return
 		}
 		// Wait Go to solve/provide the string<->[]byte optimization
 		kn := string(name)
 		if parseFunc, ok := headerParser[kn]; ok {
-			lastLine = s
+			// lastLine = append([]byte(nil), trimmed...) // copy to avoid next read invalidating the trimmed line
+			lastLine = dummyLastLine
+			val = TrimSpace(val)
+			if len(val) == 0 {
+				continue
+			}
 			parseFunc(h, ASCIIToLower(val), raw)
 		} else {
 			// mark this header as not of interest to proxy
@@ -309,7 +321,6 @@ func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, url *URL) 
 			continue
 		}
 		raw.Write(s)
-		raw.WriteString(CRLF)
 		// debug.Printf("len %d %s", len(s), s)
 	}
 	return
@@ -321,18 +332,17 @@ func parseRequest(c *clientConn) (r *Request, err error) {
 	reader := c.bufRd
 	setConnReadTimeout(c, clientConnTimeout, "parseRequest")
 	// parse initial request line
-	if s, err = ReadLineBytes(reader); err != nil {
+	if s, err = reader.ReadSlice('\n'); err != nil {
 		return nil, err
 	}
 	unsetConnReadTimeout(c, "parseRequest")
 	// debug.Printf("Request initial line %s", s)
 
 	r = new(Request)
-	r.ContLen = -1
 
 	var f [][]byte
 	if f = bytes.SplitN(s, []byte{' '}, 3); len(f) < 3 { // request line are separated by SP
-		return nil, errors.New(fmt.Sprintf("malformed HTTP request: %s", string(s)))
+		return nil, errors.New(fmt.Sprintf("malformed HTTP request: %s", s))
 	}
 	var requestURI string
 	ASCIIToUpperInplace(f[0])
@@ -348,7 +358,11 @@ func parseRequest(c *clientConn) (r *Request, err error) {
 	} else {
 		// Generate normal HTTP request line
 		r.raw.WriteString(r.Method + " ")
-		r.raw.WriteString(r.URL.Path)
+		if len(r.URL.Path) == 0 {
+			r.raw.WriteString("/")
+		} else {
+			r.raw.WriteString(r.URL.Path)
+		}
 		r.raw.WriteString(" HTTP/1.1\r\n")
 	}
 
@@ -399,13 +413,12 @@ func (rp *Response) hasBody(method string) bool {
 // Parse response status and headers.
 func parseResponse(sv *serverConn, r *Request) (rp *Response, err error) {
 	rp = new(Response)
-	rp.ContLen = -1
 
 	var s []byte
 	reader := sv.bufRd
 START:
 	sv.setReadTimeout("parseResponse")
-	if s, err = ReadLineBytes(reader); err != nil {
+	if s, err = reader.ReadSlice('\n'); err != nil {
 		if err != io.EOF {
 			// err maybe timeout caused by explicity setting deadline
 			debug.Printf("Reading Response status line: %v %v\n", err, r)
@@ -415,7 +428,7 @@ START:
 	}
 	sv.unsetReadTimeout("parseResponse")
 	var f [][]byte
-	if f = bytes.SplitN(s, []byte{' '}, 3); len(f) < 2 { // status line are separated by SP
+	if f = bytes.SplitN(TrimSpace(s), []byte{' '}, 3); len(f) < 2 { // status line are separated by SP
 		errl.Printf("Malformed HTTP response status line: %s %v\n", s, r)
 		return nil, errMalformResponse
 	}
@@ -427,11 +440,10 @@ START:
 		}
 		goto START
 	}
-	// Currently, one have to convert []byte to string to use strconv
-	// Refer to: http://code.google.com/p/go/issues/detail?id=2632
-	rp.Status, err = strconv.Atoi(string(f[1]))
+	status, err := ParseIntFromBytes(f[1], 10)
+	rp.Status = int(status)
 	if err != nil {
-		errl.Printf("response status not valid: %s %v\n", f[1], err)
+		errl.Printf("response status not valid: %s len=%d %v\n", f[1], len(f[1]), err)
 		return
 	}
 	if len(f) == 3 {
@@ -450,10 +462,9 @@ START:
 		// will be converted to chunked encoding
 		rp.raw.WriteString(rp.genStatusLine())
 	} else {
-		errl.Printf("Response protocol not supported: %s\n", string(f[0]))
+		errl.Printf("Response protocol not supported: %s\n", f[0])
 		return nil, errNotSupported
 	}
-	rp.raw.WriteString(CRLF)
 
 	if err = rp.parseHeader(reader, &rp.raw, r.URL); err != nil {
 		errl.Printf("Reading response header: %v %v\n", err, r)

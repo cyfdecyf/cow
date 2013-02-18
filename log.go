@@ -26,11 +26,10 @@ var (
 
 	logFile io.Writer
 
-	// TODO: has to be initialized in initLog, otherwise will crash on Windows, why?
-	errorLog    *log.Logger
-	debugLog    *log.Logger
-	requestLog  *log.Logger
-	responseLog *log.Logger
+	errorLog    = log.New(os.Stdout, "[ERROR] ", log.LstdFlags)
+	debugLog    = log.New(os.Stdout, "[DEBUG] ", log.LstdFlags)
+	requestLog  = log.New(os.Stdout, "[>>>>>] ", log.LstdFlags)
+	responseLog = log.New(os.Stdout, "[<<<<<] ", log.LstdFlags)
 )
 
 var (
@@ -68,7 +67,7 @@ func initLog() {
 		debugLog = log.New(logFile, "\033[34m[Debug]\033[0m ", log.LstdFlags)
 		requestLog = log.New(logFile, "\033[32m[>>>>>]\033[0m ", log.LstdFlags)
 		responseLog = log.New(logFile, "\033[33m[<<<<<]\033[0m ", log.LstdFlags)
-	} else {
+	} else if logFile != os.Stdout {
 		errorLog = log.New(logFile, "[ERROR] ", log.LstdFlags)
 		debugLog = log.New(logFile, "[DEBUG] ", log.LstdFlags)
 		requestLog = log.New(logFile, "[>>>>>] ", log.LstdFlags)

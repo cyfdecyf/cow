@@ -1,5 +1,7 @@
 #!/bin/bash
 
+cd "$( dirname "${BASH_SOURCE[0]}" )/.."
+
 if [[ $# != 2 ]]; then
     echo "upload.sh <username> <passwd>"
     exit 1
