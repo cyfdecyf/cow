@@ -925,19 +925,19 @@ func (sv *serverConn) doRequest(r *Request, c *clientConn) (err error) {
 }
 
 // Send response body if header specifies content length
-func sendBodyWithContLen(buf []byte, r io.Reader, w, contBuf io.Writer, contLen int) (err error) {
+func sendBodyWithContLen(buf []byte, r io.Reader, w io.Writer, contLen int) (err error) {
 	// debug.Println("Sending body with content length", contLen)
 	if contLen == 0 {
 		return
 	}
-	if err = copyN(r, w, contBuf, contLen, buf, nil, nil); err != nil {
+	if err = copyN(r, w, contLen, buf, nil, nil); err != nil {
 		debug.Println("sendBodyWithContLen error:", err)
 	}
 	return
 }
 
 // Send response body if header specifies chunked encoding
-func sendBodyChunked(buf []byte, r *bufio.Reader, w, contBuf io.Writer) (err error) {
+func sendBodyChunked(buf []byte, r *bufio.Reader, w io.Writer) (err error) {
 	// debug.Println("Sending chunked body")
 	for {
 		var s []byte
@@ -960,9 +960,6 @@ func sendBodyChunked(buf []byte, r *bufio.Reader, w, contBuf io.Writer) (err err
 			if err = readCheckCRLF(r); err != nil {
 				errl.Println("Check CRLF after chunked size 0:", err)
 			}
-			if contBuf != nil {
-				contBuf.Write([]byte(chunkEnd))
-			}
 			if _, err = w.Write([]byte(chunkEnd)); err != nil {
 				debug.Println("Sending chunk ending:", err)
 			}
@@ -974,7 +971,7 @@ func sendBodyChunked(buf []byte, r *bufio.Reader, w, contBuf io.Writer) (err err
 		chunkLen := make([]byte, len(s)+2)
 		copy(chunkLen, s)
 		copy(chunkLen[len(s):], CRLF)
-		if err = copyN(r, w, contBuf, int(size)+2, buf, chunkLen, nil); err != nil {
+		if err = copyN(r, w, int(size)+2, buf, chunkLen, nil); err != nil {
 			debug.Println("Copying chunked data:", err)
 			return
 		}
@@ -1028,7 +1025,7 @@ func sendBody(c *clientConn, sv *serverConn, req *Request, rp *Response) (err er
 	var contLen int
 	var chunk bool
 	var bufRd *bufio.Reader
-	var w, contBuf io.Writer
+	var w io.Writer
 
 	if req == nil { // read from server, write to client
 		w = c
@@ -1036,19 +1033,18 @@ func sendBody(c *clientConn, sv *serverConn, req *Request, rp *Response) (err er
 		contLen = int(rp.ContLen)
 		chunk = rp.Chunking
 	} else {
-		w = sv
+		w = io.MultiWriter(sv, req.contBuf)
 		bufRd = c.bufRd
 		contLen = int(req.ContLen)
 		chunk = req.Chunking
-		contBuf = req.contBuf
 	}
 
 	// chunked encoding has precedence over content length
 	// COW does not sanitize response header, but should correctly handle it
 	if chunk {
-		err = sendBodyChunked(c.buf, bufRd, w, contBuf)
+		err = sendBodyChunked(c.buf, bufRd, w)
 	} else if contLen >= 0 {
-		err = sendBodyWithContLen(c.buf, bufRd, w, contBuf, contLen)
+		err = sendBodyWithContLen(c.buf, bufRd, w, contLen)
 	} else {
 		if req != nil {
 			errl.Println("Should not happen! Client request with body but no length specified.")

@@ -251,10 +251,9 @@ func expandTilde(pth string) string {
 }
 
 // copyN copys N bytes from r to w, using the specified buf as buffer. pre and
-// end are written to w before and after the n bytes. contBuf is used to store
-// the content that's written for later reuse. copyN will try to minimize
-// number of writes.
-func copyN(r io.Reader, w, contBuf io.Writer, n int, buf, pre, end []byte) (err error) {
+// end are written to w before and after the n bytes. copyN will try to
+// minimize number of writes.
+func copyN(r io.Reader, w io.Writer, n int, buf, pre, end []byte) (err error) {
 	// XXX well, this is complicated in order to save writes
 	var nn int
 	bufLen := len(buf)
@@ -298,9 +297,6 @@ func copyN(r io.Reader, w, contBuf io.Writer, n int, buf, pre, end []byte) (err 
 			copy(buf[nn:], end)
 			nn += len(end)
 			end = nil
-		}
-		if contBuf != nil {
-			contBuf.Write(buf[:nn])
 		}
 		if _, err = w.Write(buf[:nn]); err != nil {
 			return

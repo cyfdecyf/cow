@@ -166,7 +166,7 @@ func TestCopyN(t *testing.T) {
 	dst := new(bytes.Buffer)
 	buf := make([]byte, 5)
 
-	copyN(src, dst, nil, len(testStr), buf, nil, nil)
+	copyN(src, dst, len(testStr), buf, nil, nil)
 	if dst.String() != "hello world" {
 		t.Error("copy without pre and end failed, got:", dst.String())
 	}
@@ -174,7 +174,7 @@ func TestCopyN(t *testing.T) {
 	src.Reset()
 	dst.Reset()
 	src.WriteString(testStr)
-	copyN(src, dst, nil, len(testStr), buf, []byte("by cyf "), nil)
+	copyN(src, dst, len(testStr), buf, []byte("by cyf "), nil)
 	if dst.String() != "by cyf hello world" {
 		t.Error("copy with pre no end failed, got:", dst.String())
 	}
@@ -182,7 +182,7 @@ func TestCopyN(t *testing.T) {
 	src.Reset()
 	dst.Reset()
 	src.WriteString(testStr)
-	copyN(src, dst, nil, len(testStr), buf, []byte("by cyf "), []byte(" welcome"))
+	copyN(src, dst, len(testStr), buf, []byte("by cyf "), []byte(" welcome"))
 	if dst.String() != "by cyf hello world welcome" {
 		t.Error("copy with both pre and end failed, got:", dst.String())
 	}
@@ -190,7 +190,7 @@ func TestCopyN(t *testing.T) {
 	src.Reset()
 	dst.Reset()
 	src.WriteString(testStr)
-	copyN(src, dst, nil, len(testStr), buf, []byte("pre longer then buffer "), []byte(" welcome"))
+	copyN(src, dst, len(testStr), buf, []byte("pre longer then buffer "), []byte(" welcome"))
 	if dst.String() != "pre longer then buffer hello world welcome" {
 		t.Error("copy with long pre failed, got:", dst.String())
 	}
@@ -199,7 +199,7 @@ func TestCopyN(t *testing.T) {
 	dst.Reset()
 	testStr = "34"
 	src.WriteString(testStr)
-	copyN(src, dst, nil, len(testStr), buf, []byte("12"), []byte(" welcome"))
+	copyN(src, dst, len(testStr), buf, []byte("12"), []byte(" welcome"))
 	if dst.String() != "1234 welcome" {
 		t.Error("copy len(pre)+size<bufLen failed, got:", dst.String())
 	}
@@ -208,7 +208,7 @@ func TestCopyN(t *testing.T) {
 	dst.Reset()
 	testStr = "2"
 	src.WriteString(testStr)
-	copyN(src, dst, nil, len(testStr), buf, []byte("1"), []byte("34"))
+	copyN(src, dst, len(testStr), buf, []byte("1"), []byte("34"))
 	if dst.String() != "1234" {
 		t.Error("copy len(pre)+size+len(end)<bufLen failed, got:", dst.String())
 	}

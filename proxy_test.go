@@ -19,7 +19,7 @@ func TestSendBodyChunked(t *testing.T) {
 		r := bufio.NewReader(bytes.NewBufferString(td.raw))
 		var w bytes.Buffer
 
-		sendBodyChunked(buf, r, &w, nil)
+		sendBodyChunked(buf, r, &w)
 		if w.String() != td.raw {
 			t.Errorf("sendBodyChunked wrong, raw data is:\n%sgot:%s\n", td.raw, w.String())
 		}
