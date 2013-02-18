@@ -942,14 +942,17 @@ func sendBodyChunked(buf []byte, r *bufio.Reader, w io.Writer) (err error) {
 	for {
 		var s []byte
 		// Read chunk size line, ignore chunk extension if any
-		if s, err = ReadLineBytes(r); err != nil {
+		if s, err = r.ReadSlice('\n'); err != nil {
 			errl.Println("Reading chunk size:", err)
 			return
 		}
-		// debug.Println("Chunk size line", s)
-		f := bytes.SplitN(s, []byte{';'}, 2)
+		// debug.Printf("Chunk size line %s\n", s)
+		smid := bytes.IndexByte(s, ';')
+		if smid == -1 {
+			smid = len(s)
+		}
 		var size int64
-		if size, err = ParseIntFromBytes(TrimSpace(f[0]), 16); err != nil {
+		if size, err = ParseIntFromBytes(TrimSpace(s[:smid]), 16); err != nil {
 			errl.Println("Chunk size invalid:", err)
 			return
 		}
@@ -968,10 +971,7 @@ func sendBodyChunked(buf []byte, r *bufio.Reader, w io.Writer) (err error) {
 		// Read chunked data and the following CRLF. If server is not
 		// returning correct data, the next call to ParseIntFromBytes is likely
 		// to discover the error.
-		chunkLen := make([]byte, len(s)+2)
-		copy(chunkLen, s)
-		copy(chunkLen[len(s):], CRLF)
-		if err = copyN(r, w, int(size)+2, buf, chunkLen, nil); err != nil {
+		if err = copyN(r, w, int(size)+2, buf, s, nil); err != nil {
 			debug.Println("Copying chunked data:", err)
 			return
 		}
