@@ -1,7 +1,10 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
 	"testing"
+	"time"
 )
 
 func TestSplitHostPort(t *testing.T) {
@@ -73,6 +76,55 @@ func TestParseRequestURI(t *testing.T) {
 		}
 		if url.Path != td.url.Path {
 			t.Error(td.rawurl, "parsed path wrong:", td.url.Path, "got", url.Path)
+		}
+	}
+}
+
+func TestParseHeader(t *testing.T) {
+	var testData = []struct {
+		raw    string
+		newraw string
+		header *Header
+	}{
+		{"content-length: 64\r\nConnection: keep-alive\r\n\r\n",
+			"content-length: 64\r\nConnection: keep-alive\r\n",
+			&Header{ContLen: 64, Chunking: false, ConnectionKeepAlive: true}},
+		{"Connection: keep-alive\r\nKeep-Alive: timeout=10\r\nTransfer-Encoding: chunked\r\nTE: trailers\r\n\r\n",
+			"Connection: keep-alive\r\nTransfer-Encoding: chunked\r\n",
+			&Header{ContLen: -1, Chunking: true, ConnectionKeepAlive: true,
+				KeepAlive: 10 * time.Second}},
+		{"Connection: keep-alive\r\nKeep-Alive: max=5,\r\n timeout=10\r\n\r\n", // test multi-line header
+			"Connection: keep-alive\r\n",
+			&Header{ContLen: -1, Chunking: false, ConnectionKeepAlive: true,
+				KeepAlive: 10 * time.Second}},
+		{"Connection: \r\n keep-alive\r\n\r\n", // test multi-line header
+			"Connection: keep-alive\r\n",
+			&Header{ContLen: -1, Chunking: false, ConnectionKeepAlive: true}},
+	}
+	for _, td := range testData {
+		var h Header
+		var newraw bytes.Buffer
+		h.parseHeader(bufio.NewReader(bytes.NewBufferString(td.raw)), &newraw, nil)
+		if h.ContLen != td.header.ContLen {
+			t.Errorf("%s parsed content length wrong, should be %d, get %d\n",
+				td.raw, td.header.ContLen, h.ContLen)
+		}
+		if h.Chunking != td.header.Chunking {
+			t.Errorf("%s parsed chunking wrong, should be %v, get %v\n",
+				td.raw, td.header.Chunking, h.Chunking)
+		}
+		if h.ConnectionKeepAlive != td.header.ConnectionKeepAlive {
+			t.Errorf("%s parsed connection wrong, should be %v, get %v\n",
+				td.raw, td.header.ConnectionKeepAlive, h.ConnectionKeepAlive)
+		}
+		if h.KeepAlive != td.header.KeepAlive {
+			t.Errorf("%s parsed keep alive wrong, should be %v, get %v\n",
+				td.raw, td.header.KeepAlive, h.KeepAlive)
+		}
+		if newraw.String() != td.newraw {
+			t.Errorf("len(newraw): %d, len(td.newraw): %d\n", newraw.Len(), len(td.newraw))
+			t.Errorf("\n%sparsed raw wrong, should be:\n%sgot:\n%s\n",
+				td.raw, td.newraw, newraw.Bytes())
 		}
 	}
 }

@@ -234,7 +234,7 @@ func (h *Header) parseConnection(s []byte, raw *bytes.Buffer) error {
 }
 
 func (h *Header) parseContentLength(s []byte, raw *bytes.Buffer) (err error) {
-	h.ContLen, err = ParseIntFromBytes(TrimSpace(s), 10)
+	h.ContLen, err = ParseIntFromBytes(s, 10)
 	return err
 }
 
@@ -245,14 +245,14 @@ func (h *Header) parseKeepAlive(s []byte, raw *bytes.Buffer) (err error) {
 		end := id
 		for ; end < len(s) && IsDigit(s[end]); end++ {
 		}
-		delta, _ := strconv.Atoi(string(s[id:end]))
+		delta, _ := ParseIntFromBytes(s[id:end], 10)
 		h.KeepAlive = time.Second * time.Duration(delta)
 	}
 	return nil
 }
 
 func (h *Header) parseProxyAuthorization(s []byte, raw *bytes.Buffer) error {
-	h.ProxyAuthorization = string(TrimSpace(s))
+	h.ProxyAuthorization = string(s)
 	return nil
 }
 
@@ -279,27 +279,33 @@ func splitHeader(s []byte) (name, val []byte, err error) {
 
 // Only add headers that are of interest for a proxy into request's header map.
 func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, url *URL) (err error) {
+	h.ContLen = -1
 	// Read request header and body
 	var s, name, val, lastLine []byte
 	for {
-		if s, err = ReadLineBytes(reader); err != nil {
+		if s, err = reader.ReadSlice('\n'); err != nil {
 			return
 		}
-		if len(s) == 0 { // end of headers
+		if len(s) == 2 { // only CRLF, end of headers
 			return
 		}
+		trimmed := TrimSpace(s)
 		if (s[0] == ' ' || s[0] == '\t') && lastLine != nil { // multi-line header
-			info.Printf("Encounter multi-line header: %v %s", url, string(s))
+			debug.Printf("Encounter multi-line header: %v %s", url, s)
 			// combine previous line with current line
-			s = bytes.Join([][]byte{lastLine, []byte{' '}, s}, nil)
+			trimmed = bytes.Join([][]byte{lastLine, []byte{' '}, trimmed}, nil)
 		}
-		if name, val, err = splitHeader(s); err != nil {
+		if name, val, err = splitHeader(trimmed); err != nil {
 			return
 		}
 		// Wait Go to solve/provide the string<->[]byte optimization
 		kn := string(name)
 		if parseFunc, ok := headerParser[kn]; ok {
-			lastLine = s
+			lastLine = trimmed
+			val = TrimSpace(val)
+			if len(val) == 0 {
+				continue
+			}
 			parseFunc(h, ASCIIToLower(val), raw)
 		} else {
 			// mark this header as not of interest to proxy
@@ -309,7 +315,6 @@ func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, url *URL) 
 			continue
 		}
 		raw.Write(s)
-		raw.WriteString(CRLF)
 		// debug.Printf("len %d %s", len(s), s)
 	}
 	return
@@ -328,7 +333,6 @@ func parseRequest(c *clientConn) (r *Request, err error) {
 	// debug.Printf("Request initial line %s", s)
 
 	r = new(Request)
-	r.ContLen = -1
 
 	var f [][]byte
 	if f = bytes.SplitN(s, []byte{' '}, 3); len(f) < 3 { // request line are separated by SP
@@ -399,7 +403,6 @@ func (rp *Response) hasBody(method string) bool {
 // Parse response status and headers.
 func parseResponse(sv *serverConn, r *Request) (rp *Response, err error) {
 	rp = new(Response)
-	rp.ContLen = -1
 
 	var s []byte
 	reader := sv.bufRd
