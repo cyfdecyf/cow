@@ -357,7 +357,11 @@ func parseRequest(c *clientConn) (r *Request, err error) {
 	} else {
 		// Generate normal HTTP request line
 		r.raw.WriteString(r.Method + " ")
-		r.raw.WriteString(r.URL.Path)
+		if len(r.URL.Path) == 0 {
+			r.raw.WriteString("/")
+		} else {
+			r.raw.WriteString(r.URL.Path)
+		}
 		r.raw.WriteString(" HTTP/1.1\r\n")
 	}
 
