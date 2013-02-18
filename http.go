@@ -331,7 +331,7 @@ func parseRequest(c *clientConn) (r *Request, err error) {
 	reader := c.bufRd
 	setConnReadTimeout(c, clientConnTimeout, "parseRequest")
 	// parse initial request line
-	if s, err = ReadLineBytes(reader); err != nil {
+	if s, err = reader.ReadSlice('\n'); err != nil {
 		return nil, err
 	}
 	unsetConnReadTimeout(c, "parseRequest")
@@ -341,7 +341,7 @@ func parseRequest(c *clientConn) (r *Request, err error) {
 
 	var f [][]byte
 	if f = bytes.SplitN(s, []byte{' '}, 3); len(f) < 3 { // request line are separated by SP
-		return nil, errors.New(fmt.Sprintf("malformed HTTP request: %s", string(s)))
+		return nil, errors.New(fmt.Sprintf("malformed HTTP request: %s", s))
 	}
 	var requestURI string
 	ASCIIToUpperInplace(f[0])
