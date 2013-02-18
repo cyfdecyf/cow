@@ -33,6 +33,7 @@ test_get() {
 test_get baidu.com # baidu uses content-length
 test_get youku.com # 302 redirect
 test_get douban.com # 301 redirect
+test_get www.wpxap.com # HTTP 1.0 server
 test_get www.taobao.com # chunked encoding
 test_get https://www.twitter.com # builtin blocked site, 301 direct
 test_get openvpn.net # blocked site, all kinds of block method

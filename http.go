@@ -79,6 +79,7 @@ func (rp *Response) genStatusLine() (res string) {
 	} else {
 		res = strings.Join([]string{"HTTP/1.1", strconv.Itoa(rp.Status), string(rp.Reason)}, " ")
 	}
+	res += CRLF
 	return
 }
 
@@ -417,7 +418,7 @@ func parseResponse(sv *serverConn, r *Request) (rp *Response, err error) {
 	reader := sv.bufRd
 START:
 	sv.setReadTimeout("parseResponse")
-	if s, err = ReadLineBytes(reader); err != nil {
+	if s, err = reader.ReadSlice('\n'); err != nil {
 		if err != io.EOF {
 			// err maybe timeout caused by explicity setting deadline
 			debug.Printf("Reading Response status line: %v %v\n", err, r)
@@ -427,7 +428,7 @@ START:
 	}
 	sv.unsetReadTimeout("parseResponse")
 	var f [][]byte
-	if f = bytes.SplitN(s, []byte{' '}, 3); len(f) < 2 { // status line are separated by SP
+	if f = bytes.SplitN(TrimSpace(s), []byte{' '}, 3); len(f) < 2 { // status line are separated by SP
 		errl.Printf("Malformed HTTP response status line: %s %v\n", s, r)
 		return nil, errMalformResponse
 	}
@@ -439,11 +440,10 @@ START:
 		}
 		goto START
 	}
-	// Currently, one have to convert []byte to string to use strconv
-	// Refer to: http://code.google.com/p/go/issues/detail?id=2632
-	rp.Status, err = strconv.Atoi(string(f[1]))
+	status, err := ParseIntFromBytes(f[1], 10)
+	rp.Status = int(status)
 	if err != nil {
-		errl.Printf("response status not valid: %s %v\n", f[1], err)
+		errl.Printf("response status not valid: %s len=%d %v\n", f[1], len(f[1]), err)
 		return
 	}
 	if len(f) == 3 {
@@ -462,10 +462,9 @@ START:
 		// will be converted to chunked encoding
 		rp.raw.WriteString(rp.genStatusLine())
 	} else {
-		errl.Printf("Response protocol not supported: %s\n", string(f[0]))
+		errl.Printf("Response protocol not supported: %s\n", f[0])
 		return nil, errNotSupported
 	}
-	rp.raw.WriteString(CRLF)
 
 	if err = rp.parseHeader(reader, &rp.raw, r.URL); err != nil {
 		errl.Printf("Reading response header: %v %v\n", err, r)

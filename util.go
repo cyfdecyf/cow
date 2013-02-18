@@ -134,6 +134,9 @@ func TrimSpace(s []byte) []byte {
 // No prefix (e.g. 0xdeadbeef) should given.
 // base can only be 10 or 16.
 func ParseIntFromBytes(b []byte, base int) (n int64, err error) {
+	// Currently, one have to convert []byte to string to use strconv
+	// Refer to: http://code.google.com/p/go/issues/detail?id=2632
+	// That's why I created this function.
 	if base != 10 && base != 16 {
 		err = errors.New(fmt.Sprintf("Invalid base: %d\n", base))
 		return
