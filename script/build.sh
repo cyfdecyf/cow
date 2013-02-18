@@ -1,5 +1,7 @@
 #!/bin/bash
 
+cd "$( dirname "${BASH_SOURCE[0]}" )/.."
+
 version=`grep '^version=' ./install-cow.sh | sed -s 's/version=//'`
 echo "creating cow binary version $version"
 

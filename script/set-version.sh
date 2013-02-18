@@ -1,5 +1,7 @@
 #!/bin/bash
 
+cd "$( dirname "${BASH_SOURCE[0]}" )/.."
+
 if [ $# != 1 ]; then
     echo "Usage: $0 <version>"
     exit 1
