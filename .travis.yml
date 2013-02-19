@@ -3,7 +3,6 @@ env:
   - TRAVIS="yes"
 install:
   - go get github.com/shadowsocks/shadowsocks-go/shadowsocks
-  - go build
 script:
   - go test -v
   - ./script/test.sh

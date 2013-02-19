@@ -304,12 +304,31 @@ func (ss *SiteStat) loadList(lst []string, direct, blocked vcntint) {
 	}
 }
 
-func (ss *SiteStat) loadBuiltinList() {
+func (ss *SiteStat) loadBuiltinAndUserSpecifiedList() {
 	ss.loadList(blockedDomainList, 0, userCnt)
 	ss.loadList(directDomainList, userCnt, 0)
+
+	// load user specified sites at last to override previous values
+	if directList, err := loadSiteList(dsFile.alwaysDirect); err == nil {
+		ss.loadList(directList, userCnt, 0)
+	}
+	if blockedList, err := loadSiteList(dsFile.alwaysBlocked); err == nil {
+		ss.loadList(blockedList, 0, userCnt)
+	}
+
+	for k, v := range ss.Vcnt {
+		if v.Blocked > 0 {
+			ss.hasBlockedHost[k] = true
+		}
+	}
 }
 
 func (ss *SiteStat) load(file string) (err error) {
+	defer func() {
+		if err == nil {
+			ss.loadBuiltinAndUserSpecifiedList()
+		}
+	}()
 	var exists bool
 	if exists, err = isFileExists(file); err != nil {
 		fmt.Println("Error loading stat:", err)
@@ -331,22 +350,6 @@ func (ss *SiteStat) load(file string) (err error) {
 	if err = json.Unmarshal(b, ss); err != nil {
 		fmt.Println("Error decoding site stat:", err)
 		return
-	}
-
-	ss.loadBuiltinList()
-
-	// load user specified sites at last to override previous values
-	if directList, err := loadSiteList(dsFile.alwaysDirect); err == nil {
-		ss.loadList(directList, userCnt, 0)
-	}
-	if blockedList, err := loadSiteList(dsFile.alwaysBlocked); err == nil {
-		ss.loadList(blockedList, 0, userCnt)
-	}
-
-	for k, v := range ss.Vcnt {
-		if v.Blocked > 0 {
-			ss.hasBlockedHost[k] = true
-		}
 	}
 	return
 }
@@ -370,7 +373,9 @@ func (ss *SiteStat) GetDirectList() []string {
 var siteStat = newSiteStat()
 
 func initSiteStat() {
-	loadSiteStat()
+	if siteStat.load(dsFile.stat) != nil {
+		os.Exit(1)
+	}
 	if isWindows() {
 		// TODO How to detect program exit on Windows? This
 		// is just a workaround.
@@ -380,12 +385,6 @@ func initSiteStat() {
 				storeSiteStat()
 			}
 		}()
-	}
-}
-
-func loadSiteStat() {
-	if siteStat.load(dsFile.stat) != nil {
-		os.Exit(1)
 	}
 }
 

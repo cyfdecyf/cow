@@ -2,6 +2,11 @@
 
 cd "$( dirname "${BASH_SOURCE[0]}" )/.."
 
+if ! go build; then
+    echo "build failed"
+    exit 1
+fi
+
 PROXY_ADDR=127.0.0.1:7788
 
 if [[ -n "$TRAVIS" ]]; then
