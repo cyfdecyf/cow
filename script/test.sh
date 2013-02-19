@@ -23,6 +23,11 @@ test_get() {
     url=$1
     target=$2
     noproxy=$3
+    code=$4
+
+    if [[ -z $code ]]; then
+        code="200"
+    fi
 
     # get 5 times
     for i in {1..2}; do
@@ -34,7 +39,7 @@ test_get() {
         else
             cont=`curl -s --show-error -i -L -x $PROXY_ADDR $url 2>&1`
         fi
-        ok=`echo $cont | grep -E -o 'HTTP/1\.1 +200'`
+        ok=`echo $cont | grep -E -o "HTTP/1\.1 +$code"`
         html=`echo $cont | grep -E -o -i "$target"`
         if [[ -z $ok || -z $html ]] ; then
             echo "=============================="
@@ -57,6 +62,7 @@ test_get www.google.com "</html>" # 302 redirect
 test_get www.reddit.com "</html>" # chunked encoding
 test_get https://www.twitter.com "</html>" # builtin blocked site, HTTP CONNECT
 test_get openvpn.net "</html>" # blocked site, all kinds of block method
+test_get http://plan9.bell-labs.com/magic/man2html/1/2l "<head>" "" "404"
 
 # Chinese sites may timeout on travis.
 if [[ -z $TRAVIS ]]; then

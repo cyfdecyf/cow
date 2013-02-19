@@ -88,7 +88,7 @@ func (rp *Response) String() string {
 	if verbose {
 		r = rp.raw.String()
 	} else {
-		r = fmt.Sprintf("%s %s", rp.Status, rp.Reason)
+		r = fmt.Sprintf("%d %s", rp.Status, rp.Reason)
 	}
 	return r
 }
@@ -288,10 +288,12 @@ func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, url *URL) 
 		if s, err = reader.ReadSlice('\n'); err != nil {
 			return
 		}
-		if len(s) == 2 { // only CRLF, end of headers
+		// There are servers that use \n for line ending, so trim first before check ending.
+		// For example, the 404 page for http://plan9.bell-labs.com/magic/man2html/1/2l
+		trimmed := TrimSpace(s)
+		if len(trimmed) == 0 { // end of headers
 			return
 		}
-		trimmed := TrimSpace(s)
 		if (s[0] == ' ' || s[0] == '\t') && lastLine != nil { // multi-line header
 			// I've never seen multi-line header used in headers that's of interest.
 			// Disable multi-line support to avoid copy for now.
