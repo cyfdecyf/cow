@@ -9,10 +9,11 @@ fi
 
 PROXY_ADDR=127.0.0.1:7788
 
-if [[ -n "$TRAVIS" ]]; then
-    ./cow -rc ./script/debugrc -listen=$PROXY_ADDR &
-else
+if [[ -z "$TRAVIS" ]]; then
     ./cow -rc ~/.cow/debugrc -listen=$PROXY_ADDR &
+else
+    # on travis
+    ./cow -rc ./script/debugrc -listen=$PROXY_ADDR &
 fi
 cow_pid=$!
 sleep 0.5
@@ -45,7 +46,7 @@ test_get() {
             kill -SIGTERM $cow_pid
             exit 1
         fi
-        sleep 0.5
+        sleep 0.3
     done
     echo "GET $url passed"
 }
@@ -53,12 +54,17 @@ test_get() {
 test_get $PROXY_ADDR/pac "apple.com" "noproxy" # test for pac
 test_get google.com "</html>" # 301 redirect 
 test_get www.google.com "</html>" # 302 redirect 
-#test_get youku.com "</html>" # 302 redirect
-#test_get douban.com "</html>" # 301 redirect
-test_get www.wpxap.com "<html" # HTTP 1.0 server
-test_get www.taobao.com "<html>" # chunked encoding
+test_get www.reddit.com "</html>" # chunked encoding
 test_get https://www.twitter.com "</html>" # builtin blocked site, HTTP CONNECT
 test_get openvpn.net "</html>" # blocked site, all kinds of block method
+
+# Chinese sites may timeout on travis.
+if [[ -z $TRAVIS ]]; then
+    test_get www.wpxap.com "<html" # HTTP 1.0 server
+    test_get youku.com "</html>" # 302 redirect
+    test_get douban.com "</html>" # 301 redirect
+    test_get www.taobao.com "<html>" # chunked encoding, weird can't tests for </html> in script
+fi
 
 kill -SIGTERM $cow_pid
 exit 0
