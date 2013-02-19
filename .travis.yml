@@ -1,0 +1,8 @@
+language: go
+env:
+  - TRAVIS="yes"
+install:
+  - go get github.com/shadowsocks/shadowsocks-go/shadowsocks
+script:
+  - go test -v
+  - ./script/test.sh

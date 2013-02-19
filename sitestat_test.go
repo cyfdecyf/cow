@@ -30,6 +30,10 @@ func TestDateMarshal(t *testing.T) {
 
 func TestSiteStatLoadStore(t *testing.T) {
 	ss := newSiteStat()
+	ss.load("testdata/nosuchfile") // load buildin and user specified list
+	if len(ss.GetDirectList()) == 0 {
+		t.Error("builtin site should appear in direct site list even with no stat file")
+	}
 
 	d1, _ := ParseRequestURI("www.foobar.com")
 	d2, _ := ParseRequestURI("img.foobar.com")

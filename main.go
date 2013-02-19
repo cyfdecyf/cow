@@ -47,7 +47,7 @@ func main() {
 	initSocksServer()
 	initShadowSocks()
 	initSiteStat()
-	initPAC()
+	initPAC() // initPAC uses siteStat, so must init after site stat
 
 	if len(parentProxyCreator) == 0 {
 		info.Println("no parent proxy server, can't handle blocked sites")
