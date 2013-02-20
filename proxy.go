@@ -189,14 +189,12 @@ func isSelfURL(url string) bool {
 	return url == ""
 }
 
-func (c *clientConn) getRequest() (r *Request) {
-	var err error
-
+func (c *clientConn) getRequest() (r *Request, err error) {
 	if r, err = parseRequest(c); err != nil {
 		c.handleClientReadError(r, err, "parse client request")
-		return nil
+		return nil, err
 	}
-	return r
+	return r, nil
 }
 
 func (c *clientConn) serveSelfURL(r *Request) (err error) {
@@ -250,7 +248,8 @@ func (c *clientConn) serve() {
 	// Refer to implementation.md for the design choices on parsing the request
 	// and response.
 	for {
-		if r = c.getRequest(); r == nil {
+		if r, err = c.getRequest(); err != nil {
+			sendErrorPage(c, "404 Bad request", "Bad request", err.Error())
 			return
 		}
 		if dbgRq {
@@ -389,7 +388,7 @@ func (c *clientConn) handleClientReadError(r *Request, err error, msg string) er
 		} else if isErrTimeout(err) {
 			debug.Printf("%s client read timeout, maybe has closed\n", msg)
 		} else {
-			// TODO is this possible?
+			// may reach here when header is larger than bufSize
 			debug.Printf("handleClientReadError: %s %v %v\n", msg, err, r)
 		}
 	}
