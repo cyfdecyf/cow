@@ -960,9 +960,7 @@ func sendBodyChunked(buf []byte, r *bufio.Reader, w io.Writer) (err error) {
 		// to server, there should be no trailer in response.
 		// TODO: Is it possible for client request body to have trailers in it?
 		if size == 0 {
-			if err = readCheckCRLF(r); err != nil {
-				errl.Println("Check CRLF after chunked size 0:", err)
-			}
+			skipCRLF(r)
 			if _, err = w.Write([]byte(chunkEnd)); err != nil {
 				debug.Println("Sending chunk ending:", err)
 			}

@@ -392,13 +392,11 @@ func (r *Request) responseNotSent() bool {
 	return r.state <= rsSent
 }
 
-func readCheckCRLF(reader *bufio.Reader) error {
-	crlfBuf := make([]byte, 2)
-	if _, err := io.ReadFull(reader, crlfBuf); err != nil {
+func skipCRLF(r *bufio.Reader) error {
+	// There maybe servers using single '\n' for line ending
+	if _, err := r.ReadSlice('\n'); err != nil {
+		errl.Println("Error reading CRLF:", err)
 		return err
-	}
-	if crlfBuf[0] != '\r' || crlfBuf[1] != '\n' {
-		return errChunkedEncode
 	}
 	return nil
 }
@@ -436,10 +434,7 @@ START:
 	}
 	// Handle 1xx response
 	if bytes.Equal(f[1], []byte("100")) {
-		if err = readCheckCRLF(reader); err != nil {
-			errl.Printf("Reading CRLF after 1xx response: %v %v\n", err, r)
-			return nil, err
-		}
+		skipCRLF(reader)
 		goto START
 	}
 	status, err := ParseIntFromBytes(f[1], 10)
