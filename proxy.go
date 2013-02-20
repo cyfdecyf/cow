@@ -15,8 +15,10 @@ import (
 // var _ = reflect.TypeOf
 
 // Explicitly specify buffer size to avoid unnecessary copy using
-// bufio.Reader's Read
-const bufSize = 4096
+// bufio.Reader's Read. As I'm using ReadSlice to read line, it's possible to
+// get bufio.ErrBufferFull while reading headers, so set it to a large default
+// value to prevent such problems.
+const bufSize = 8192
 
 // Close client connection it no new request received in 1 minute.
 const clientConnTimeout = 60 * time.Second
