@@ -22,7 +22,7 @@ func TestSendBodyChunked(t *testing.T) {
 
 		sendBodyChunked(buf, r, &w)
 		if w.String() != td.raw {
-			t.Errorf("sendBodyChunked wrong, raw data is:\n%sgot:%s\n", td.raw, w.String())
+			t.Errorf("sendBodyChunked wrong, raw data is:\n%qgot:%q\n", td.raw, w.String())
 		}
 	}
 }

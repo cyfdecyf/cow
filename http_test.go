@@ -109,24 +109,23 @@ func TestParseHeader(t *testing.T) {
 		var newraw bytes.Buffer
 		h.parseHeader(bufio.NewReader(strings.NewReader(td.raw)), &newraw, nil)
 		if h.ContLen != td.header.ContLen {
-			t.Errorf("%s parsed content length wrong, should be %d, get %d\n",
+			t.Errorf("%q parsed content length wrong, should be %d, get %d\n",
 				td.raw, td.header.ContLen, h.ContLen)
 		}
 		if h.Chunking != td.header.Chunking {
-			t.Errorf("%s parsed chunking wrong, should be %v, get %v\n",
+			t.Errorf("%q parsed chunking wrong, should be %t, get %t\n",
 				td.raw, td.header.Chunking, h.Chunking)
 		}
 		if h.ConnectionKeepAlive != td.header.ConnectionKeepAlive {
-			t.Errorf("%s parsed connection wrong, should be %v, get %v\n",
+			t.Errorf("%q parsed connection wrong, should be %v, get %v\n",
 				td.raw, td.header.ConnectionKeepAlive, h.ConnectionKeepAlive)
 		}
 		if h.KeepAlive != td.header.KeepAlive {
-			t.Errorf("%s parsed keep alive wrong, should be %v, get %v\n",
+			t.Errorf("%q parsed keep alive wrong, should be %v, get %v\n",
 				td.raw, td.header.KeepAlive, h.KeepAlive)
 		}
 		if newraw.String() != td.newraw {
-			t.Errorf("len(newraw): %d, len(td.newraw): %d\n", newraw.Len(), len(td.newraw))
-			t.Errorf("\n%sparsed raw wrong, should be:\n%sgot:\n%s\n",
+			t.Errorf("%q parsed raw wrong\nshould be: %q\ngot: %q\n",
 				td.raw, td.newraw, newraw.Bytes())
 		}
 	}
