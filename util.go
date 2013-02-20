@@ -132,6 +132,17 @@ func TrimSpace(s []byte) []byte {
 	return s[st : end+1]
 }
 
+var digitTbl = [256]int8{
+	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+	0, 1, 2, 3, 4, 5, 6, 7, 8, 9, -1, -1, -1, -1, -1, -1,
+	-1, 10, 11, 12, 13, 14, 15, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+	-1, 10, 11, 12, 13, 14, 15, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+}
+
 // ParseIntFromBytes parse hexidecimal number from given bytes.
 // No prefix (e.g. 0xdeadbeef) should given.
 // base can only be 10 or 16.
@@ -157,15 +168,8 @@ func ParseIntFromBytes(b []byte, base int) (n int64, err error) {
 	}
 
 	for _, d := range b {
-		var v byte
-		switch {
-		case '0' <= d && d <= '9':
-			v += d - '0'
-		case 'a' <= d && d <= 'f':
-			v += d - 'a' + 10
-		case 'A' <= d && d <= 'F':
-			v += d - 'A' + 10
-		default:
+		v := digitTbl[d]
+		if v == -1 {
 			n = 0
 			err = errors.New(fmt.Sprintf("Invalid number: %s", b))
 			return

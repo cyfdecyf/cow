@@ -145,6 +145,7 @@ func TestParseIntFromBytes(t *testing.T) {
 		{[]byte("+aBc"), 16, nil, 0xabc},
 		{[]byte("-aBc"), 16, nil, -0xabc},
 		{[]byte("213e"), 16, nil, 0x213e},
+		{[]byte("12deadbeef"), 16, nil, 0x12deadbeef},
 		{[]byte("213n"), 16, errDummy, 0},
 	}
 	for _, td := range testData {
