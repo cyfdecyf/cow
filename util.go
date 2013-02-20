@@ -14,6 +14,8 @@ import (
 	"strings"
 )
 
+const isWindows = runtime.GOOS == "windows"
+
 type notification chan byte
 
 func newNotification() notification {
@@ -180,10 +182,6 @@ func ParseIntFromBytes(b []byte, base int) (n int64, err error) {
 		n = -n
 	}
 	return
-}
-
-func isWindows() bool {
-	return runtime.GOOS == "windows"
 }
 
 func isFileExists(path string) (bool, error) {

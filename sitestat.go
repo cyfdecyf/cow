@@ -376,7 +376,7 @@ func initSiteStat() {
 	if siteStat.load(dsFile.stat) != nil {
 		os.Exit(1)
 	}
-	if isWindows() {
+	if isWindows {
 		// TODO How to detect program exit on Windows? This
 		// is just a workaround.
 		go func() {

@@ -12,6 +12,8 @@ import (
 // var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
 
 func sigHandler() {
+	// TODO On Windows, these signals will not be triggered on closing cmd
+	// window. How to detect this?
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM,
 		syscall.SIGHUP)

@@ -62,7 +62,7 @@ test_get www.google.com "</html>" # 302 redirect
 test_get www.reddit.com "</html>" # chunked encoding
 test_get https://www.twitter.com "</html>" # builtin blocked site, HTTP CONNECT
 test_get openvpn.net "</html>" # blocked site, all kinds of block method
-test_get http://plan9.bell-labs.com/magic/man2html/1/2l "<head>" "" "404"
+test_get http://plan9.bell-labs.com/magic/man2html/1/2l "<head>" "" "404" # single LF in response header
 
 # Chinese sites may timeout on travis.
 if [[ -z $TRAVIS ]]; then
