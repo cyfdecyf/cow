@@ -1,9 +1,9 @@
 package main
 
 import (
-	"bufio"
 	"flag"
 	"fmt"
+	"github.com/cyfdecyf/bufio"
 	"io"
 	"os"
 	"path"

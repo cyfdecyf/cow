@@ -1,10 +1,10 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
 	"errors"
 	"fmt"
+	"github.com/cyfdecyf/bufio"
 	"io"
 	"net"
 	// "reflect"
@@ -881,7 +881,7 @@ func (sv *serverConn) sendHTTPProxyRequest(r *Request, c *clientConn) (err error
 func (sv *serverConn) doRequest(r *Request, c *clientConn) (err error) {
 	if c.buf == nil {
 		// It's common for response to have content-length larger than 4096
-		c.buf = make([]byte, bufSize*2)
+		c.buf = make([]byte, bufSize)
 	}
 	r.state = rsCreated
 	// Send request to the server
@@ -942,9 +942,9 @@ func sendBodyChunked(buf []byte, r *bufio.Reader, w io.Writer) (err error) {
 	// debug.Println("Sending chunked body")
 	for {
 		var s []byte
-		// Read chunk size line, ignore chunk extension if any
-		if s, err = r.ReadSlice('\n'); err != nil {
-			errl.Println("Reading chunk size:", err)
+		// Read chunk size line, ignore chunk extension if any.
+		if s, err = r.PeekSlice('\n'); err != nil {
+			errl.Println("Peeking chunk size:", err)
 			return
 		}
 		// debug.Printf("Chunk size line %s\n", s)
@@ -961,19 +961,39 @@ func sendBodyChunked(buf []byte, r *bufio.Reader, w io.Writer) (err error) {
 		// to server, there should be no trailer in response.
 		// TODO: Is it possible for client request body to have trailers in it?
 		if size == 0 {
+			r.Skip(len(s))
 			skipCRLF(r)
 			if _, err = w.Write([]byte(chunkEnd)); err != nil {
 				debug.Println("Sending chunk ending:", err)
 			}
 			return
 		}
-		// Read chunked data and the following CRLF. If server is not
-		// returning correct data, the next call to ParseIntFromBytes is likely
-		// to discover the error.
-		if err = copyN(r, w, int(size)+2, buf, s, nil); err != nil {
-			debug.Println("Copying chunked data:", err)
+		total := len(s) + int(size) // total data size for this chunk, not including ending CRLF
+		bn := r.Buffered()
+		left := total - bn
+		if left < 0 { // buffered content has more data than the current chunk
+			debug.Println("buffered content has more than current chunk")
+			left = 0
+			bn = total
+		}
+		// First write out buffered content, so we can avoid unnecessary copy
+		b, _ := r.ReadN(bn) // should not return error
+		if _, err = w.Write(b); err != nil {
+			debug.Println("Writing chunked data:", err)
 			return
 		}
+		if left > 0 {
+			if err = copyN(r, w, left, buf, nil, []byte(CRLF)); err != nil {
+				debug.Println("Copying chunked data:", err)
+				return
+			}
+		} else {
+			if _, err = w.Write([]byte(CRLF)); err != nil {
+				debug.Println("Writing chunk ending CRLF:", err)
+				return
+			}
+		}
+		skipCRLF(r)
 	}
 	return
 }

@@ -1,10 +1,10 @@
 package main
 
 import (
-	"bufio"
 	"crypto/md5"
 	"errors"
 	"fmt"
+	"github.com/cyfdecyf/bufio"
 	"io"
 	"net"
 	"os"

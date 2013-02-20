@@ -1,9 +1,9 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
 	"errors"
+	"github.com/cyfdecyf/bufio"
 	"io"
 	"strings"
 	"testing"

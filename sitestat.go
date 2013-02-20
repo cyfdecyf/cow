@@ -1,10 +1,10 @@
 package main
 
 import (
-	"bufio"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/cyfdecyf/bufio"
 	"io"
 	"io/ioutil"
 	"math/rand"

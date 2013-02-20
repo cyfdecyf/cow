@@ -3,6 +3,7 @@ env:
   - TRAVIS="yes"
 install:
   - go get github.com/shadowsocks/shadowsocks-go/shadowsocks
+  - go get github.com/cyfdecyf/bufio
 script:
   - go test -v
   - ./script/test.sh

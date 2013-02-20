@@ -1,8 +1,8 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
+	"github.com/cyfdecyf/bufio"
 	"strings"
 	"testing"
 )
@@ -17,12 +17,14 @@ func TestSendBodyChunked(t *testing.T) {
 
 	buf := make([]byte, bufSize)
 	for _, td := range testData {
-		r := bufio.NewReader(strings.NewReader(td.raw))
+		r := bufio.NewReaderSize(strings.NewReader(td.raw), bufSize)
 		var w bytes.Buffer
 
-		sendBodyChunked(buf, r, &w)
+		if err := sendBodyChunked(buf, r, &w); err != nil {
+			t.Fatal("err:", err)
+		}
 		if w.String() != td.raw {
-			t.Errorf("sendBodyChunked wrong, raw data is:\n%qgot:%q\n", td.raw, w.String())
+			t.Errorf("sendBodyChunked wrong, raw data is:\n%q\ngot:\n%q\n", td.raw, w.String())
 		}
 	}
 }
