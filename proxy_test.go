@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"strings"
 	"testing"
 )
 
@@ -16,7 +17,7 @@ func TestSendBodyChunked(t *testing.T) {
 
 	buf := make([]byte, bufSize)
 	for _, td := range testData {
-		r := bufio.NewReader(bytes.NewBufferString(td.raw))
+		r := bufio.NewReader(strings.NewReader(td.raw))
 		var w bytes.Buffer
 
 		sendBodyChunked(buf, r, &w)

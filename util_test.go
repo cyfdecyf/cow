@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"errors"
 	"io"
+	"strings"
 	"testing"
 )
 
@@ -22,7 +23,7 @@ func TestReadLine(t *testing.T) {
 		{"\n", []string{""}},
 	}
 	for _, td := range testData {
-		raw := bytes.NewBufferString(td.text)
+		raw := strings.NewReader(td.text)
 		rd := bufio.NewReader(raw)
 		for i, line := range td.lines {
 			l, err := ReadLine(rd)

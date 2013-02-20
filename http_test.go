@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"strings"
 	"testing"
 	"time"
 )
@@ -106,7 +107,7 @@ func TestParseHeader(t *testing.T) {
 	for _, td := range testData {
 		var h Header
 		var newraw bytes.Buffer
-		h.parseHeader(bufio.NewReader(bytes.NewBufferString(td.raw)), &newraw, nil)
+		h.parseHeader(bufio.NewReader(strings.NewReader(td.raw)), &newraw, nil)
 		if h.ContLen != td.header.ContLen {
 			t.Errorf("%s parsed content length wrong, should be %d, get %d\n",
 				td.raw, td.header.ContLen, h.ContLen)
