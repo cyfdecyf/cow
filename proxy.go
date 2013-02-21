@@ -41,6 +41,7 @@ func freeBuf(b []byte) {
 
 // Close client connection if no new request received in some time.
 const clientConnTimeout = 10 * time.Second
+const keepAliveHeader = "Keep-Alive: timeout=10\r\n"
 
 // If client closed connection for HTTP CONNECT method in less then 1 second,
 // consider it as an ssl error. This is only effective for Chrome which will

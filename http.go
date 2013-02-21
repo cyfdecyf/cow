@@ -478,6 +478,7 @@ START:
 	if !rp.ConnectionKeepAlive {
 		rp.raw.WriteString("Connection: keep-alive\r\n")
 	}
+	rp.raw.WriteString(keepAliveHeader)
 	rp.raw.WriteString(CRLF)
 
 	return rp, nil
