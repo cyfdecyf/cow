@@ -934,8 +934,6 @@ func (sv *serverConn) doRequest(r *Request, c *clientConn) (err error) {
 	} else if r.Chunking || r.ContLen > 0 {
 		// Message body in request is signaled by the inclusion of a Content-
 		// Length or Transfer-Encoding header. Refer to http://stackoverflow.com/a/299696/306935
-		// The server connection may have been closed, need to retry request in that case.
-		r.contBuf = new(bytes.Buffer)
 		if err = sendBody(c, sv, r, nil); err != nil {
 			if err == io.EOF && isErrOpRead(err) {
 				info.Println("EOF reading request body from client", r)
@@ -1073,16 +1071,21 @@ func sendBody(c *clientConn, sv *serverConn, req *Request, rp *Response) (err er
 	var bufRd *bufio.Reader
 	var w io.Writer
 
-	if req == nil { // read from server, write to client
+	if rp != nil { // read responses from server, write to client
 		w = c
 		bufRd = sv.bufRd
 		contLen = int(rp.ContLen)
 		chunk = rp.Chunking
-	} else {
+	} else if req != nil { // request request body from client, send to server
+		// The server connection may have been closed, need to retry request in that case.
+		// So we save request body here.
+		req.contBuf = new(bytes.Buffer)
 		w = io.MultiWriter(sv, req.contBuf)
 		bufRd = c.bufRd
 		contLen = int(req.ContLen)
 		chunk = req.Chunking
+	} else {
+		panic("sendBody must have either request or response not nil")
 	}
 
 	// Though we can get buffer very cheap from the leaky buffer, still keep
