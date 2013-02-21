@@ -23,21 +23,26 @@ func TestSendBodyChunked(t *testing.T) {
 	}
 
 	buf := make([]byte, bufSize)
-	for _, td := range testData {
-		r := bufio.NewReaderSize(strings.NewReader(td.raw), bufSize)
-		var w bytes.Buffer
+	// use different reader buffer size to test for both all buffered and partially buffered chunk
+	sizeArr := []int{32, 64, 128}
+	for _, size := range sizeArr {
+		for _, td := range testData {
+			r := bufio.NewReaderSize(strings.NewReader(td.raw), size)
+			var w bytes.Buffer
 
-		if err := sendBodyChunked(buf, r, &w); err != nil {
-			t.Fatal("err:", err)
-		}
-		if td.want == "" {
-			if w.String() != td.raw {
-				t.Errorf("sendBodyChunked wrong, raw data is:\n%q\ngot:\n%q\n", td.raw, w.String())
+			if err := sendBodyChunked(buf, r, &w); err != nil {
+				t.Fatal("err:", err)
 			}
-		} else {
-			if w.String() != td.want {
-				t.Errorf("sendBodyChunked wrong, raw data is:\n%q\nwant:\n%q\ngot :\n%q\n",
-					td.raw, td.want, w.String())
+			if td.want == "" {
+				if w.String() != td.raw {
+					t.Errorf("sendBodyChunked wrong with buf size %d, raw data is:\n%q\ngot:\n%q\n",
+						size, td.raw, w.String())
+				}
+			} else {
+				if w.String() != td.want {
+					t.Errorf("sendBodyChunked wrong with buf sizwe %d, raw data is:\n%q\nwant:\n%q\ngot :\n%q\n",
+						size, td.raw, td.want, w.String())
+				}
 			}
 		}
 	}

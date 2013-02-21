@@ -986,7 +986,7 @@ func sendBodyChunked(buf []byte, r *bufio.Reader, w io.Writer) (err error) {
 			return
 		}
 		if left > 0 {
-			if err = copyN(r, w, left, buf, nil, []byte(CRLF)); err != nil {
+			if err = copyN(r, w, left, buf, nil, nil); err != nil {
 				debug.Println("Copying chunked data:", err)
 				return
 			}
