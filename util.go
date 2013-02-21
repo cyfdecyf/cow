@@ -102,18 +102,15 @@ func IsDigit(b byte) bool {
 	return '0' <= b && b <= '9'
 }
 
-var spaceTbl = [...]bool{
-	9:  true, // ht
-	10: true, // lf
-	13: true, // cr
-	32: true, // sp
+var spaceTbl = [256]bool{
+	'\t': true, // ht
+	'\n': true, // lf
+	'\r': true, // cr
+	' ':  true, // sp
 }
 
 func IsSpace(b byte) bool {
-	if 9 <= b && b <= 32 {
-		return spaceTbl[b]
-	}
-	return false
+	return spaceTbl[b]
 }
 
 func TrimSpace(s []byte) []byte {

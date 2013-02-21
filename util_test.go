@@ -97,8 +97,12 @@ func TestIsSpace(t *testing.T) {
 	}{
 		{'a', false},
 		{'B', false},
+		{'z', false},
+		{'(', false},
+		{'}', false},
 		{' ', true},
 		{'\r', true},
+		{'\t', true},
 		{'\n', true},
 	}
 	for _, td := range testData {
