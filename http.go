@@ -328,22 +328,23 @@ func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, url *URL) 
 	return
 }
 
-// Parse the initial line and header, does not touch body
+// Parse the request line and header, does not touch body
 func parseRequest(c *clientConn) (r *Request, err error) {
 	var s []byte
 	reader := c.bufRd
 	setConnReadTimeout(c, clientConnTimeout, "parseRequest")
-	// parse initial request line
+	// parse request line
 	if s, err = reader.ReadSlice('\n'); err != nil {
 		return nil, err
 	}
 	unsetConnReadTimeout(c, "parseRequest")
-	// debug.Printf("Request initial line %s", s)
+	// debug.Printf("Request line %s", s)
 
 	r = new(Request)
 
 	var f [][]byte
-	if f = bytes.SplitN(s, []byte{' '}, 3); len(f) < 3 { // request line are separated by SP
+	// Tolerate with multiple spaces and '\t' is achieved by FieldsN.
+	if f = FieldsN(s, 3); len(f) != 3 {
 		return nil, errors.New(fmt.Sprintf("malformed HTTP request: %s", s))
 	}
 	var requestURI string
@@ -368,7 +369,7 @@ func parseRequest(c *clientConn) (r *Request, err error) {
 		r.raw.WriteString(" HTTP/1.1\r\n")
 	}
 
-	// for http parent proxy, always need the initial request line
+	// for http parent proxy, always need the original request line
 	if hasHttpParentProxy {
 		r.origReqLine = make([]byte, len(s))
 		copy(r.origReqLine, s)
@@ -428,7 +429,7 @@ START:
 	}
 	sv.unsetReadTimeout("parseResponse")
 	var f [][]byte
-	if f = bytes.SplitN(TrimSpace(s), []byte{' '}, 3); len(f) < 2 { // status line are separated by SP
+	if f = FieldsN(s, 3); len(f) < 2 { // status line are separated by SP
 		errl.Printf("Malformed HTTP response status line: %s %v\n", s, r)
 		return nil, errMalformResponse
 	}

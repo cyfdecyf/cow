@@ -59,7 +59,7 @@ test_get() {
 test_get $PROXY_ADDR/pac "apple.com" "noproxy" # test for pac
 test_get google.com "</html>" # 301 redirect
 test_get www.google.com "</html>" # 302 redirect , chunked encoding
-test_get www.reddit.com "</html>" # chunked encoding
+test_get www.reddit.com "<html" # chunked encoding
 test_get https://www.twitter.com "</html>" # builtin blocked site, HTTP CONNECT
 test_get openvpn.net "</html>" # blocked site, all kinds of block method
 test_get http://plan9.bell-labs.com/magic/man2html/1/2l "<head>" "" "404" # single LF in response header
