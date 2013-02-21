@@ -99,15 +99,10 @@ type URL struct {
 	Port     string
 	Domain   string
 	Path     string
-	Scheme   string
 }
 
 func (url *URL) String() string {
 	return url.HostPort + url.Path
-}
-
-func (url *URL) toURI() string {
-	return url.Scheme + "://" + url.String()
 }
 
 func (url *URL) HostIsIP() bool {
@@ -136,34 +131,39 @@ func splitHostPort(s string) (host, port string) {
 // net.ParseRequestURI will unescape encoded path, but the proxy doesn't need
 // that. Assumes the input rawurl is valid. Even if rawurl is not valid, net.Dial
 // will check the correctness of the host.
+
 func ParseRequestURI(rawurl string) (*URL, error) {
+	return ParseRequestURIBytes([]byte(rawurl))
+}
+
+func ParseRequestURIBytes(rawurl []byte) (*URL, error) {
 	if rawurl[0] == '/' {
-		return &URL{Path: rawurl}, nil
+		return &URL{Path: string(rawurl)}, nil
 	}
 
-	var f []string
-	var rest, scheme string
-	f = strings.SplitN(rawurl, "://", 2)
+	var f [][]byte
+	var rest, scheme []byte
+	f = bytes.SplitN(rawurl, []byte("://"), 2)
 	if len(f) == 1 {
 		rest = f[0]
-		scheme = "http" // default to http
+		scheme = []byte("http") // default to http
 	} else {
-		scheme = strings.ToLower(f[0])
-		if scheme != "http" && scheme != "https" {
-			msg := scheme + " protocol not supported"
-			errl.Println(msg)
-			return nil, errors.New(msg)
+		ASCIIToLowerInplace(f[0]) // it's ok to lower case scheme
+		scheme = f[0]
+		if !bytes.Equal(scheme, []byte("http")) && !bytes.Equal(scheme, []byte("https")) {
+			errl.Printf("%s protocol not supported\n", scheme)
+			return nil, errors.New("protocol not supported")
 		}
 		rest = f[1]
 	}
 
 	var hostport, host, port, path string
-	id := strings.Index(rest, "/")
+	id := bytes.IndexByte(rest, '/')
 	if id == -1 {
-		hostport = rest
+		hostport = string(rest)
 	} else {
-		hostport = rest[:id]
-		path = rest[id:]
+		hostport = string(rest[:id])
+		path = string(rest[id:])
 	}
 
 	// Must add port in host so it can be used as key to find the correct
@@ -180,7 +180,7 @@ func ParseRequestURI(rawurl string) (*URL, error) {
 		}
 	}
 
-	return &URL{hostport, host, port, host2Domain(host), path, scheme}, nil
+	return &URL{hostport, host, port, host2Domain(host), path}, nil
 }
 
 // headers of interest to a proxy
@@ -347,12 +347,11 @@ func parseRequest(c *clientConn) (r *Request, err error) {
 	if f = FieldsN(s, 3); len(f) != 3 {
 		return nil, errors.New(fmt.Sprintf("malformed HTTP request: %s", s))
 	}
-	var requestURI string
 	ASCIIToUpperInplace(f[0])
-	r.Method, requestURI = string(f[0]), string(f[1])
+	r.Method = string(f[0])
 
 	// Parse URI into host and path
-	r.URL, err = ParseRequestURI(requestURI)
+	r.URL, err = ParseRequestURIBytes(f[1])
 	if err != nil {
 		return
 	}

@@ -34,20 +34,20 @@ func TestParseRequestURI(t *testing.T) {
 		url    *URL
 	}{
 		// I'm really tired of typing google.com ...
-		{"http://www.g.com", &URL{"www.g.com:80", "www.g.com", "80", "g.com", "", "http"}},
-		{"http://plus.g.com/", &URL{"plus.g.com:80", "plus.g.com", "80", "g.com", "/", "http"}},
-		{"https://g.com:80", &URL{"g.com:80", "g.com", "80", "g.com", "", "http"}},
-		{"http://mail.g.com:80/", &URL{"mail.g.com:80", "mail.g.com", "80", "g.com", "/", "http"}},
-		{"http://g.com:80/ncr", &URL{"g.com:80", "g.com", "80", "g.com", "/ncr", "http"}},
-		{"https://g.com/ncr/tree", &URL{"g.com:443", "g.com", "443", "g.com", "/ncr/tree", "http"}},
-		{"www.g.com.hk:80/", &URL{"www.g.com.hk:80", "www.g.com.hk", "80", "g.com.hk", "/", "http"}},
-		{"g.com.jp:80", &URL{"g.com.jp:80", "g.com.jp", "80", "g.com.jp", "", "http"}},
-		{"g.com", &URL{"g.com:80", "g.com", "80", "g.com", "", "http"}},
-		{"g.com:8000/ncr", &URL{"g.com:8000", "g.com", "8000", "g.com", "/ncr", "http"}},
-		{"g.com/ncr/tree", &URL{"g.com:80", "g.com", "80", "g.com", "/ncr/tree", "http"}},
-		{"simplehost", &URL{"simplehost:80", "simplehost", "80", "", "", "http"}},
-		{"simplehost:8080", &URL{"simplehost:8080", "simplehost", "8080", "", "", "http"}},
-		{"192.168.1.1:8080/", &URL{"192.168.1.1:8080", "192.168.1.1", "8080", "", "/", "http"}},
+		{"http://www.g.com", &URL{"www.g.com:80", "www.g.com", "80", "g.com", ""}},
+		{"http://plus.g.com/", &URL{"plus.g.com:80", "plus.g.com", "80", "g.com", "/"}},
+		{"https://g.com:80", &URL{"g.com:80", "g.com", "80", "g.com", ""}},
+		{"http://mail.g.com:80/", &URL{"mail.g.com:80", "mail.g.com", "80", "g.com", "/"}},
+		{"http://g.com:80/ncr", &URL{"g.com:80", "g.com", "80", "g.com", "/ncr"}},
+		{"https://g.com/ncr/tree", &URL{"g.com:443", "g.com", "443", "g.com", "/ncr/tree"}},
+		{"www.g.com.hk:80/", &URL{"www.g.com.hk:80", "www.g.com.hk", "80", "g.com.hk", "/"}},
+		{"g.com.jp:80", &URL{"g.com.jp:80", "g.com.jp", "80", "g.com.jp", ""}},
+		{"g.com", &URL{"g.com:80", "g.com", "80", "g.com", ""}},
+		{"g.com:8000/ncr", &URL{"g.com:8000", "g.com", "8000", "g.com", "/ncr"}},
+		{"g.com/ncr/tree", &URL{"g.com:80", "g.com", "80", "g.com", "/ncr/tree"}},
+		{"simplehost", &URL{"simplehost:80", "simplehost", "80", "", ""}},
+		{"simplehost:8080", &URL{"simplehost:8080", "simplehost", "8080", "", ""}},
+		{"192.168.1.1:8080/", &URL{"192.168.1.1:8080", "192.168.1.1", "8080", "", "/"}},
 	}
 	for _, td := range testData {
 		url, err := ParseRequestURI(td.rawurl)
