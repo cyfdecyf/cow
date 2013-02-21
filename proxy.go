@@ -20,7 +20,10 @@ import (
 // value to prevent such problems.
 const bufSize = 8192
 
-var freeList = make(chan []byte, 80)
+// It's very likely for a single user desktop system to use more than 128
+// buffers at the same time. It would require even more if serving multiple
+// users. Set it to 256, hold at most 2MB memory as buffer.
+var freeList = make(chan []byte, 256)
 
 func getBuf() (b []byte) {
 	select {
