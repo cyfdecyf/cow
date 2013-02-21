@@ -134,12 +134,11 @@ type clientConn struct {
 }
 
 var (
-	errRetry             = errors.New("Retry")
-	errPageSent          = errors.New("Error page has sent")
-	errShouldClose       = errors.New("Error can only be handled by close connection")
-	errInternal          = errors.New("Internal error")
-	errNoParentProxy     = errors.New("No parent proxy")
-	errFailedParentProxy = errors.New("Failed connecting to parent proxy")
+	errRetry         = errors.New("Retry")
+	errPageSent      = errors.New("Error page has sent")
+	errShouldClose   = errors.New("Error can only be handled by close connection")
+	errInternal      = errors.New("Internal error")
+	errNoParentProxy = errors.New("No parent proxy")
 
 	errChunkedEncode   = errors.New("Invalid chunked encoding")
 	errMalformHeader   = errors.New("Malformed HTTP header")
@@ -524,7 +523,7 @@ func createctDirectConnection(url *URL, siteInfo *VisitCnt) (conn, error) {
 	c, err := net.DialTimeout("tcp", url.HostPort, to)
 	if err != nil {
 		// Time out is very likely to be caused by GFW
-		debug.Printf("Error connecting to: %s %v\n", url.HostPort, err)
+		debug.Printf("Error direct connect to: %s %v\n", url.HostPort, err)
 		return zeroConn, err
 	}
 	debug.Println("Connected to", url.HostPort)
@@ -542,7 +541,7 @@ var parentProxyCreator = []parentProxyConnectionFunc{}
 func createHttpProxyConnection(url *URL) (cn conn, err error) {
 	c, err := net.Dial("tcp", config.HttpParent)
 	if err != nil {
-		debug.Printf("Error connecting to: %s %v\n", url.HostPort, err)
+		debug.Printf("Error connect to parent proxy for %s: %v\n", url.HostPort, err)
 		return zeroConn, err
 	}
 	debug.Println("Connected to http parent proxy")
@@ -557,16 +556,18 @@ func createParentProxyConnection(url *URL) (srvconn conn, err error) {
 		}
 	}
 	if len(parentProxyCreator) != 0 {
-		return zeroConn, errFailedParentProxy
+		return
 	}
 	return zeroConn, errNoParentProxy
 }
 
 func (c *clientConn) createConnection(r *Request, siteInfo *VisitCnt) (srvconn conn, err error) {
+	var errMsg string
 	if config.AlwaysProxy {
 		if srvconn, err = createParentProxyConnection(r.URL); err == nil {
 			return
 		}
+		errMsg = genErrMsg(r, nil, "Parent proxy connection failed, always using parent proxy.")
 		goto fail
 	}
 	if siteInfo.AsBlocked() && hasParentProxy {
@@ -574,41 +575,53 @@ func (c *clientConn) createConnection(r *Request, siteInfo *VisitCnt) (srvconn c
 		if srvconn, err = createParentProxyConnection(r.URL); err == nil {
 			return
 		}
-		if siteInfo.AlwaysBlocked() || siteInfo.AsTempBlocked() {
+		if siteInfo.AlwaysBlocked() {
+			errMsg = genErrMsg(r, nil, "Parent proxy connection failed, always blocked site.")
+			goto fail
+		}
+		if siteInfo.AsTempBlocked() {
+			errMsg = genErrMsg(r, nil, "Parent proxy connection failed, temporarily blocked site.")
 			goto fail
 		}
 		if srvconn, err = createctDirectConnection(r.URL, siteInfo); err == nil {
 			return
 		}
+		errMsg = genErrMsg(r, nil, "Parent proxy and direct connection failed, maybe blocked site.")
 	} else {
 		// In case of error on direction connection, try parent server
 		if srvconn, err = createctDirectConnection(r.URL, siteInfo); err == nil {
 			return
 		}
-		if !hasParentProxy || siteInfo.AlwaysDirect() {
+		if !hasParentProxy {
+			errMsg = genErrMsg(r, nil, "Direct connection failed, no parent proxy.")
+			goto fail
+		}
+		if siteInfo.AlwaysDirect() {
+			errMsg = genErrMsg(r, nil, "Direct connection failed, always direct site.")
 			goto fail
 		}
 		// debug.Printf("type of err %v\n", reflect.TypeOf(err))
 		// GFW may cause dns lookup fail (net.DNSError),
 		// may also cause connection time out or reset (net.OpError)
 		if isDNSError(err) || maybeBlocked(err) {
-			// Try to create socks connection
+			// Try to create connection by parent proxy
 			var socksErr error
 			if srvconn, socksErr = createParentProxyConnection(r.URL); socksErr == nil {
 				c.handleBlockedRequest(r)
 				debug.Println("direct connection failed, use socks connection for", r)
 				return srvconn, nil
 			}
+			errMsg = genErrMsg(r, nil, "Direct and parent proxy connection failed, maybe blocked site.")
+		} else {
+			errMsg = genErrMsg(r, nil, "Direct connection failed, unhandled error.")
 		}
 	}
 
 fail:
-	debug.Printf("Failed connect to %s %s", r.URL.HostPort, r)
 	if r.Method == "CONNECT" {
 		return zeroConn, errShouldClose
 	}
-	sendErrorPage(c, "504 Connection failed", err.Error(),
-		genErrMsg(r, nil, "Connection failed."))
+	sendErrorPage(c, "504 Connection failed", err.Error(), errMsg)
 	return zeroConn, errPageSent
 }
 
