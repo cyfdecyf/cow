@@ -16,7 +16,7 @@ else
     ./cow -rc ./script/debugrc -listen=$PROXY_ADDR &
 fi
 cow_pid=$!
-sleep 0.5
+sleep 1
 
 test_get() {
     local url

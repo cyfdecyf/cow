@@ -2,6 +2,9 @@
 
     * Allow user to specify proxy address in PAC
     * PAC fix: return direct for simple host name
+    * Small bug fixes
+    * Small performance optimization
+    * More tolerant with HTTP servers and clients
 
 0.5.1 (2013-02-10)
 
@@ -11,7 +14,7 @@
 0.5 (2013-02-07)
 
     * Support parent HTTP proxy (such as goagent)
-    * Work more automatically: because of this, updateBlocked, updateDirect, 
+    * Work more automatically: because of this, updateBlocked, updateDirect,
     autoRetry options and chou file are removed
     * Record direct/blocked visit count to make blocked/direct site handling
     more reliable
