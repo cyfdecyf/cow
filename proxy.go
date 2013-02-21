@@ -105,6 +105,7 @@ type writerOnly struct {
 type serverConn struct {
 	conn
 	bufRd       *bufio.Reader
+	buf         []byte // buffer for the buffered reader
 	url         *URL
 	state       serverConnState
 	willCloseOn time.Time
@@ -114,10 +115,12 @@ type serverConn struct {
 }
 
 func newServerConn(c conn, url *URL, siteInfo *VisitCnt) *serverConn {
+	buf := getBuf()
 	return &serverConn{
 		conn:     c,
 		url:      url,
-		bufRd:    bufio.NewReaderSize(c, bufSize),
+		buf:      buf,
+		bufRd:    bufio.NewReaderFromBuf(c, buf),
 		siteInfo: siteInfo,
 	}
 }
@@ -125,8 +128,8 @@ func newServerConn(c conn, url *URL, siteInfo *VisitCnt) *serverConn {
 type clientConn struct {
 	net.Conn   // connection to the proxy client
 	bufRd      *bufio.Reader
+	buf        []byte                 // buffer for the buffered reader
 	serverConn map[string]*serverConn // request serverConn, host:port as key
-	buf        []byte                 // buffer for reading request, avoids repeatedly allocating buffer
 	proxy      *Proxy
 }
 
@@ -184,27 +187,26 @@ func (py *Proxy) Serve(done chan byte) {
 }
 
 func newClientConn(rwc net.Conn, proxy *Proxy) *clientConn {
+	buf := getBuf()
 	c := &clientConn{
 		Conn:       rwc,
 		serverConn: map[string]*serverConn{},
-		bufRd:      bufio.NewReaderSize(rwc, bufSize),
+		buf:        buf,
+		bufRd:      bufio.NewReaderFromBuf(rwc, buf),
 		proxy:      proxy,
 	}
 	return c
 }
 
-func (c *clientConn) close() {
-	if c.buf != nil {
-		freeBuf(c.buf)
-	}
+func (c *clientConn) Close() error {
+	freeBuf(c.buf)
 	for _, sv := range c.serverConn {
-		debug.Println("Client close: closing server conn:", sv.url.HostPort)
 		sv.Close()
 	}
-	c.Conn.Close()
 	if debug {
 		debug.Printf("Client %v connection closed\n", c.RemoteAddr())
 	}
+	return c.Conn.Close()
 }
 
 func isSelfURL(url string) bool {
@@ -258,7 +260,7 @@ func (c *clientConn) handleRetry(r *Request, sv *serverConn) (err error) {
 }
 
 func (c *clientConn) serve() {
-	defer c.close()
+	defer c.Close()
 
 	var r *Request
 	var err error
@@ -410,7 +412,7 @@ func (c *clientConn) handleClientReadError(r *Request, err error, msg string) er
 		} else if isErrTimeout(err) {
 			debug.Printf("%s client read timeout, maybe has closed\n", msg)
 		} else {
-			// may reach here when header is larger than bufSize
+			// may reach here when header is larger than buffer size
 			debug.Printf("handleClientReadError: %s %v %v\n", msg, err, r)
 		}
 	}
@@ -641,6 +643,12 @@ func (sv *serverConn) updateVisit() {
 	} else {
 		sv.siteInfo.BlockedVisit()
 	}
+}
+
+func (sv *serverConn) Close() error {
+	debug.Println("Closing server conn:", sv.url.HostPort)
+	freeBuf(sv.buf)
+	return sv.Conn.Close()
 }
 
 func (sv *serverConn) maybeFake() bool {
@@ -905,10 +913,6 @@ func (sv *serverConn) sendHTTPProxyRequest(r *Request, c *clientConn) (err error
 
 // Do HTTP request other that CONNECT
 func (sv *serverConn) doRequest(r *Request, c *clientConn) (err error) {
-	if c.buf == nil {
-		// It's common for response to have content-length larger than 4096
-		c.buf = getBuf()
-	}
 	r.state = rsCreated
 	// Send request to the server
 	if sv.connType != ctHttpProxyConn {
@@ -1081,17 +1085,24 @@ func sendBody(c *clientConn, sv *serverConn, req *Request, rp *Response) (err er
 		chunk = req.Chunking
 	}
 
+	// Though we can get buffer very cheap from the leaky buffer, still keep
+	// the buf parameter in send body related functions. So it's easy to test
+	// those functions with different sized buffer.
+	buf := getBuf()
+	defer func() {
+		freeBuf(buf)
+	}()
 	// chunked encoding has precedence over content length
 	// COW does not sanitize response header, but should correctly handle it
 	if chunk {
-		err = sendBodyChunked(c.buf, bufRd, w)
+		err = sendBodyChunked(buf, bufRd, w)
 	} else if contLen >= 0 {
-		err = sendBodyWithContLen(c.buf, bufRd, w, contLen)
+		err = sendBodyWithContLen(buf, bufRd, w, contLen)
 	} else {
 		if req != nil {
 			errl.Println("Should not happen! Client request with body but no length specified.")
 		}
-		err = sendBodySplitIntoChunk(c.buf, bufRd, w)
+		err = sendBodySplitIntoChunk(buf, bufRd, w)
 	}
 	return
 }
