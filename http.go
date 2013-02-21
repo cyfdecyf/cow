@@ -384,6 +384,9 @@ func parseRequest(c *clientConn) (r *Request, err error) {
 		// Always add one connection header for request
 		r.raw.WriteString(fullHeaderConnection)
 	}
+	// The spec says proxy must add Via header. polipo disables this by
+	// default, and I don't want to let others know the user is using COW, so
+	// don't add it.
 	r.raw.WriteString(CRLF)
 	return
 }
