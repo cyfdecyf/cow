@@ -132,6 +132,35 @@ func TestTrimSpace(t *testing.T) {
 	}
 }
 
+func TestFieldsN(t *testing.T) {
+	testData := []struct {
+		raw string
+		n   int
+		arr []string
+	}{
+		{"hello \t world welcome", 1, []string{"hello \t world welcome"}},
+		{"   hello \t world welcome ", 1, []string{"hello \t world welcome"}},
+		{"hello world", 2, []string{"hello", "world"}},
+		{"  hello\tworld  ", 2, []string{"hello", "world"}},
+		// note \r\n in the middle of a string will be considered as a field
+		{"  hello  world  \r\n", 4, []string{"hello", "world"}},
+		{" hello \t world welcome\r\n", 2, []string{"hello", "world welcome"}},
+		{" hello \t world welcome \t ", 2, []string{"hello", "world welcome"}},
+	}
+
+	for _, td := range testData {
+		arr := FieldsN([]byte(td.raw), td.n)
+		if len(arr) != len(td.arr) {
+			t.Fatalf("%q want %d fields, got %d\n", td.raw, len(td.arr), len(arr))
+		}
+		for i := 0; i < len(arr); i++ {
+			if string(arr[i]) != td.arr[i] {
+				t.Errorf("%q %d item, want %q, got %q\n", td.raw, i, td.arr[i], arr[i])
+			}
+		}
+	}
+}
+
 func TestParseIntFromBytes(t *testing.T) {
 	errDummy := errors.New("dummy error")
 	testData := []struct {

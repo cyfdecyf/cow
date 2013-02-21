@@ -129,6 +129,45 @@ func TrimSpace(s []byte) []byte {
 	return s[st : end+1]
 }
 
+// Simliar with bytes.Fields, but only consider space and '\t' as space, and
+// will include all the content in the final slice with space trimmed.
+// bytes.Split can't split on both space and '\t', and considers two separator
+// as an empty item. bytes.FieldsFunc can't specify how much fields we need,
+// which is required for parsing response status line.
+func FieldsN(s []byte, n int) [][]byte {
+	if n == 0 {
+		return nil
+	}
+	if n == 1 {
+		return [][]byte{TrimSpace(s)}
+	}
+	res := make([][]byte, n)
+	na := 0
+	fieldStart := -1
+	var i int
+	for ; i < len(s); i++ {
+		issep := s[i] == ' ' || s[i] == '\t'
+		if fieldStart < 0 && !issep {
+			fieldStart = i
+		}
+		if fieldStart >= 0 && issep {
+			if na == n-1 {
+				break
+			}
+			res[na] = s[fieldStart:i]
+			fieldStart = -1
+			na++
+		}
+	}
+	if fieldStart >= 0 && na < n {
+		res[na] = TrimSpace(s[fieldStart:])
+		if len(res[na]) != 0 {
+			na++
+		}
+	}
+	return res[:na]
+}
+
 var digitTbl = [256]int8{
 	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
 	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
