@@ -13,11 +13,13 @@ func TestSendBodyChunked(t *testing.T) {
 		want string // empty means same as raw
 	}{
 		{"1a; ignore-stuff-here\r\nabcdefghijklmnopqrstuvwxyz\r\n10\r\n1234567890abcdef\r\n0\r\n\r\n", ""},
-		{"1a; ignore-stuff-here\nabcdefghijklmnopqrstuvwxyz\r\n10\n1234567890abcdef\n0\n\n",
-			// COW will only sanitize CRLF at chunk ending
-			"1a; ignore-stuff-here\nabcdefghijklmnopqrstuvwxyz\r\n10\n1234567890abcdef\r\n0\r\n\r\n"},
 		{"0\r\n\r\n", ""},
-		{"0\n\r\n", "0\r\n\r\n"}, // test for buggy web servers
+		/*
+			{"0\n\r\n", "0\r\n\r\n"}, // test for buggy web servers
+			{"1a; ignore-stuff-here\nabcdefghijklmnopqrstuvwxyz\r\n10\n1234567890abcdef\n0\n\n",
+				// COW will only sanitize CRLF at chunk ending
+				"1a; ignore-stuff-here\nabcdefghijklmnopqrstuvwxyz\r\n10\n1234567890abcdef\r\n0\r\n\r\n"},
+		*/
 	}
 
 	buf := make([]byte, bufSize)

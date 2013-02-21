@@ -968,7 +968,10 @@ func sendBodyChunked(buf []byte, r *bufio.Reader, w io.Writer) (err error) {
 			}
 			return
 		}
-		total := len(s) + int(size) // total data size for this chunk, not including ending CRLF
+		// The spec section 19.3 only suggest toleranting single LF for
+		// headers, so assume the server will send CRLF. If not, the following
+		// parse int may find errors.
+		total := len(s) + int(size) + 2 // total data size for this chunk, including ending CRLF
 		bn := r.Buffered()
 		left := total - bn
 		if left < 0 { // buffered content has more data than the current chunk
@@ -987,13 +990,7 @@ func sendBodyChunked(buf []byte, r *bufio.Reader, w io.Writer) (err error) {
 				debug.Println("Copying chunked data:", err)
 				return
 			}
-		} else {
-			if _, err = w.Write([]byte(CRLF)); err != nil {
-				debug.Println("Writing chunk ending CRLF:", err)
-				return
-			}
 		}
-		skipCRLF(r)
 	}
 	return
 }
