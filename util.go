@@ -41,7 +41,7 @@ func (n notification) hasNotified() bool {
 // not include ending '\r' and '\n'. If returns err != nil if and only if
 // len(line) == 0.
 func ReadLine(r *bufio.Reader) (string, error) {
-	l, err := ReadLineBytes(r)
+	l, err := ReadLineSlice(r)
 	return string(l), err
 }
 
@@ -50,7 +50,7 @@ func ReadLine(r *bufio.Reader) (string, error) {
 // len(line) == 0. Note the returned byte should not be used for append and
 // maybe overwritten by next I/O operation. Copied code of readLineSlice from
 // $GOROOT/src/pkg/net/textproto/reader.go
-func ReadLineBytes(r *bufio.Reader) (line []byte, err error) {
+func ReadLineSlice(r *bufio.Reader) (line []byte, err error) {
 	for {
 		l, more, err := r.ReadLine()
 		if err != nil {
