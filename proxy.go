@@ -20,6 +20,25 @@ import (
 // value to prevent such problems.
 const bufSize = 8192
 
+var freeList = make(chan []byte, 80)
+
+func getBuf() (b []byte) {
+	select {
+	case b = <-freeList:
+	default:
+		b = make([]byte, bufSize)
+	}
+	return
+}
+
+func freeBuf(b []byte) {
+	select {
+	case freeList <- b:
+	default:
+	}
+	return
+}
+
 // Close client connection it no new request received in 1 minute.
 const clientConnTimeout = 60 * time.Second
 
@@ -175,6 +194,9 @@ func newClientConn(rwc net.Conn, proxy *Proxy) *clientConn {
 }
 
 func (c *clientConn) close() {
+	if c.buf != nil {
+		freeBuf(c.buf)
+	}
 	for _, sv := range c.serverConn {
 		debug.Println("Client close: closing server conn:", sv.url.HostPort)
 		sv.Close()
@@ -674,7 +696,10 @@ func (sv *serverConn) mayBeClosed() bool {
 func copyServer2Client(sv *serverConn, c *clientConn, r *Request) (err error) {
 	// For connect, the data read each time is usually less than 4096. Little
 	// benefit to increase this to 8192.
-	buf := make([]byte, bufSize)
+	buf := getBuf()
+	defer func() {
+		freeBuf(buf)
+	}()
 	sv.bufRd = nil
 	var n int
 
@@ -739,7 +764,9 @@ func copyClient2Server(c *clientConn, sv *serverConn, r *Request, srvStopped not
 	// sv.maybeFake may change during execution in this function.
 	// So need a variable to record the whether timeout is set.
 	deadlineIsSet := false
+	buf := getBuf()
 	defer func() {
+		freeBuf(buf)
 		if deadlineIsSet {
 			// maybe need to retry, should unset timeout here because
 			unsetConnReadTimeout(c, "cli->srv after err")
@@ -747,7 +774,6 @@ func copyClient2Server(c *clientConn, sv *serverConn, r *Request, srvStopped not
 		done <- 1
 	}()
 
-	buf := make([]byte, bufSize)
 	var n int
 
 	if r.contBuf != nil {
@@ -881,7 +907,7 @@ func (sv *serverConn) sendHTTPProxyRequest(r *Request, c *clientConn) (err error
 func (sv *serverConn) doRequest(r *Request, c *clientConn) (err error) {
 	if c.buf == nil {
 		// It's common for response to have content-length larger than 4096
-		c.buf = make([]byte, bufSize)
+		c.buf = getBuf()
 	}
 	r.state = rsCreated
 	// Send request to the server
