@@ -129,17 +129,15 @@ func TrimSpace(s []byte) []byte {
 	return s[st : end+1]
 }
 
-// Simliar with bytes.Fields, but only consider space and '\t' as space, and
-// will include all the content in the final slice with space trimmed.
-// bytes.Split can't split on both space and '\t', and considers two separator
-// as an empty item. bytes.FieldsFunc can't specify how much fields we need,
-// which is required for parsing response status line.
+// FieldsN is simliar with bytes.Fields, but only consider space and '\t' as
+// space, and will include all content in the final slice with ending white
+// space characters trimmed. bytes.Split can't split on both space and '\t',
+// and considers two separator as an empty item. bytes.FieldsFunc can't
+// specify how much fields we need, which is required for parsing response
+// status line. Returns nil if n < 0.
 func FieldsN(s []byte, n int) [][]byte {
-	if n == 0 {
+	if n <= 0 {
 		return nil
-	}
-	if n == 1 {
-		return [][]byte{TrimSpace(s)}
 	}
 	res := make([][]byte, n)
 	na := 0
@@ -155,13 +153,13 @@ func FieldsN(s []byte, n int) [][]byte {
 				break
 			}
 			res[na] = s[fieldStart:i]
-			fieldStart = -1
 			na++
+			fieldStart = -1
 		}
 	}
-	if fieldStart >= 0 && na < n {
+	if fieldStart >= 0 { // must have na <= n-1 here
 		res[na] = TrimSpace(s[fieldStart:])
-		if len(res[na]) != 0 {
+		if len(res[na]) != 0 { // do not consider ending space as a field
 			na++
 		}
 	}

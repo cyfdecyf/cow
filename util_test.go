@@ -138,6 +138,8 @@ func TestFieldsN(t *testing.T) {
 		n   int
 		arr []string
 	}{
+		{"", 2, nil},             // this should not crash
+		{"hello world", -1, nil},
 		{"hello \t world welcome", 1, []string{"hello \t world welcome"}},
 		{"   hello \t world welcome ", 1, []string{"hello \t world welcome"}},
 		{"hello world", 2, []string{"hello", "world"}},
