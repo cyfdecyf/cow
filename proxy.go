@@ -788,9 +788,7 @@ func copyClient2Server(c *clientConn, sv *serverConn, r *Request, srvStopped not
 	// sv.maybeFake may change during execution in this function.
 	// So need a variable to record the whether timeout is set.
 	deadlineIsSet := false
-	buf := getBuf()
 	defer func() {
-		freeBuf(buf)
 		if deadlineIsSet {
 			// maybe need to retry, should unset timeout here because
 			unsetConnReadTimeout(c, "cli->srv after err")
@@ -801,8 +799,10 @@ func copyClient2Server(c *clientConn, sv *serverConn, r *Request, srvStopped not
 	var n int
 
 	if r.contBuf != nil {
-		debug.Printf("cli(%s)->srv(%s) retry request send %d bytes of stored data\n",
-			c.RemoteAddr(), r.URL.HostPort, r.contBuf.Len())
+		if debug {
+			debug.Printf("cli(%s)->srv(%s) retry request send %d bytes of stored data\n",
+				c.RemoteAddr(), r.URL.HostPort, r.contBuf.Len())
+		}
 		if _, err = sv.Write(r.contBuf.Bytes()); err != nil {
 			debug.Println("cli->srv send to server error")
 			return
@@ -820,6 +820,7 @@ func copyClient2Server(c *clientConn, sv *serverConn, r *Request, srvStopped not
 		}
 		c.bufRd = nil
 	}
+	buf := c.buf // Use buffer from server connection
 
 	var start time.Time
 	if config.DetectSSLErr {
