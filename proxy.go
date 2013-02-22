@@ -971,12 +971,12 @@ func (sv *serverConn) doRequest(r *Request, c *clientConn) (err error) {
 }
 
 // Send response body if header specifies content length
-func sendBodyWithContLen(buf []byte, r io.Reader, w io.Writer, contLen int) (err error) {
+func sendBodyWithContLen(r *bufio.Reader, w io.Writer, contLen int) (err error) {
 	// debug.Println("Sending body with content length", contLen)
 	if contLen == 0 {
 		return
 	}
-	if err = copyNWithBuf(w, r, contLen, buf, nil, nil); err != nil {
+	if err = copyN(w, r, contLen, bufSize); err != nil {
 		debug.Println("sendBodyWithContLen error:", err)
 	}
 	return
@@ -1117,7 +1117,7 @@ func sendBody(c *clientConn, sv *serverConn, req *Request, rp *Response) (err er
 	if chunk {
 		err = sendBodyChunked(buf, bufRd, w)
 	} else if contLen >= 0 {
-		err = sendBodyWithContLen(buf, bufRd, w, contLen)
+		err = sendBodyWithContLen(bufRd, w, contLen)
 	} else {
 		if req != nil {
 			errl.Println("Client request with body but no length or chunked encoding specified.")
