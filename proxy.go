@@ -1043,21 +1043,18 @@ func sendBodyChunked(buf []byte, r *bufio.Reader, w io.Writer) (err error) {
 const CRLF = "\r\n"
 const chunkEnd = "0\r\n\r\n"
 
-// Client can't use closed connection to indicate end of request, so must
-// content length or use chunked encoding. Thus contBuf is not necessary for
-// sendBodySplitIntoChunk.
-func sendBodySplitIntoChunk(buf []byte, r io.Reader, w io.Writer) (err error) {
+func sendBodySplitIntoChunk(r *bufio.Reader, w io.Writer) (err error) {
 	// debug.Printf("sendBodySplitIntoChunk called\n")
-	var n int
-	bufLen := len(buf)
+	var b []byte
 	for {
-		n, err = r.Read(buf[:bufLen-2]) // make sure we have space to add CRLF
+		b, err = r.ReadNext()
 		// debug.Println("split into chunk n =", n, "err =", err)
 		if err != nil {
 			if err == io.EOF {
 				// EOF is expected here as the server is closing connection.
 				// debug.Println("end chunked encoding")
-				if _, err = w.Write([]byte(chunkEnd)); err != nil {
+				_, err = w.Write([]byte(chunkEnd))
+				if err != nil {
 					debug.Println("Write chunk end 0")
 				}
 				return
@@ -1066,14 +1063,17 @@ func sendBodySplitIntoChunk(buf []byte, r io.Reader, w io.Writer) (err error) {
 			return
 		}
 
-		chunkSize := []byte(fmt.Sprintf("%x\r\n", n))
+		chunkSize := []byte(fmt.Sprintf("%x\r\n", len(b)))
 		if _, err = w.Write(chunkSize); err != nil {
 			debug.Printf("Writing chunk size %v\n", err)
 			return
 		}
-		copy(buf[n:], CRLF)
-		if _, err = w.Write(buf[:n+len(CRLF)]); err != nil {
+		if _, err = w.Write(b); err != nil {
 			debug.Println("Writing chunk data:", err)
+			return
+		}
+		if _, err = w.Write([]byte(CRLF)); err != nil {
+			debug.Println("Writing chunk ending CRLF:", err)
 			return
 		}
 	}
@@ -1120,9 +1120,10 @@ func sendBody(c *clientConn, sv *serverConn, req *Request, rp *Response) (err er
 		err = sendBodyWithContLen(buf, bufRd, w, contLen)
 	} else {
 		if req != nil {
-			errl.Println("Should not happen! Client request with body but no length specified.")
+			errl.Println("Client request with body but no length or chunked encoding specified.")
+			return errBadRequest
 		}
-		err = sendBodySplitIntoChunk(buf, bufRd, w)
+		err = sendBodySplitIntoChunk(bufRd, w)
 	}
 	return
 }
