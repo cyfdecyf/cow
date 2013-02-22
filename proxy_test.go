@@ -22,7 +22,6 @@ func TestSendBodyChunked(t *testing.T) {
 		*/
 	}
 
-	buf := make([]byte, bufSize)
 	// use different reader buffer size to test for both all buffered and partially buffered chunk
 	sizeArr := []int{32, 64, 128}
 	for _, size := range sizeArr {
@@ -30,8 +29,8 @@ func TestSendBodyChunked(t *testing.T) {
 			r := bufio.NewReaderSize(strings.NewReader(td.raw), size)
 			var w bytes.Buffer
 
-			if err := sendBodyChunked(buf, r, &w); err != nil {
-				t.Fatal("err:", err)
+			if err := sendBodyChunked(r, &w, size); err != nil {
+				t.Fatalf("sent data %q err: %v\n", w.Bytes(), err)
 			}
 			if td.want == "" {
 				if w.String() != td.raw {

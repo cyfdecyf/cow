@@ -982,8 +982,10 @@ func sendBodyWithContLen(r *bufio.Reader, w io.Writer, contLen int) (err error) 
 	return
 }
 
-// Send response body if header specifies chunked encoding
-func sendBodyChunked(buf []byte, r *bufio.Reader, w io.Writer) (err error) {
+// Send response body if header specifies chunked encoding. rdSize specifies
+// the size of each read on Reader, it should be set to be the buffer size of
+// the Reader, this parameter is added for testing.
+func sendBodyChunked(r *bufio.Reader, w io.Writer, rdSize int) (err error) {
 	// debug.Println("Sending chunked body")
 	for {
 		var s []byte
@@ -1014,27 +1016,13 @@ func sendBodyChunked(buf []byte, r *bufio.Reader, w io.Writer) (err error) {
 			return
 		}
 		// The spec section 19.3 only suggest toleranting single LF for
-		// headers, so assume the server will send CRLF. If not, the following
-		// parse int may find errors.
+		// headers, not for chunked encoding. So assume the server will send
+		// CRLF. If not, the following parse int may find errors.
 		total := len(s) + int(size) + 2 // total data size for this chunk, including ending CRLF
-		bn := r.Buffered()
-		left := total - bn
-		if left < 0 { // buffered content has more data than the current chunk
-			debug.Println("buffered content has more than current chunk")
-			left = 0
-			bn = total
-		}
-		// First write out buffered content, so we can avoid unnecessary copy
-		b, _ := r.ReadN(bn) // should not return error
-		if _, err = w.Write(b); err != nil {
-			debug.Println("Writing chunked data:", err)
+		// PeekSlice will not advance reader, so we can just copy total sized data.
+		if err = copyN(w, r, total, rdSize); err != nil {
+			debug.Println("Copying chunked data:", err)
 			return
-		}
-		if left > 0 {
-			if err = copyNWithBuf(w, r, left, buf, nil, nil); err != nil {
-				debug.Println("Copying chunked data:", err)
-				return
-			}
 		}
 	}
 	return
@@ -1105,17 +1093,10 @@ func sendBody(c *clientConn, sv *serverConn, req *Request, rp *Response) (err er
 		panic("sendBody must have either request or response not nil")
 	}
 
-	// Though we can get buffer very cheap from the leaky buffer, still keep
-	// the buf parameter in send body related functions. So it's easy to test
-	// those functions with different sized buffer.
-	buf := getBuf()
-	defer func() {
-		freeBuf(buf)
-	}()
 	// chunked encoding has precedence over content length
 	// COW does not sanitize response header, but should correctly handle it
 	if chunk {
-		err = sendBodyChunked(buf, bufRd, w)
+		err = sendBodyChunked(bufRd, w, bufSize)
 	} else if contLen >= 0 {
 		err = sendBodyWithContLen(bufRd, w, contLen)
 	} else {
