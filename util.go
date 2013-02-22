@@ -290,9 +290,11 @@ func expandTilde(pth string) string {
 }
 
 // copyN copys N bytes from r to w, using the specified buf as buffer. pre and
+// copyNWithBuf copys N bytes from src to dst, using the specified buf as buffer. pre and
 // end are written to w before and after the n bytes. copyN will try to
 // minimize number of writes.
-func copyN(r io.Reader, w io.Writer, n int, buf, pre, end []byte) (err error) {
+// No longer used now.
+func copyNWithBuf(dst io.Writer, src io.Reader, n int, buf, pre, end []byte) (err error) {
 	// XXX well, this is complicated in order to save writes
 	var nn int
 	bufLen := len(buf)
@@ -301,7 +303,7 @@ func copyN(r io.Reader, w io.Writer, n int, buf, pre, end []byte) (err error) {
 		if pre != nil {
 			if len(pre) >= bufLen {
 				// pre is larger than bufLen, can't save write operation here
-				if _, err = w.Write(pre); err != nil {
+				if _, err = dst.Write(pre); err != nil {
 					return
 				}
 				pre = nil
@@ -322,7 +324,7 @@ func copyN(r io.Reader, w io.Writer, n int, buf, pre, end []byte) (err error) {
 				b = buf
 			}
 		}
-		if nn, err = r.Read(b); err != nil {
+		if nn, err = src.Read(b); err != nil {
 			return
 		}
 		n -= nn
@@ -337,12 +339,12 @@ func copyN(r io.Reader, w io.Writer, n int, buf, pre, end []byte) (err error) {
 			nn += len(end)
 			end = nil
 		}
-		if _, err = w.Write(buf[:nn]); err != nil {
+		if _, err = dst.Write(buf[:nn]); err != nil {
 			return
 		}
 	}
 	if end != nil {
-		if _, err = w.Write(end); err != nil {
+		if _, err = dst.Write(end); err != nil {
 			return
 		}
 	}

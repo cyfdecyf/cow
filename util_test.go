@@ -138,7 +138,7 @@ func TestFieldsN(t *testing.T) {
 		n   int
 		arr []string
 	}{
-		{"", 2, nil},             // this should not crash
+		{"", 2, nil}, // this should not crash
 		{"hello world", -1, nil},
 		{"hello \t world welcome", 1, []string{"hello \t world welcome"}},
 		{"   hello \t world welcome ", 1, []string{"hello \t world welcome"}},
@@ -197,13 +197,13 @@ func TestParseIntFromBytes(t *testing.T) {
 	}
 }
 
-func TestCopyN(t *testing.T) {
+func TestCopyNWithBuf(t *testing.T) {
 	testStr := "hello world"
 	src := bytes.NewBufferString(testStr)
 	dst := new(bytes.Buffer)
 	buf := make([]byte, 5)
 
-	copyN(src, dst, len(testStr), buf, nil, nil)
+	copyNWithBuf(dst, src, len(testStr), buf, nil, nil)
 	if dst.String() != "hello world" {
 		t.Error("copy without pre and end failed, got:", dst.String())
 	}
@@ -211,7 +211,7 @@ func TestCopyN(t *testing.T) {
 	src.Reset()
 	dst.Reset()
 	src.WriteString(testStr)
-	copyN(src, dst, len(testStr), buf, []byte("by cyf "), nil)
+	copyNWithBuf(dst, src, len(testStr), buf, []byte("by cyf "), nil)
 	if dst.String() != "by cyf hello world" {
 		t.Error("copy with pre no end failed, got:", dst.String())
 	}
@@ -219,7 +219,7 @@ func TestCopyN(t *testing.T) {
 	src.Reset()
 	dst.Reset()
 	src.WriteString(testStr)
-	copyN(src, dst, len(testStr), buf, []byte("by cyf "), []byte(" welcome"))
+	copyNWithBuf(dst, src, len(testStr), buf, []byte("by cyf "), []byte(" welcome"))
 	if dst.String() != "by cyf hello world welcome" {
 		t.Error("copy with both pre and end failed, got:", dst.String())
 	}
@@ -227,7 +227,7 @@ func TestCopyN(t *testing.T) {
 	src.Reset()
 	dst.Reset()
 	src.WriteString(testStr)
-	copyN(src, dst, len(testStr), buf, []byte("pre longer then buffer "), []byte(" welcome"))
+	copyNWithBuf(dst, src, len(testStr), buf, []byte("pre longer then buffer "), []byte(" welcome"))
 	if dst.String() != "pre longer then buffer hello world welcome" {
 		t.Error("copy with long pre failed, got:", dst.String())
 	}
@@ -236,7 +236,7 @@ func TestCopyN(t *testing.T) {
 	dst.Reset()
 	testStr = "34"
 	src.WriteString(testStr)
-	copyN(src, dst, len(testStr), buf, []byte("12"), []byte(" welcome"))
+	copyNWithBuf(dst, src, len(testStr), buf, []byte("12"), []byte(" welcome"))
 	if dst.String() != "1234 welcome" {
 		t.Error("copy len(pre)+size<bufLen failed, got:", dst.String())
 	}
@@ -245,7 +245,7 @@ func TestCopyN(t *testing.T) {
 	dst.Reset()
 	testStr = "2"
 	src.WriteString(testStr)
-	copyN(src, dst, len(testStr), buf, []byte("1"), []byte("34"))
+	copyNWithBuf(dst, src, len(testStr), buf, []byte("1"), []byte("34"))
 	if dst.String() != "1234" {
 		t.Error("copy len(pre)+size+len(end)<bufLen failed, got:", dst.String())
 	}

@@ -976,7 +976,7 @@ func sendBodyWithContLen(buf []byte, r io.Reader, w io.Writer, contLen int) (err
 	if contLen == 0 {
 		return
 	}
-	if err = copyN(r, w, contLen, buf, nil, nil); err != nil {
+	if err = copyNWithBuf(w, r, contLen, buf, nil, nil); err != nil {
 		debug.Println("sendBodyWithContLen error:", err)
 	}
 	return
@@ -1031,7 +1031,7 @@ func sendBodyChunked(buf []byte, r *bufio.Reader, w io.Writer) (err error) {
 			return
 		}
 		if left > 0 {
-			if err = copyN(r, w, left, buf, nil, nil); err != nil {
+			if err = copyNWithBuf(w, r, left, buf, nil, nil); err != nil {
 				debug.Println("Copying chunked data:", err)
 				return
 			}
