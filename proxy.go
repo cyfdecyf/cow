@@ -42,7 +42,11 @@ func freeBuf(b []byte) {
 	return
 }
 
-// Close client connection if no new request received in some time.
+// Close client connection if no new request received in some time. Keep it
+// small to avoid keeping too many client connections (which associates with
+// server connections) and lead to too much open file error. On OS X, the
+// default soft limit of open file descriptor is 256, which is really
+// conservative.
 const clientConnTimeout = 10 * time.Second
 const keepAliveHeader = "Keep-Alive: timeout=10\r\n"
 
@@ -719,13 +723,8 @@ func (sv *serverConn) mayBeClosed() bool {
 }
 
 func copyServer2Client(sv *serverConn, c *clientConn, r *Request) (err error) {
-	// For connect, the data read each time is usually less than 4096. Little
-	// benefit to increase this to 8192.
-	buf := getBuf()
-	defer func() {
-		freeBuf(buf)
-	}()
-	sv.bufRd = nil
+	sv.bufRd = nil // Use buffer from server connection
+	buf := sv.buf
 	var n int
 
 	/*
