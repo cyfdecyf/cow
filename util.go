@@ -289,7 +289,43 @@ func expandTilde(pth string) string {
 	return pth
 }
 
-// copyN copys N bytes from r to w, using the specified buf as buffer. pre and
+// copyN copys N bytes from src to dst, reading at most rdSize for each read.
+// rdSize should be smaller than the buffer size of Reader.
+// Returns any encountered error.
+func copyN(dst io.Writer, src *bufio.Reader, n, rdSize int) (err error) {
+	// Most of the copy is copied from io.Copy
+	for n > 0 {
+		var b []byte
+		var er error
+		if n > rdSize {
+			b, er = src.ReadN(rdSize)
+		} else {
+			b, er = src.ReadN(n)
+		}
+		nr := len(b)
+		n -= nr
+		if nr > 0 {
+			nw, ew := dst.Write(b)
+			if ew != nil {
+				err = ew
+				break
+			}
+			if nr != nw {
+				err = io.ErrShortWrite
+				break
+			}
+		}
+		if er == io.EOF {
+			break
+		}
+		if er != nil {
+			err = er
+			break
+		}
+	}
+	return err
+}
+
 // copyNWithBuf copys N bytes from src to dst, using the specified buf as buffer. pre and
 // end are written to w before and after the n bytes. copyN will try to
 // minimize number of writes.

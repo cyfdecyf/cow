@@ -197,6 +197,23 @@ func TestParseIntFromBytes(t *testing.T) {
 	}
 }
 
+func TestCopyN(t *testing.T) {
+	testStr := "go is really a nice language"
+	for _, step := range []int{4, 9, 17, 32} {
+		src := bufio.NewReader(strings.NewReader(testStr))
+		dst := new(bytes.Buffer)
+
+		err := copyN(dst, src, len(testStr), step)
+		if err != nil {
+			t.Error("unexpected err:", err)
+			break
+		}
+		if dst.String() != testStr {
+			t.Errorf("step %d want %q, got: %q\n", step, testStr, dst.Bytes())
+		}
+	}
+}
+
 func TestCopyNWithBuf(t *testing.T) {
 	testStr := "hello world"
 	src := bytes.NewBufferString(testStr)
