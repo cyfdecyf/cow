@@ -16,7 +16,7 @@ import (
 
 // Explicitly specify buffer size to avoid unnecessary copy using
 // bufio.Reader's Read. As I'm using ReadSlice to read line, it's possible to
-// get bufio.ErrBufferFull while reading headers, so set it to a large default
+// get bufio.ErrBufferFull while reading line, so set it to a large default
 // value to prevent such problems.
 const bufSize = 8192
 
@@ -207,6 +207,7 @@ func newClientConn(rwc net.Conn, proxy *Proxy) *clientConn {
 
 func (c *clientConn) Close() error {
 	freeBuf(c.buf)
+	c.buf = nil
 	for _, sv := range c.serverConn {
 		sv.Close()
 	}
@@ -279,6 +280,10 @@ func (c *clientConn) serve() {
 	// Refer to implementation.md for the design choices on parsing the request
 	// and response.
 	for {
+		if r != nil && r.contByte != nil {
+			freeBuf(r.contByte)
+			r.contByte = nil
+		}
 		if r, err = c.getRequest(); err != nil {
 			sendErrorPage(c, "404 Bad request", "Bad request", err.Error())
 			return
@@ -669,6 +674,7 @@ func (sv *serverConn) updateVisit() {
 func (sv *serverConn) Close() error {
 	debug.Println("Closing server conn:", sv.url.HostPort)
 	freeBuf(sv.buf)
+	sv.buf = nil
 	return sv.Conn.Close()
 }
 
@@ -774,11 +780,14 @@ func copyServer2Client(sv *serverConn, c *clientConn, r *Request) (err error) {
 func copy2Server(sv *serverConn, r *Request, p []byte) (err error) {
 	if r.responseNotSent() {
 		if r.contBuf == nil {
-			r.contBuf = new(bytes.Buffer)
+			r.contByte = getBuf()
+			r.contBuf = bytes.NewBuffer(r.contByte)
 		}
 		r.contBuf.Write(p)
 	} else if r.contBuf != nil {
 		r.contBuf = nil
+		freeBuf(r.contByte) // contByte will not change even if contBuf grows
+		r.contByte = nil
 	}
 	_, err = sv.Write(p)
 	return
@@ -1084,7 +1093,8 @@ func sendBody(c *clientConn, sv *serverConn, req *Request, rp *Response) (err er
 	} else if req != nil { // request request body from client, send to server
 		// The server connection may have been closed, need to retry request in that case.
 		// So we save request body here.
-		req.contBuf = new(bytes.Buffer)
+		req.contByte = getBuf()
+		req.contBuf = bytes.NewBuffer(req.contByte)
 		w = io.MultiWriter(sv, req.contBuf)
 		bufRd = c.bufRd
 		contLen = int(req.ContLen)

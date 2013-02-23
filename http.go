@@ -34,9 +34,10 @@ type Request struct {
 	Method      string
 	URL         *URL
 	contBuf     *bytes.Buffer // will be non nil when retrying request
-	raw         bytes.Buffer
-	origReqLine []byte // original request line from client, used for http parent proxy
-	headerStart int    // start of header in raw
+	contByte    []byte        // buffer used by contBuf
+	raw         bytes.Buffer  // stores the raw content of request header, TODO move it into header
+	origReqLine []byte        // original request line from client, used for http parent proxy
+	headerStart int           // start of header in raw
 	Header
 	isConnect bool
 	state     rqState
