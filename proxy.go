@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/cyfdecyf/bufio"
+	"github.com/cyfdecyf/leakybuf"
 	"io"
 	"net"
 	// "reflect"
@@ -14,33 +15,21 @@ import (
 
 // var _ = reflect.TypeOf
 
-// Explicitly specify buffer size to avoid unnecessary copy using
-// bufio.Reader's Read. As I'm using ReadSlice to read line, it's possible to
-// get bufio.ErrBufferFull while reading line, so set it to a large default
-// value to prevent such problems.
-const bufSize = 8192
+// As I'm using ReadSlice to read line, it's possible to get
+// bufio.ErrBufferFull while reading line, so set it to a large value to
+// prevent such problems.
+//
+// For limits about URL and HTTP header size, refer to:
+// http://stackoverflow.com/questions/417142/what-is-the-maximum-length-of-a-url
+// (URL usually are less than 2100 bytes.)
+// http://www.mnot.net/blog/2011/07/11/what_proxies_must_do
+// (This says "URIs should be allowed at least 8000 octets, and HTTP headers
+// (should have 4000 as an absolute minimum".)
+const httpBufSize = 8192
 
-// It's very likely for a single user desktop system to use more than 128
-// buffers at the same time. It would require even more if serving multiple
-// users. Set it to 256, hold at most 2MB memory as buffer.
-var freeList = make(chan []byte, 256)
-
-func getBuf() (b []byte) {
-	select {
-	case b = <-freeList:
-	default:
-		b = make([]byte, bufSize)
-	}
-	return
-}
-
-func freeBuf(b []byte) {
-	select {
-	case freeList <- b:
-	default:
-	}
-	return
-}
+// Hold at most 4MB memory as buffer for parsing http request/response and
+// holding post data.
+var httpBuf = leakybuf.NewLeakyBuf(512, httpBufSize)
 
 // Close client connection if no new request received in some time. Keep it
 // small to avoid keeping too many client connections (which associates with
@@ -122,17 +111,6 @@ type serverConn struct {
 	timeoutSet  bool
 }
 
-func newServerConn(c conn, url *URL, siteInfo *VisitCnt) *serverConn {
-	buf := getBuf()
-	return &serverConn{
-		conn:     c,
-		url:      url,
-		buf:      buf,
-		bufRd:    bufio.NewReaderFromBuf(c, buf),
-		siteInfo: siteInfo,
-	}
-}
-
 type clientConn struct {
 	net.Conn   // connection to the proxy client
 	bufRd      *bufio.Reader
@@ -194,7 +172,7 @@ func (py *Proxy) Serve(done chan byte) {
 }
 
 func newClientConn(rwc net.Conn, proxy *Proxy) *clientConn {
-	buf := getBuf()
+	buf := httpBuf.Get()
 	c := &clientConn{
 		Conn:       rwc,
 		serverConn: map[string]*serverConn{},
@@ -205,9 +183,16 @@ func newClientConn(rwc net.Conn, proxy *Proxy) *clientConn {
 	return c
 }
 
+func (c *clientConn) releaseBuf() {
+	c.bufRd = nil
+	if c.buf != nil {
+		httpBuf.Put(c.buf)
+		c.buf = nil
+	}
+}
+
 func (c *clientConn) Close() error {
-	freeBuf(c.buf)
-	c.buf = nil
+	c.releaseBuf()
 	for _, sv := range c.serverConn {
 		sv.Close()
 	}
@@ -281,7 +266,7 @@ func (c *clientConn) serve() {
 	// and response.
 	for {
 		if r != nil && r.contByte != nil {
-			freeBuf(r.contByte)
+			httpBuf.Put(r.contByte)
 			r.contByte = nil
 		}
 		if r, err = c.getRequest(); err != nil {
@@ -451,7 +436,15 @@ func isErrOpRead(err error) bool {
 }
 
 func (c *clientConn) readResponse(sv *serverConn, r *Request) (err error) {
+	sv.initBuf()
 	var rp *Response
+
+	/*
+		// force retry for debugging
+		if r.tryCnt == 1 {
+			return errRetry
+		}
+	*/
 
 	if rp, err = parseResponse(sv, r); err != nil {
 		return c.handleServerReadError(r, sv, err, "Parse response from server.")
@@ -655,6 +648,18 @@ func (c *clientConn) createServerConn(r *Request) (*serverConn, error) {
 	return sv, nil
 }
 
+// Should call initBuf before reading http response from server. This allows
+// us not init buf for connect method which does not need to parse http
+// respnose.
+func newServerConn(c conn, url *URL, siteInfo *VisitCnt) *serverConn {
+	sv := &serverConn{
+		conn:     c,
+		url:      url,
+		siteInfo: siteInfo,
+	}
+	return sv
+}
+
 func (sv *serverConn) directConnection() bool {
 	return sv.connType == ctDirectConn
 }
@@ -671,10 +676,20 @@ func (sv *serverConn) updateVisit() {
 	}
 }
 
+func (sv *serverConn) initBuf() {
+	if sv.bufRd == nil {
+		sv.buf = httpBuf.Get()
+		sv.bufRd = bufio.NewReaderFromBuf(sv, sv.buf)
+	}
+}
+
 func (sv *serverConn) Close() error {
 	debug.Println("Closing server conn:", sv.url.HostPort)
-	freeBuf(sv.buf)
-	sv.buf = nil
+	sv.bufRd = nil
+	if sv.buf != nil {
+		httpBuf.Put(sv.buf)
+		sv.buf = nil
+	}
 	return sv.Conn.Close()
 }
 
@@ -728,13 +743,22 @@ func (sv *serverConn) mayBeClosed() bool {
 	return time.Now().After(sv.willCloseOn)
 }
 
+// Use smaller buffer for connection method as the buffer will be hold for a
+// very long time.
+const connectBufSize = 4096
+
+// Hold at most 2M memory for connection buffer. This can support 256
+// concurrent connect method.
+var connectBuf = leakybuf.NewLeakyBuf(512, connectBufSize)
+
 func copyServer2Client(sv *serverConn, c *clientConn, r *Request) (err error) {
-	sv.bufRd = nil // Use buffer from server connection
-	buf := sv.buf
-	var n int
+	buf := connectBuf.Get()
+	defer func() {
+		connectBuf.Put(buf)
+	}()
 
 	/*
-		// XXX This is to debug CONNECT retry
+		// force retry for debugging
 		if r.tryCnt == 1 {
 			time.Sleep(1)
 			return errRetry
@@ -746,6 +770,7 @@ func copyServer2Client(sv *serverConn, c *clientConn, r *Request) (err error) {
 	for {
 		// debug.Println("srv->cli")
 		sv.setReadTimeout("srv->cli")
+		var n int
 		if n, err = sv.Read(buf); err != nil {
 			if err == io.EOF {
 				return errRetry
@@ -780,13 +805,13 @@ func copyServer2Client(sv *serverConn, c *clientConn, r *Request) (err error) {
 func copy2Server(sv *serverConn, r *Request, p []byte) (err error) {
 	if r.responseNotSent() {
 		if r.contBuf == nil {
-			r.contByte = getBuf()
+			r.contByte = httpBuf.Get()
 			r.contBuf = bytes.NewBuffer(r.contByte)
 		}
 		r.contBuf.Write(p)
 	} else if r.contBuf != nil {
 		r.contBuf = nil
-		freeBuf(r.contByte) // contByte will not change even if contBuf grows
+		httpBuf.Put(r.contByte) // contByte will not change even if contBuf grows
 		r.contByte = nil
 	}
 	_, err = sv.Write(p)
@@ -827,14 +852,17 @@ func copyClient2Server(c *clientConn, sv *serverConn, r *Request, srvStopped not
 				return
 			}
 		}
-		c.bufRd = nil
+		c.releaseBuf()
 	}
-	buf := c.buf // Use buffer from server connection
 
 	var start time.Time
 	if config.DetectSSLErr {
 		start = time.Now()
 	}
+	buf := connectBuf.Get()
+	defer func() {
+		connectBuf.Put(buf)
+	}()
 	for {
 		// debug.Println("cli->srv")
 		if sv.maybeFake() {
@@ -985,7 +1013,7 @@ func sendBodyWithContLen(r *bufio.Reader, w io.Writer, contLen int) (err error) 
 	if contLen == 0 {
 		return
 	}
-	if err = copyN(w, r, contLen, bufSize); err != nil {
+	if err = copyN(w, r, contLen, httpBufSize); err != nil {
 		debug.Println("sendBodyWithContLen error:", err)
 	}
 	return
@@ -1093,7 +1121,7 @@ func sendBody(c *clientConn, sv *serverConn, req *Request, rp *Response) (err er
 	} else if req != nil { // request request body from client, send to server
 		// The server connection may have been closed, need to retry request in that case.
 		// So we save request body here.
-		req.contByte = getBuf()
+		req.contByte = httpBuf.Get()
 		req.contBuf = bytes.NewBuffer(req.contByte)
 		w = io.MultiWriter(sv, req.contBuf)
 		bufRd = c.bufRd
@@ -1106,7 +1134,7 @@ func sendBody(c *clientConn, sv *serverConn, req *Request, rp *Response) (err er
 	// chunked encoding has precedence over content length
 	// COW does not sanitize response header, but should correctly handle it
 	if chunk {
-		err = sendBodyChunked(bufRd, w, bufSize)
+		err = sendBodyChunked(bufRd, w, httpBufSize)
 	} else if contLen >= 0 {
 		err = sendBodyWithContLen(bufRd, w, contLen)
 	} else {
