@@ -398,7 +398,7 @@ func parseRequest(c *clientConn) (r *Request, err error) {
 		return nil, err
 	}
 	unsetConnReadTimeout(c, "parseRequest")
-	debug.Printf("Request line %s", s)
+	// debug.Printf("Request line %s", s)
 
 	r = newRequest()
 	// for http parent proxy, store the original request line
@@ -471,8 +471,6 @@ func (rp *Response) hasBody(method string) bool {
 
 // Parse response status and headers.
 func parseResponse(sv *serverConn, r *Request) (rp *Response, err error) {
-	rp = new(Response)
-
 	var s []byte
 	reader := sv.bufRd
 START:
@@ -486,6 +484,9 @@ START:
 		return nil, err
 	}
 	sv.unsetReadTimeout("parseResponse")
+	// debug.Printf("Response line %s", s)
+
+	// response status line parsing
 	var f [][]byte
 	if f = FieldsN(s, 3); len(f) < 2 { // status line are separated by SP
 		errl.Printf("Malformed HTTP response status line: %s %v\n", s, r)
@@ -496,6 +497,8 @@ START:
 		skipCRLF(reader)
 		goto START
 	}
+
+	rp = newResponse()
 	rp.Status = int(status)
 	if err != nil {
 		errl.Printf("response status not valid: %s len=%d %v\n", f[1], len(f[1]), err)

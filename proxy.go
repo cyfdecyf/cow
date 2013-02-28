@@ -443,6 +443,11 @@ func isErrOpRead(err error) bool {
 func (c *clientConn) readResponse(sv *serverConn, r *Request) (err error) {
 	sv.initBuf()
 	var rp *Response
+	defer func() {
+		if rp != nil {
+			rp.releaseBuf()
+		}
+	}()
 
 	/*
 		// force retry for debugging
@@ -461,7 +466,7 @@ func (c *clientConn) readResponse(sv *serverConn, r *Request) (err error) {
 	r.state = rsRecvBody
 	r.releaseBuf()
 
-	if _, err = c.Write(rp.raw.Bytes()); err != nil {
+	if _, err = c.Write(rp.rawResponse()); err != nil {
 		return c.handleClientWriteError(r, err, "Write response header back to client")
 	}
 	if dbgRep {
