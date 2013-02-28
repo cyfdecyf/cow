@@ -1,8 +1,8 @@
 package main
 
 import (
-	"github.com/cyfdecyf/bufio"
 	"bytes"
+	"github.com/cyfdecyf/bufio"
 	"strings"
 	"testing"
 	"time"

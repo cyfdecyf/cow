@@ -15,7 +15,6 @@ import (
 type Header struct {
 	ContLen             int64
 	KeepAlive           time.Duration
-	Referer             string
 	ProxyAuthorization  string
 	Chunking            bool
 	ConnectionKeepAlive bool
@@ -31,17 +30,28 @@ const (
 )
 
 type Request struct {
-	Method      string
-	URL         *URL
-	contBuf     *bytes.Buffer // will be non nil when retrying request
-	contByte    []byte        // buffer used by contBuf
-	raw         bytes.Buffer  // stores the raw content of request header, TODO move it into header
-	origReqLine []byte        // original request line from client, used for http parent proxy
-	headerStart int           // start of header in raw
+	Method  string
+	URL     *URL
+	raw     *bytes.Buffer // stores the raw content of request header
+	rawByte []byte        // underlying buffer for raw
+
+	// request line from client starts at 0, cow generates request line that
+	// can be sent directly to web server
+	reqLnStart int // start of generated request line in raw
+	headStart  int // start of header in raw
+	bodyStart  int // start of body in raw
+
 	Header
 	isConnect bool
 	state     rqState
 	tryCnt    byte
+}
+
+func newRequest() (r *Request) {
+	r = new(Request)
+	r.rawByte = httpBuf.Get()
+	r.raw = bytes.NewBuffer(r.rawByte[:0]) // must use 0 length slice
+	return
 }
 
 func (r *Request) String() (s string) {
@@ -65,13 +75,62 @@ func (r *Request) tooMuchRetry() bool {
 	return r.tryCnt > 3
 }
 
+func (r *Request) responseNotSent() bool {
+	return r.state <= rsSent
+}
+
+func (r *Request) releaseBuf() {
+	if r.raw != nil {
+		httpBuf.Put(r.rawByte)
+		r.rawByte = nil
+		r.raw = nil
+	}
+}
+
+// rawRequest returns the raw request that can be sent directly to HTTP/1.1 server.
+func (r *Request) rawRequest() []byte {
+	return r.raw.Bytes()[r.reqLnStart:]
+}
+
+func (r *Request) rawHeaderBody() []byte {
+	return r.raw.Bytes()[r.headStart:]
+}
+
+func (r *Request) rawBody() []byte {
+	return r.raw.Bytes()[r.bodyStart:]
+}
+
+func (r *Request) proxyRequestLine() []byte {
+	return r.raw.Bytes()[0:r.reqLnStart]
+}
+
 type Response struct {
 	Status int
 	Reason []byte
 
 	Header
 
-	raw bytes.Buffer
+	raw     *bytes.Buffer
+	rawByte []byte
+}
+
+func newResponse() (rp *Response) {
+	rp = new(Response)
+	rp.rawByte = httpBuf.Get()
+	rp.raw = bytes.NewBuffer(rp.rawByte[:0])
+	return rp
+}
+
+func (rp *Response) releaseBuf() {
+	if rp.raw != nil {
+		httpBuf.Put(rp.rawByte)
+		rp.rawByte = nil
+		rp.raw = nil
+	}
+}
+
+func (rp *Response) rawResponse() []byte {
+	return rp.raw.Bytes()
 }
 
 func (rp *Response) genStatusLine() (res string) {
@@ -272,7 +331,7 @@ func (h *Header) parseTransferEncoding(s []byte, raw *bytes.Buffer) error {
 func splitHeader(s []byte) (name, val []byte, err error) {
 	var f [][]byte
 	if f = bytes.SplitN(s, []byte{':'}, 2); len(f) != 2 {
-		errl.Println("malformed header:", s)
+		errl.Printf("malformed header: %s\n", s)
 		return nil, nil, errMalformHeader
 	}
 	// Do not lower case field value, as it maybe case sensitive
@@ -282,7 +341,7 @@ func splitHeader(s []byte) (name, val []byte, err error) {
 // Only add headers that are of interest for a proxy into request's header map.
 func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, url *URL) (err error) {
 	h.ContLen = -1
-	dummyLastLine := []byte{'a'}
+	dummyLastLine := []byte{}
 	// Read request header and body
 	var s, name, val, lastLine []byte
 	for {
@@ -339,9 +398,14 @@ func parseRequest(c *clientConn) (r *Request, err error) {
 		return nil, err
 	}
 	unsetConnReadTimeout(c, "parseRequest")
-	// debug.Printf("Request line %s", s)
+	debug.Printf("Request line %s", s)
 
-	r = new(Request)
+	r = newRequest()
+	// for http parent proxy, store the original request line
+	if hasHttpParentProxy {
+		r.raw.Write(s)
+		r.reqLnStart = len(s)
+	}
 
 	var f [][]byte
 	// Tolerate with multiple spaces and '\t' is achieved by FieldsN.
@@ -368,16 +432,10 @@ func parseRequest(c *clientConn) (r *Request, err error) {
 		}
 		r.raw.WriteString(" HTTP/1.1\r\n")
 	}
-
-	// for http parent proxy, always need the original request line
-	if hasHttpParentProxy {
-		r.origReqLine = make([]byte, len(s))
-		copy(r.origReqLine, s)
-		r.headerStart = r.raw.Len()
-	}
+	r.headStart = r.raw.Len()
 
 	// Read request header
-	if err = r.parseHeader(reader, &r.raw, r.URL); err != nil {
+	if err = r.parseHeader(reader, r.raw, r.URL); err != nil {
 		errl.Printf("Parsing request header: %v\n", err)
 		return nil, err
 	}
@@ -389,11 +447,8 @@ func parseRequest(c *clientConn) (r *Request, err error) {
 	// default, and I don't want to let others know the user is using COW, so
 	// don't add it.
 	r.raw.WriteString(CRLF)
+	r.bodyStart = r.raw.Len()
 	return
-}
-
-func (r *Request) responseNotSent() bool {
-	return r.state <= rsSent
 }
 
 func skipCRLF(r *bufio.Reader) error {
@@ -436,12 +491,11 @@ START:
 		errl.Printf("Malformed HTTP response status line: %s %v\n", s, r)
 		return nil, errMalformResponse
 	}
-	// Handle 1xx response
-	if bytes.Equal(f[1], []byte("100")) {
+	status, err := ParseIntFromBytes(f[1], 10)
+	if status == 100 { // Handle 1xx response
 		skipCRLF(reader)
 		goto START
 	}
-	status, err := ParseIntFromBytes(f[1], 10)
 	rp.Status = int(status)
 	if err != nil {
 		errl.Printf("response status not valid: %s len=%d %v\n", f[1], len(f[1]), err)
@@ -467,7 +521,7 @@ START:
 		return nil, errNotSupported
 	}
 
-	if err = rp.parseHeader(reader, &rp.raw, r.URL); err != nil {
+	if err = rp.parseHeader(reader, rp.raw, r.URL); err != nil {
 		errl.Printf("Reading response header: %v %v\n", err, r)
 		return nil, err
 	}

@@ -186,6 +186,7 @@ func newClientConn(rwc net.Conn, proxy *Proxy) *clientConn {
 func (c *clientConn) releaseBuf() {
 	c.bufRd = nil
 	if c.buf != nil {
+		// debug.Println("release client buffer")
 		httpBuf.Put(c.buf)
 		c.buf = nil
 	}
@@ -253,28 +254,32 @@ func (c *clientConn) handleRetry(r *Request, sv *serverConn) (err error) {
 }
 
 func (c *clientConn) serve() {
-	defer c.Close()
-
 	var r *Request
-	var err error
 	var sv *serverConn
+	var err error
 
 	var authed bool
 	var authCnt int
 
+	defer func() {
+		if r != nil {
+			r.releaseBuf()
+		}
+		c.Close()
+	}()
+
 	// Refer to implementation.md for the design choices on parsing the request
 	// and response.
 	for {
-		if r != nil && r.contByte != nil {
-			httpBuf.Put(r.contByte)
-			r.contByte = nil
+		if r != nil {
+			r.releaseBuf()
 		}
 		if r, err = c.getRequest(); err != nil {
 			sendErrorPage(c, "404 Bad request", "Bad request", err.Error())
 			return
 		}
 		if dbgRq {
-			dbgRq.Printf("%v %v\n", c.RemoteAddr(), r)
+			dbgRq.Printf("request from client %s\n%s", c.RemoteAddr(), r.raw.Bytes())
 		}
 
 		if isSelfURL(r.URL.HostPort) {
@@ -453,18 +458,18 @@ func (c *clientConn) readResponse(sv *serverConn, r *Request) (err error) {
 	// ther server as real instead of fake one caused by wrong DNS reply. So
 	// don't time out later.
 	sv.state = svSendRecvResponse
+	r.state = rsRecvBody
+	r.releaseBuf()
 
 	if _, err = c.Write(rp.raw.Bytes()); err != nil {
 		return c.handleClientWriteError(r, err, "Write response header back to client")
 	}
-
-	// Wrap inside if to avoid function argument evaluation.
 	if dbgRep {
-		dbgRep.Printf("%v %s %v %v", c.RemoteAddr(), r.Method, r.URL, rp)
+		dbgRep.Printf("response to client %v\n%s", c.RemoteAddr(), rp.raw.Bytes())
 	}
+	rp.releaseBuf()
 
 	if rp.hasBody(r.Method) {
-		r.state = rsRecvBody
 		if err = sendBody(c, sv, nil, rp); err != nil {
 			// Non persistent connection will return nil upon successful response reading
 			if err == io.EOF {
@@ -687,6 +692,7 @@ func (sv *serverConn) Close() error {
 	debug.Println("Closing server conn:", sv.url.HostPort)
 	sv.bufRd = nil
 	if sv.buf != nil {
+		// debug.Println("release server buffer")
 		httpBuf.Put(sv.buf)
 		sv.buf = nil
 	}
@@ -804,15 +810,9 @@ func copyServer2Client(sv *serverConn, c *clientConn, r *Request) (err error) {
 
 func copy2Server(sv *serverConn, r *Request, p []byte) (err error) {
 	if r.responseNotSent() {
-		if r.contBuf == nil {
-			r.contByte = httpBuf.Get()
-			r.contBuf = bytes.NewBuffer(r.contByte)
-		}
-		r.contBuf.Write(p)
-	} else if r.contBuf != nil {
-		r.contBuf = nil
-		httpBuf.Put(r.contByte) // contByte will not change even if contBuf grows
-		r.contByte = nil
+		r.raw.Write(p)
+	} else if r.raw != nil {
+		r.releaseBuf()
 	}
 	_, err = sv.Write(p)
 	return
@@ -832,12 +832,12 @@ func copyClient2Server(c *clientConn, sv *serverConn, r *Request, srvStopped not
 
 	var n int
 
-	if r.contBuf != nil {
+	if r.isRetry() {
 		if debug {
-			debug.Printf("cli(%s)->srv(%s) retry request send %d bytes of stored data\n",
-				c.RemoteAddr(), r.URL.HostPort, r.contBuf.Len())
+			debug.Printf("cli(%s)->srv(%s) retry request %d bytes of buffered body\n",
+				c.RemoteAddr(), r.URL.HostPort, len(r.rawBody()))
 		}
-		if _, err = sv.Write(r.contBuf.Bytes()); err != nil {
+		if _, err = sv.Write(r.rawBody()); err != nil {
 			debug.Println("cli->srv send to server error")
 			return
 		}
@@ -956,11 +956,32 @@ func (sv *serverConn) doConnect(r *Request, c *clientConn) (err error) {
 }
 
 func (sv *serverConn) sendHTTPProxyRequest(r *Request, c *clientConn) (err error) {
-	if _, err = sv.Write(r.origReqLine); err != nil {
+	if _, err = sv.Write(r.proxyRequestLine()); err != nil {
 		return c.handleServerWriteError(r, sv, err, "sending proxy request line to server")
 	}
-	if _, err = sv.Write(r.raw.Bytes()[r.headerStart:]); err != nil {
+	if _, err = sv.Write(r.rawHeaderBody()); err != nil {
 		return c.handleServerWriteError(r, sv, err, "sending proxy request header to server")
+	}
+	/*
+		if bool(dbgRq) && verbose {
+			debug.Printf("request to http proxy:\n%s%s", r.proxyRequestLine(), r.rawHeaderBody())
+		}
+	*/
+	return
+}
+
+func (sv *serverConn) sendRequest(r *Request, c *clientConn) (err error) {
+	// Send request to the server
+	if sv.connType == ctHttpProxyConn {
+		return sv.sendHTTPProxyRequest(r, c)
+	}
+	/*
+		if bool(debug) && verbose {
+			debug.Printf("request to server\n%s", r.rawRequest())
+		}
+	*/
+	if _, err = sv.Write(r.rawRequest()); err != nil {
+		err = c.handleServerWriteError(r, sv, err, "sending request to server")
 	}
 	return
 }
@@ -968,24 +989,13 @@ func (sv *serverConn) sendHTTPProxyRequest(r *Request, c *clientConn) (err error
 // Do HTTP request other that CONNECT
 func (sv *serverConn) doRequest(r *Request, c *clientConn) (err error) {
 	r.state = rsCreated
-	// Send request to the server
-	if sv.connType != ctHttpProxyConn {
-		if _, err = sv.Write(r.raw.Bytes()); err != nil {
-			return c.handleServerWriteError(r, sv, err, "sending request to server")
-		}
-	} else {
-		if err = sv.sendHTTPProxyRequest(r, c); err != nil {
-			return
-		}
+	if err = sv.sendRequest(r, c); err != nil {
+		return
 	}
 
-	// Send request body
-	if r.contBuf != nil {
-		debug.Println("Retry request send buffered body:", r)
-		if _, err = sv.Write(r.contBuf.Bytes()); err != nil {
-			return c.handleServerWriteError(r, sv, err, "Sending retry request body")
-		}
-	} else if r.Chunking || r.ContLen > 0 {
+	// Send request body. If this is retry, r.raw contains request body and is
+	// sent while sending request.
+	if !r.isRetry() && (r.Chunking || r.ContLen > 0) {
 		// Message body in request is signaled by the inclusion of a Content-
 		// Length or Transfer-Encoding header. Refer to http://stackoverflow.com/a/299696/306935
 		if err = sendBody(c, sv, r, nil); err != nil {
@@ -1121,9 +1131,7 @@ func sendBody(c *clientConn, sv *serverConn, req *Request, rp *Response) (err er
 	} else if req != nil { // request request body from client, send to server
 		// The server connection may have been closed, need to retry request in that case.
 		// So we save request body here.
-		req.contByte = httpBuf.Get()
-		req.contBuf = bytes.NewBuffer(req.contByte)
-		w = io.MultiWriter(sv, req.contBuf)
+		w = io.MultiWriter(sv, req.raw)
 		bufRd = c.bufRd
 		contLen = int(req.ContLen)
 		chunk = req.Chunking
