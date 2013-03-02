@@ -279,7 +279,14 @@ func (c *clientConn) serve() {
 			return
 		}
 		if dbgRq {
-			dbgRq.Printf("request from client %s\n%s", c.RemoteAddr(), r.raw.Bytes())
+			var rqbyte []byte
+			if r.isConnect {
+				rqbyte = r.rawBeforeBody()
+			} else {
+				// This includes client request line if has http parent proxy
+				rqbyte = r.raw.Bytes()
+			}
+			dbgRq.Printf("request from client %s\n%s", c.RemoteAddr(), rqbyte)
 		}
 
 		if isSelfURL(r.URL.HostPort) {
@@ -624,7 +631,7 @@ func (c *clientConn) createConnection(r *Request, siteInfo *VisitCnt) (srvconn c
 			var socksErr error
 			if srvconn, socksErr = createParentProxyConnection(r.URL); socksErr == nil {
 				c.handleBlockedRequest(r)
-				debug.Println("direct connection failed, use socks connection for", r)
+				debug.Println("direct connection failed, use parent proxy for", r)
 				return srvconn, nil
 			}
 			errMsg = genErrMsg(r, nil, "Direct and parent proxy connection failed, maybe blocked site.")

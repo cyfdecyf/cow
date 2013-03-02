@@ -55,12 +55,7 @@ func newRequest() (r *Request) {
 }
 
 func (r *Request) String() (s string) {
-	s = fmt.Sprintf("%s %s%s", r.Method,
-		r.URL.HostPort, r.URL.Path)
-	if verbose {
-		s += fmt.Sprintf("\n%v", r.raw.String())
-	}
-	return
+	return fmt.Sprintf("%s %s%s", r.Method, r.URL.HostPort, r.URL.Path)
 }
 
 func (r *Request) isRetry() bool {
@@ -90,6 +85,10 @@ func (r *Request) releaseBuf() {
 // rawRequest returns the raw request that can be sent directly to HTTP/1.1 server.
 func (r *Request) rawRequest() []byte {
 	return r.raw.Bytes()[r.reqLnStart:]
+}
+
+func (r *Request) rawBeforeBody() []byte {
+	return r.raw.Bytes()[:r.bodyStart]
 }
 
 func (r *Request) rawHeaderBody() []byte {
@@ -422,6 +421,9 @@ func parseRequest(c *clientConn) (r *Request, err error) {
 	}
 	if r.Method == "CONNECT" {
 		r.isConnect = true
+		if bool(dbgRq) && verbose && !hasHttpParentProxy {
+			r.raw.Write(s)
+		}
 	} else {
 		// Generate normal HTTP request line
 		r.raw.WriteString(r.Method + " ")
