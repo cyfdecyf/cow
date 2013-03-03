@@ -1,10 +1,9 @@
-0.5.2 (not released)
+0.6 (2013-03-03)
 
     * Allow user to specify proxy address in PAC
-    * PAC fix: return direct for simple host name
-    * Small bug fixes
-    * Small performance optimization
+    * Performance optimization
     * More tolerant with HTTP servers and clients
+    * Some bug fixes
 
 0.5.1 (2013-02-10)
 
