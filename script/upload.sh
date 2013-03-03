@@ -17,8 +17,8 @@ upload() {
     googlecode_upload.py -l Featured -u "$username" -w "$passwd" -s "$summary" -p cow-proxy "$file"
 }
 
-upload "$version for Linux 32bit" bin/cow-linux32-$version
-upload "$version for Linux 64bit" bin/cow-linux64-$version
-upload "$version for Windows 64bit" bin/cow-win64-$version
-upload "$version for Windows 32bit" bin/cow-win32-$version
-upload "$version for OS X 64bit" bin/cow-mac64-$version
+upload "$version for Linux 32bit" bin/cow-linux32-$version.gz
+upload "$version for Linux 64bit" bin/cow-linux64-$version.gz
+upload "$version for Windows 64bit" bin/cow-win64-$version.zip
+upload "$version for Windows 32bit" bin/cow-win32-$version.zip
+upload "$version for OS X 64bit" bin/cow-mac64-$version.gz
