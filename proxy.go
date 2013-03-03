@@ -641,9 +641,6 @@ func (c *clientConn) createConnection(r *Request, siteInfo *VisitCnt) (srvconn c
 	}
 
 fail:
-	if r.Method == "CONNECT" {
-		return zeroConn, errShouldClose
-	}
 	sendErrorPage(c, "504 Connection failed", err.Error(), errMsg)
 	return zeroConn, errPageSent
 }
