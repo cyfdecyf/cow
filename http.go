@@ -62,7 +62,6 @@ func (r *Request) reset() {
 		r.rawByte = httpBuf.Get()
 		r.raw = bytes.NewBuffer(r.rawByte[:0]) // must use 0 length slice
 	}
-	return
 }
 
 func (r *Request) String() (s string) {
@@ -124,11 +123,21 @@ type Response struct {
 	rawByte []byte
 }
 
-func newResponse() (rp *Response) {
-	rp = new(Response)
-	rp.rawByte = httpBuf.Get()
-	rp.raw = bytes.NewBuffer(rp.rawByte[:0])
-	return rp
+var zeroResponse = Response{}
+
+func (rp *Response) reset() {
+	b := rp.rawByte
+	raw := rp.raw
+	*rp = zeroResponse
+
+	if raw != nil {
+		raw.Reset()
+		rp.rawByte = b
+		rp.raw = raw
+	} else {
+		rp.rawByte = httpBuf.Get()
+		rp.raw = bytes.NewBuffer(rp.rawByte[:0])
+	}
 }
 
 func (rp *Response) releaseBuf() {
@@ -483,7 +492,7 @@ func (rp *Response) hasBody(method string) bool {
 }
 
 // Parse response status and headers.
-func parseResponse(sv *serverConn, r *Request) (rp *Response, err error) {
+func parseResponse(sv *serverConn, r *Request, rp *Response) (err error) {
 	var s []byte
 	reader := sv.bufRd
 	sv.setReadTimeout("parseResponse")
@@ -493,7 +502,7 @@ func parseResponse(sv *serverConn, r *Request) (rp *Response, err error) {
 			debug.Printf("Reading Response status line: %v %v\n", err, r)
 		}
 		// For timeout, the connection will not be used, so no need to unset timeout
-		return nil, err
+		return err
 	}
 	sv.unsetReadTimeout("parseResponse")
 	// debug.Printf("Response line %s", s)
@@ -502,11 +511,11 @@ func parseResponse(sv *serverConn, r *Request) (rp *Response, err error) {
 	var f [][]byte
 	if f = FieldsN(s, 3); len(f) < 2 { // status line are separated by SP
 		errl.Printf("Malformed HTTP response status line: %s %v\n", s, r)
-		return nil, errMalformResponse
+		return errMalformResponse
 	}
 	status, err := ParseIntFromBytes(f[1], 10)
 
-	rp = newResponse()
+	rp.reset()
 	rp.Status = int(status)
 	if err != nil {
 		errl.Printf("response status not valid: %s len=%d %v\n", f[1], len(f[1]), err)
@@ -519,7 +528,7 @@ func parseResponse(sv *serverConn, r *Request) (rp *Response, err error) {
 	proto := f[0]
 	if !bytes.Equal(proto[0:7], []byte("HTTP/1.")) {
 		errl.Printf("Invalid response status line: %s\n", string(f[0]))
-		return nil, errMalformResponse
+		return errMalformResponse
 	}
 	if proto[7] == '1' {
 		rp.raw.Write(s)
@@ -529,12 +538,12 @@ func parseResponse(sv *serverConn, r *Request) (rp *Response, err error) {
 		rp.raw.WriteString(rp.genStatusLine())
 	} else {
 		errl.Printf("Response protocol not supported: %s\n", f[0])
-		return nil, errNotSupported
+		return errNotSupported
 	}
 
 	if err = rp.parseHeader(reader, rp.raw, r.URL); err != nil {
 		errl.Printf("Reading response header: %v %v\n", err, r)
-		return nil, err
+		return err
 	}
 	// Connection close, no content length specification
 	// Use chunked encoding to pass content back to client
@@ -547,7 +556,7 @@ func parseResponse(sv *serverConn, r *Request) (rp *Response, err error) {
 	rp.raw.WriteString(keepAliveHeader)
 	rp.raw.WriteString(CRLF)
 
-	return rp, nil
+	return nil
 }
 
 func unquote(s string) string {

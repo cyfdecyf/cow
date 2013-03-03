@@ -255,6 +255,7 @@ func (c *clientConn) handleRetry(r *Request, sv *serverConn) (err error) {
 
 func (c *clientConn) serve() {
 	var r Request
+	var rp Response
 	var sv *serverConn
 	var err error
 
@@ -338,7 +339,7 @@ func (c *clientConn) serve() {
 			return
 		}
 
-		if err = sv.doRequest(&r, c); err != nil {
+		if err = sv.doRequest(c, &r, &rp); err != nil {
 			c.removeServerConn(sv)
 			if err == errRetry {
 				err = c.handleRetry(&r, sv)
@@ -442,9 +443,8 @@ func isErrOpRead(err error) bool {
 	return false
 }
 
-func (c *clientConn) readResponse(sv *serverConn, r *Request) (err error) {
+func (c *clientConn) readResponse(sv *serverConn, r *Request, rp *Response) (err error) {
 	sv.initBuf()
-	var rp *Response
 	defer func() {
 		if rp != nil {
 			rp.releaseBuf()
@@ -458,7 +458,7 @@ func (c *clientConn) readResponse(sv *serverConn, r *Request) (err error) {
 		}
 	*/
 
-	if rp, err = parseResponse(sv, r); err != nil {
+	if err = parseResponse(sv, r, rp); err != nil {
 		return c.handleServerReadError(r, sv, err, "Parse response from server.")
 	}
 	// After have received the first reponses from the server, we consider
@@ -769,7 +769,7 @@ func copyServer2Client(sv *serverConn, c *clientConn, r *Request) (err error) {
 
 	/*
 		// force retry for debugging
-		if r.tryCnt == 1 {
+		if r.tryCnt == 1 && sv.maybeFake() {
 			time.Sleep(1)
 			return errRetry
 		}
@@ -991,7 +991,7 @@ func (sv *serverConn) sendRequest(r *Request, c *clientConn) (err error) {
 }
 
 // Do HTTP request other that CONNECT
-func (sv *serverConn) doRequest(r *Request, c *clientConn) (err error) {
+func (sv *serverConn) doRequest(c *clientConn, r *Request, rp *Response) (err error) {
 	r.state = rsCreated
 	if err = sv.sendRequest(r, c); err != nil {
 		return
@@ -1014,7 +1014,7 @@ func (sv *serverConn) doRequest(r *Request, c *clientConn) (err error) {
 		}
 	}
 	r.state = rsSent
-	err = c.readResponse(sv, r)
+	err = c.readResponse(sv, r, rp)
 	if err == nil {
 		sv.updateVisit()
 	}
