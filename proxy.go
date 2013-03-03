@@ -207,12 +207,12 @@ func isSelfURL(url string) bool {
 	return url == ""
 }
 
-func (c *clientConn) getRequest() (r *Request, err error) {
-	if r, err = parseRequest(c); err != nil {
+func (c *clientConn) getRequest(r *Request) (err error) {
+	if err = parseRequest(c, r); err != nil {
 		c.handleClientReadError(r, err, "parse client request")
-		return nil, err
+		return err
 	}
-	return r, nil
+	return nil
 }
 
 func (c *clientConn) serveSelfURL(r *Request) (err error) {
@@ -254,7 +254,7 @@ func (c *clientConn) handleRetry(r *Request, sv *serverConn) (err error) {
 }
 
 func (c *clientConn) serve() {
-	var r *Request
+	var r Request
 	var sv *serverConn
 	var err error
 
@@ -262,19 +262,14 @@ func (c *clientConn) serve() {
 	var authCnt int
 
 	defer func() {
-		if r != nil {
-			r.releaseBuf()
-		}
+		r.releaseBuf()
 		c.Close()
 	}()
 
 	// Refer to implementation.md for the design choices on parsing the request
 	// and response.
 	for {
-		if r != nil {
-			r.releaseBuf()
-		}
-		if r, err = c.getRequest(); err != nil {
+		if err = c.getRequest(&r); err != nil {
 			sendErrorPage(c, "404 Bad request", "Bad request", err.Error())
 			return
 		}
@@ -290,7 +285,7 @@ func (c *clientConn) serve() {
 		}
 
 		if isSelfURL(r.URL.HostPort) {
-			if err = c.serveSelfURL(r); err != nil {
+			if err = c.serveSelfURL(&r); err != nil {
 				return
 			}
 			continue
@@ -300,7 +295,7 @@ func (c *clientConn) serve() {
 			if authCnt > 5 {
 				return
 			}
-			if err = Authenticate(c, r); err != nil {
+			if err = Authenticate(c, &r); err != nil {
 				if err == errAuthRequired {
 					authCnt++
 					continue
@@ -314,9 +309,9 @@ func (c *clientConn) serve() {
 	retry:
 		r.tryOnce()
 		if bool(debug) && r.isRetry() {
-			errl.Printf("%s retry request tryCnt=%d %v\n", c.RemoteAddr(), r.tryCnt, r)
+			errl.Printf("%s retry request tryCnt=%d %v\n", c.RemoteAddr(), r.tryCnt, &r)
 		}
-		if sv, err = c.getServerConn(r); err != nil {
+		if sv, err = c.getServerConn(&r); err != nil {
 			// Failed connection will send error page back to client
 			// debug.Printf("Failed to get serverConn for %s %v\n", c.RemoteAddr(), r)
 			if err == errPageSent {
@@ -326,9 +321,9 @@ func (c *clientConn) serve() {
 		}
 
 		if r.isConnect {
-			if err = sv.doConnect(r, c); err == errRetry {
+			if err = sv.doConnect(&r, c); err == errRetry {
 				// connection for CONNECT is not reused, no need to remove
-				if err = c.handleRetry(r, sv); err == errRetry {
+				if err = c.handleRetry(&r, sv); err == errRetry {
 					goto retry
 				}
 			}
@@ -343,10 +338,10 @@ func (c *clientConn) serve() {
 			return
 		}
 
-		if err = sv.doRequest(r, c); err != nil {
+		if err = sv.doRequest(&r, c); err != nil {
 			c.removeServerConn(sv)
 			if err == errRetry {
-				err = c.handleRetry(r, sv)
+				err = c.handleRetry(&r, sv)
 				if err == errRetry {
 					goto retry
 				}

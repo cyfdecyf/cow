@@ -47,10 +47,21 @@ type Request struct {
 	tryCnt    byte
 }
 
-func newRequest() (r *Request) {
-	r = new(Request)
-	r.rawByte = httpBuf.Get()
-	r.raw = bytes.NewBuffer(r.rawByte[:0]) // must use 0 length slice
+var zeroRequest = Request{}
+
+func (r *Request) reset() {
+	b := r.rawByte
+	raw := r.raw
+	*r = zeroRequest // reset to zero value
+
+	if raw != nil {
+		raw.Reset()
+		r.rawByte = b
+		r.raw = raw
+	} else {
+		r.rawByte = httpBuf.Get()
+		r.raw = bytes.NewBuffer(r.rawByte[:0]) // must use 0 length slice
+	}
 	return
 }
 
@@ -388,18 +399,18 @@ func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, url *URL) 
 }
 
 // Parse the request line and header, does not touch body
-func parseRequest(c *clientConn) (r *Request, err error) {
+func parseRequest(c *clientConn, r *Request) (err error) {
 	var s []byte
 	reader := c.bufRd
 	setConnReadTimeout(c, clientConnTimeout, "parseRequest")
 	// parse request line
 	if s, err = reader.ReadSlice('\n'); err != nil {
-		return nil, err
+		return err
 	}
 	unsetConnReadTimeout(c, "parseRequest")
 	// debug.Printf("Request line %s", s)
 
-	r = newRequest()
+	r.reset()
 	// for http parent proxy, store the original request line
 	if hasHttpParentProxy {
 		r.raw.Write(s)
@@ -409,7 +420,7 @@ func parseRequest(c *clientConn) (r *Request, err error) {
 	var f [][]byte
 	// Tolerate with multiple spaces and '\t' is achieved by FieldsN.
 	if f = FieldsN(s, 3); len(f) != 3 {
-		return nil, errors.New(fmt.Sprintf("malformed HTTP request: %s", s))
+		return errors.New(fmt.Sprintf("malformed HTTP request: %s", s))
 	}
 	ASCIIToUpperInplace(f[0])
 	r.Method = string(f[0])
@@ -439,7 +450,7 @@ func parseRequest(c *clientConn) (r *Request, err error) {
 	// Read request header
 	if err = r.parseHeader(reader, r.raw, r.URL); err != nil {
 		errl.Printf("Parsing request header: %v\n", err)
-		return nil, err
+		return err
 	}
 	if !r.ConnectionKeepAlive {
 		// Always add one connection header for request
