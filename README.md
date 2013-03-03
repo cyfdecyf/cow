@@ -2,10 +2,10 @@
 
 COW 是一个利用二级代理帮助自动化翻墙的 HTTP 代理服务器。它能自动检测被墙网站，且仅对被墙网站使用二级代理。
 
-当前版本：0.5.1
+当前版本：0.6
 [![Build Status](https://travis-ci.org/cyfdecyf/cow.png?branch=master)](https://travis-ci.org/cyfdecyf/cow)
 
-**版本 0.5 更新重要说明**
+**从 0.5 之前版本更新的用户请注意**
 
 - **配置文件修改**
   - 请删除下列选项: `autoRetry`, `updateDirect`, `updateBlocked`
@@ -23,10 +23,10 @@ COW 是一个利用二级代理帮助自动化翻墙的 HTTP 代理服务器。�
   - 无需安装 shadowsocks client，提供 HTTP 代理
 - 自动检测网站是否被墙，仅对被墙网站使用二级代理
   - 对未知网站，先尝试直接连接，失败后使用二级代理重试请求，2 分钟后再尝试直接
-  - 内置[常见被墙网站](https://github.com/cyfdecyf/cow/blob/master/site_blocked.go)，减少检测被墙所需时间，也可手工添加被墙网站
+  - 内置[常见被墙网站](blob/master/site_blocked.go)，减少检测被墙所需时间，也可手工添加被墙网站
 - 自动记录经常访问网站是否被墙
 - 提供 PAC 文件，直连网站绕过 COW
-  - 内置[常见可直连网站](https://github.com/cyfdecyf/cow/blob/master/site_direct.go)，如国内社交、视频、银行、电商等网站，也可手工添加
+  - 内置[常见可直连网站](blob/master/site_direct.go)，如国内社交、视频、银行、电商等网站，也可手工添加
 
 ## 限制
 
@@ -53,11 +53,12 @@ OS X 和 Linux 上，推荐使用下面的命令来下载二进制文件和样�
 
 # 使用说明
 
-配置文件在 Unix 系统上为 `~/.cow/rc`，Windows 上为 COW 所在目录的 `rc.txt` 文件。 **[样例配置](https://github.com/cyfdecyf/cow/blob/master/doc/sample-config/rc) 包含了所有选项以及详细的说明**，建议下载然后修改。
+配置文件在 Unix 系统上为 `~/.cow/rc`，Windows 上为 COW 所在目录的 `rc.txt` 文件。 **[样例配置](blob/master/doc/sample-config/rc) 包含了所有选项以及详细的说明**，建议下载然后修改。
 
 启动 COW：
 
 - Unix 系统在命令行上执行 `cow`
+  - [Linux 启动脚本](blob/master/doc/init.d/cow) 在 Debian 上测试过，其他 Linux 发行版应该也可以使用
 - Windows 上双击 `cow.exe` 执行即可
 
 PAC url 为 `http://<listen address>/pac`。
@@ -97,4 +98,4 @@ COW 将以下错误认为是墙在作怪：
 用连接被重置来判断被墙通常来说比较可靠，超时则不可靠。COW 每隔一分钟会尝试估算合适的超时间隔，避免在网络连接差的情况下把直连网站由于超时也当成被墙。
 COW 默认配置下检测到被墙后，过两分钟再次尝试直连也是为了避免误判。
 
-如果超时自动重试给你造成了问题，请参考[样例配置](https://github.com/cyfdecyf/cow/blob/master/doc/sample-config/rc)高级选项中的 `readTimeout`, `dialTimeout` 选项。
+如果超时自动重试给你造成了问题，请参考[样例配置](blob/master/doc/sample-config/rc)高级选项中的 `readTimeout`, `dialTimeout` 选项。

@@ -1,10 +1,10 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
 	"errors"
 	"fmt"
+	"github.com/cyfdecyf/bufio"
 	"io"
 	"net"
 	"strconv"
@@ -15,7 +15,6 @@ import (
 type Header struct {
 	ContLen             int64
 	KeepAlive           time.Duration
-	Referer             string
 	ProxyAuthorization  string
 	Chunking            bool
 	ConnectionKeepAlive bool
@@ -31,25 +30,42 @@ const (
 )
 
 type Request struct {
-	Method      string
-	URL         *URL
-	contBuf     *bytes.Buffer // will be non nil when retrying request
-	raw         bytes.Buffer
-	origReqLine []byte // original request line from client, used for http parent proxy
-	headerStart int    // start of header in raw
+	Method  string
+	URL     *URL
+	raw     *bytes.Buffer // stores the raw content of request header
+	rawByte []byte        // underlying buffer for raw
+
+	// request line from client starts at 0, cow generates request line that
+	// can be sent directly to web server
+	reqLnStart int // start of generated request line in raw
+	headStart  int // start of header in raw
+	bodyStart  int // start of body in raw
+
 	Header
 	isConnect bool
 	state     rqState
 	tryCnt    byte
 }
 
-func (r *Request) String() (s string) {
-	s = fmt.Sprintf("%s %s%s", r.Method,
-		r.URL.HostPort, r.URL.Path)
-	if verbose {
-		s += fmt.Sprintf("\n%v", r.raw.String())
+var zeroRequest = Request{}
+
+func (r *Request) reset() {
+	b := r.rawByte
+	raw := r.raw
+	*r = zeroRequest // reset to zero value
+
+	if raw != nil {
+		raw.Reset()
+		r.rawByte = b
+		r.raw = raw
+	} else {
+		r.rawByte = httpBuf.Get()
+		r.raw = bytes.NewBuffer(r.rawByte[:0]) // must use 0 length slice
 	}
-	return
+}
+
+func (r *Request) String() (s string) {
+	return fmt.Sprintf("%s %s%s", r.Method, r.URL.HostPort, r.URL.Path)
 }
 
 func (r *Request) isRetry() bool {
@@ -64,13 +80,76 @@ func (r *Request) tooMuchRetry() bool {
 	return r.tryCnt > 3
 }
 
+func (r *Request) responseNotSent() bool {
+	return r.state <= rsSent
+}
+
+func (r *Request) releaseBuf() {
+	if r.raw != nil {
+		httpBuf.Put(r.rawByte)
+		r.rawByte = nil
+		r.raw = nil
+	}
+}
+
+// rawRequest returns the raw request that can be sent directly to HTTP/1.1 server.
+func (r *Request) rawRequest() []byte {
+	return r.raw.Bytes()[r.reqLnStart:]
+}
+
+func (r *Request) rawBeforeBody() []byte {
+	return r.raw.Bytes()[:r.bodyStart]
+}
+
+func (r *Request) rawHeaderBody() []byte {
+	return r.raw.Bytes()[r.headStart:]
+}
+
+func (r *Request) rawBody() []byte {
+	return r.raw.Bytes()[r.bodyStart:]
+}
+
+func (r *Request) proxyRequestLine() []byte {
+	return r.raw.Bytes()[0:r.reqLnStart]
+}
+
 type Response struct {
 	Status int
 	Reason []byte
 
 	Header
 
-	raw bytes.Buffer
+	raw     *bytes.Buffer
+	rawByte []byte
+}
+
+var zeroResponse = Response{}
+
+func (rp *Response) reset() {
+	b := rp.rawByte
+	raw := rp.raw
+	*rp = zeroResponse
+
+	if raw != nil {
+		raw.Reset()
+		rp.rawByte = b
+		rp.raw = raw
+	} else {
+		rp.rawByte = httpBuf.Get()
+		rp.raw = bytes.NewBuffer(rp.rawByte[:0])
+	}
+}
+
+func (rp *Response) releaseBuf() {
+	if rp.raw != nil {
+		httpBuf.Put(rp.rawByte)
+		rp.rawByte = nil
+		rp.raw = nil
+	}
+}
+
+func (rp *Response) rawResponse() []byte {
+	return rp.raw.Bytes()
 }
 
 func (rp *Response) genStatusLine() (res string) {
@@ -99,15 +178,10 @@ type URL struct {
 	Port     string
 	Domain   string
 	Path     string
-	Scheme   string
 }
 
 func (url *URL) String() string {
 	return url.HostPort + url.Path
-}
-
-func (url *URL) toURI() string {
-	return url.Scheme + "://" + url.String()
 }
 
 func (url *URL) HostIsIP() bool {
@@ -136,34 +210,39 @@ func splitHostPort(s string) (host, port string) {
 // net.ParseRequestURI will unescape encoded path, but the proxy doesn't need
 // that. Assumes the input rawurl is valid. Even if rawurl is not valid, net.Dial
 // will check the correctness of the host.
+
 func ParseRequestURI(rawurl string) (*URL, error) {
+	return ParseRequestURIBytes([]byte(rawurl))
+}
+
+func ParseRequestURIBytes(rawurl []byte) (*URL, error) {
 	if rawurl[0] == '/' {
-		return &URL{Path: rawurl}, nil
+		return &URL{Path: string(rawurl)}, nil
 	}
 
-	var f []string
-	var rest, scheme string
-	f = strings.SplitN(rawurl, "://", 2)
+	var f [][]byte
+	var rest, scheme []byte
+	f = bytes.SplitN(rawurl, []byte("://"), 2)
 	if len(f) == 1 {
 		rest = f[0]
-		scheme = "http" // default to http
+		scheme = []byte("http") // default to http
 	} else {
-		scheme = strings.ToLower(f[0])
-		if scheme != "http" && scheme != "https" {
-			msg := scheme + " protocol not supported"
-			errl.Println(msg)
-			return nil, errors.New(msg)
+		ASCIIToLowerInplace(f[0]) // it's ok to lower case scheme
+		scheme = f[0]
+		if !bytes.Equal(scheme, []byte("http")) && !bytes.Equal(scheme, []byte("https")) {
+			errl.Printf("%s protocol not supported\n", scheme)
+			return nil, errors.New("protocol not supported")
 		}
 		rest = f[1]
 	}
 
 	var hostport, host, port, path string
-	id := strings.Index(rest, "/")
+	id := bytes.IndexByte(rest, '/')
 	if id == -1 {
-		hostport = rest
+		hostport = string(rest)
 	} else {
-		hostport = rest[:id]
-		path = rest[id:]
+		hostport = string(rest[:id])
+		path = string(rest[id:])
 	}
 
 	// Must add port in host so it can be used as key to find the correct
@@ -180,7 +259,7 @@ func ParseRequestURI(rawurl string) (*URL, error) {
 		}
 	}
 
-	return &URL{hostport, host, port, host2Domain(host), path, scheme}, nil
+	return &URL{hostport, host, port, host2Domain(host), path}, nil
 }
 
 // headers of interest to a proxy
@@ -271,7 +350,7 @@ func (h *Header) parseTransferEncoding(s []byte, raw *bytes.Buffer) error {
 func splitHeader(s []byte) (name, val []byte, err error) {
 	var f [][]byte
 	if f = bytes.SplitN(s, []byte{':'}, 2); len(f) != 2 {
-		errl.Println("malformed header:", s)
+		errl.Printf("malformed header: %s\n", s)
 		return nil, nil, errMalformHeader
 	}
 	// Do not lower case field value, as it maybe case sensitive
@@ -281,7 +360,7 @@ func splitHeader(s []byte) (name, val []byte, err error) {
 // Only add headers that are of interest for a proxy into request's header map.
 func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, url *URL) (err error) {
 	h.ContLen = -1
-	dummyLastLine := []byte{'a'}
+	dummyLastLine := []byte{}
 	// Read request header and body
 	var s, name, val, lastLine []byte
 	for {
@@ -328,35 +407,43 @@ func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, url *URL) 
 	return
 }
 
-// Parse the initial line and header, does not touch body
-func parseRequest(c *clientConn) (r *Request, err error) {
+// Parse the request line and header, does not touch body
+func parseRequest(c *clientConn, r *Request) (err error) {
 	var s []byte
 	reader := c.bufRd
 	setConnReadTimeout(c, clientConnTimeout, "parseRequest")
-	// parse initial request line
+	// parse request line
 	if s, err = reader.ReadSlice('\n'); err != nil {
-		return nil, err
+		return err
 	}
 	unsetConnReadTimeout(c, "parseRequest")
-	// debug.Printf("Request initial line %s", s)
+	// debug.Printf("Request line %s", s)
 
-	r = new(Request)
+	r.reset()
+	// for http parent proxy, store the original request line
+	if hasHttpParentProxy {
+		r.raw.Write(s)
+		r.reqLnStart = len(s)
+	}
 
 	var f [][]byte
-	if f = bytes.SplitN(s, []byte{' '}, 3); len(f) < 3 { // request line are separated by SP
-		return nil, errors.New(fmt.Sprintf("malformed HTTP request: %s", s))
+	// Tolerate with multiple spaces and '\t' is achieved by FieldsN.
+	if f = FieldsN(s, 3); len(f) != 3 {
+		return errors.New(fmt.Sprintf("malformed HTTP request: %s", s))
 	}
-	var requestURI string
 	ASCIIToUpperInplace(f[0])
-	r.Method, requestURI = string(f[0]), string(f[1])
+	r.Method = string(f[0])
 
 	// Parse URI into host and path
-	r.URL, err = ParseRequestURI(requestURI)
+	r.URL, err = ParseRequestURIBytes(f[1])
 	if err != nil {
 		return
 	}
 	if r.Method == "CONNECT" {
 		r.isConnect = true
+		if bool(dbgRq) && verbose && !hasHttpParentProxy {
+			r.raw.Write(s)
+		}
 	} else {
 		// Generate normal HTTP request line
 		r.raw.WriteString(r.Method + " ")
@@ -367,38 +454,30 @@ func parseRequest(c *clientConn) (r *Request, err error) {
 		}
 		r.raw.WriteString(" HTTP/1.1\r\n")
 	}
-
-	// for http parent proxy, always need the initial request line
-	if hasHttpParentProxy {
-		r.origReqLine = make([]byte, len(s))
-		copy(r.origReqLine, s)
-		r.headerStart = r.raw.Len()
-	}
+	r.headStart = r.raw.Len()
 
 	// Read request header
-	if err = r.parseHeader(reader, &r.raw, r.URL); err != nil {
+	if err = r.parseHeader(reader, r.raw, r.URL); err != nil {
 		errl.Printf("Parsing request header: %v\n", err)
-		return nil, err
+		return err
 	}
 	if !r.ConnectionKeepAlive {
 		// Always add one connection header for request
 		r.raw.WriteString(fullHeaderConnection)
 	}
+	// The spec says proxy must add Via header. polipo disables this by
+	// default, and I don't want to let others know the user is using COW, so
+	// don't add it.
 	r.raw.WriteString(CRLF)
+	r.bodyStart = r.raw.Len()
 	return
 }
 
-func (r *Request) responseNotSent() bool {
-	return r.state <= rsSent
-}
-
-func readCheckCRLF(reader *bufio.Reader) error {
-	crlfBuf := make([]byte, 2)
-	if _, err := io.ReadFull(reader, crlfBuf); err != nil {
+func skipCRLF(r *bufio.Reader) error {
+	// There maybe servers using single '\n' for line ending
+	if _, err := r.ReadSlice('\n'); err != nil {
+		errl.Println("Error reading CRLF:", err)
 		return err
-	}
-	if crlfBuf[0] != '\r' || crlfBuf[1] != '\n' {
-		return errChunkedEncode
 	}
 	return nil
 }
@@ -413,12 +492,9 @@ func (rp *Response) hasBody(method string) bool {
 }
 
 // Parse response status and headers.
-func parseResponse(sv *serverConn, r *Request) (rp *Response, err error) {
-	rp = new(Response)
-
+func parseResponse(sv *serverConn, r *Request, rp *Response) (err error) {
 	var s []byte
 	reader := sv.bufRd
-START:
 	sv.setReadTimeout("parseResponse")
 	if s, err = reader.ReadSlice('\n'); err != nil {
 		if err != io.EOF {
@@ -426,23 +502,20 @@ START:
 			debug.Printf("Reading Response status line: %v %v\n", err, r)
 		}
 		// For timeout, the connection will not be used, so no need to unset timeout
-		return nil, err
+		return err
 	}
 	sv.unsetReadTimeout("parseResponse")
+	// debug.Printf("Response line %s", s)
+
+	// response status line parsing
 	var f [][]byte
-	if f = bytes.SplitN(TrimSpace(s), []byte{' '}, 3); len(f) < 2 { // status line are separated by SP
+	if f = FieldsN(s, 3); len(f) < 2 { // status line are separated by SP
 		errl.Printf("Malformed HTTP response status line: %s %v\n", s, r)
-		return nil, errMalformResponse
-	}
-	// Handle 1xx response
-	if bytes.Equal(f[1], []byte("100")) {
-		if err = readCheckCRLF(reader); err != nil {
-			errl.Printf("Reading CRLF after 1xx response: %v %v\n", err, r)
-			return nil, err
-		}
-		goto START
+		return errMalformResponse
 	}
 	status, err := ParseIntFromBytes(f[1], 10)
+
+	rp.reset()
 	rp.Status = int(status)
 	if err != nil {
 		errl.Printf("response status not valid: %s len=%d %v\n", f[1], len(f[1]), err)
@@ -455,7 +528,7 @@ START:
 	proto := f[0]
 	if !bytes.Equal(proto[0:7], []byte("HTTP/1.")) {
 		errl.Printf("Invalid response status line: %s\n", string(f[0]))
-		return nil, errMalformResponse
+		return errMalformResponse
 	}
 	if proto[7] == '1' {
 		rp.raw.Write(s)
@@ -465,12 +538,12 @@ START:
 		rp.raw.WriteString(rp.genStatusLine())
 	} else {
 		errl.Printf("Response protocol not supported: %s\n", f[0])
-		return nil, errNotSupported
+		return errNotSupported
 	}
 
-	if err = rp.parseHeader(reader, &rp.raw, r.URL); err != nil {
+	if err = rp.parseHeader(reader, rp.raw, r.URL); err != nil {
 		errl.Printf("Reading response header: %v %v\n", err, r)
-		return nil, err
+		return err
 	}
 	// Connection close, no content length specification
 	// Use chunked encoding to pass content back to client
@@ -480,9 +553,10 @@ START:
 	if !rp.ConnectionKeepAlive {
 		rp.raw.WriteString("Connection: keep-alive\r\n")
 	}
+	rp.raw.WriteString(keepAliveHeader)
 	rp.raw.WriteString(CRLF)
 
-	return rp, nil
+	return nil
 }
 
 func unquote(s string) string {

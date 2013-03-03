@@ -16,7 +16,7 @@ else
     ./cow -rc ./script/debugrc -listen=$PROXY_ADDR &
 fi
 cow_pid=$!
-sleep 0.5
+sleep 1
 
 test_get() {
     local url
@@ -31,7 +31,7 @@ test_get() {
 
     # get 5 times
     for i in {1..2}; do
-        # -s silent to disable progress meter, but enable --show-error 
+        # -s silent to disable progress meter, but enable --show-error
         # -i to include http header
         # -L to follow redirect so we should always get HTTP 200
         if [[ -n $noproxy ]]; then
@@ -57,12 +57,14 @@ test_get() {
 }
 
 test_get $PROXY_ADDR/pac "apple.com" "noproxy" # test for pac
-test_get google.com "</html>" # 301 redirect 
-test_get www.google.com "</html>" # 302 redirect 
-test_get www.reddit.com "</html>" # chunked encoding
-test_get https://www.twitter.com "</html>" # builtin blocked site, HTTP CONNECT
+test_get google.com "<html" # 301 redirect
+test_get www.google.com "<html" # 302 redirect , chunked encoding
+test_get www.reddit.com "<html" # chunked encoding
 test_get openvpn.net "</html>" # blocked site, all kinds of block method
-test_get http://plan9.bell-labs.com/magic/man2html/1/2l "<head>" "" "404"
+test_get plan9.bell-labs.com/magic/man2html/1/2l "<head>" "" "404" # single LF in response header
+test_get https://google.com "<html" # test for HTTP connect
+test_get https://www.google.com "<html"
+test_get https://www.twitter.com "</html>"
 
 # Chinese sites may timeout on travis.
 if [[ -z $TRAVIS ]]; then

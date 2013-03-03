@@ -49,7 +49,7 @@ func init() {
 
 func initLog() {
 	logFile = os.Stdout
-	if bool(debug) && !isWindows() {
+	if bool(debug) && !isWindows {
 		// On windows, we don't know if the terminal supports ANSI color, so
 		// does not turn color by default in debug mode
 		colorize = true

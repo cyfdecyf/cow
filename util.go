@@ -1,10 +1,10 @@
 package main
 
 import (
-	"bufio"
 	"crypto/md5"
 	"errors"
 	"fmt"
+	"github.com/cyfdecyf/bufio"
 	"io"
 	"net"
 	"os"
@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 )
+
+const isWindows = runtime.GOOS == "windows"
 
 type notification chan byte
 
@@ -39,7 +41,7 @@ func (n notification) hasNotified() bool {
 // not include ending '\r' and '\n'. If returns err != nil if and only if
 // len(line) == 0.
 func ReadLine(r *bufio.Reader) (string, error) {
-	l, err := ReadLineBytes(r)
+	l, err := ReadLineSlice(r)
 	return string(l), err
 }
 
@@ -48,7 +50,7 @@ func ReadLine(r *bufio.Reader) (string, error) {
 // len(line) == 0. Note the returned byte should not be used for append and
 // maybe overwritten by next I/O operation. Copied code of readLineSlice from
 // $GOROOT/src/pkg/net/textproto/reader.go
-func ReadLineBytes(r *bufio.Reader) (line []byte, err error) {
+func ReadLineSlice(r *bufio.Reader) (line []byte, err error) {
 	for {
 		l, more, err := r.ReadLine()
 		if err != nil {
@@ -100,18 +102,15 @@ func IsDigit(b byte) bool {
 	return '0' <= b && b <= '9'
 }
 
-var spaceTbl = [...]bool{
-	9:  true, // ht
-	10: true, // lf
-	13: true, // cr
-	32: true, // sp
+var spaceTbl = [256]bool{
+	'\t': true, // ht
+	'\n': true, // lf
+	'\r': true, // cr
+	' ':  true, // sp
 }
 
 func IsSpace(b byte) bool {
-	if 9 <= b && b <= 32 {
-		return spaceTbl[b]
-	}
-	return false
+	return spaceTbl[b]
 }
 
 func TrimSpace(s []byte) []byte {
@@ -128,6 +127,54 @@ func TrimSpace(s []byte) []byte {
 	for ; end >= 0 && IsSpace(s[end]); end-- {
 	}
 	return s[st : end+1]
+}
+
+// FieldsN is simliar with bytes.Fields, but only consider space and '\t' as
+// space, and will include all content in the final slice with ending white
+// space characters trimmed. bytes.Split can't split on both space and '\t',
+// and considers two separator as an empty item. bytes.FieldsFunc can't
+// specify how much fields we need, which is required for parsing response
+// status line. Returns nil if n < 0.
+func FieldsN(s []byte, n int) [][]byte {
+	if n <= 0 {
+		return nil
+	}
+	res := make([][]byte, n)
+	na := 0
+	fieldStart := -1
+	var i int
+	for ; i < len(s); i++ {
+		issep := s[i] == ' ' || s[i] == '\t'
+		if fieldStart < 0 && !issep {
+			fieldStart = i
+		}
+		if fieldStart >= 0 && issep {
+			if na == n-1 {
+				break
+			}
+			res[na] = s[fieldStart:i]
+			na++
+			fieldStart = -1
+		}
+	}
+	if fieldStart >= 0 { // must have na <= n-1 here
+		res[na] = TrimSpace(s[fieldStart:])
+		if len(res[na]) != 0 { // do not consider ending space as a field
+			na++
+		}
+	}
+	return res[:na]
+}
+
+var digitTbl = [256]int8{
+	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+	0, 1, 2, 3, 4, 5, 6, 7, 8, 9, -1, -1, -1, -1, -1, -1,
+	-1, 10, 11, 12, 13, 14, 15, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+	-1, 10, 11, 12, 13, 14, 15, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
 }
 
 // ParseIntFromBytes parse hexidecimal number from given bytes.
@@ -155,15 +202,8 @@ func ParseIntFromBytes(b []byte, base int) (n int64, err error) {
 	}
 
 	for _, d := range b {
-		var v byte
-		switch {
-		case '0' <= d && d <= '9':
-			v += d - '0'
-		case 'a' <= d && d <= 'f':
-			v += d - 'a' + 10
-		case 'A' <= d && d <= 'F':
-			v += d - 'A' + 10
-		default:
+		v := digitTbl[d]
+		if v == -1 {
 			n = 0
 			err = errors.New(fmt.Sprintf("Invalid number: %s", b))
 			return
@@ -180,10 +220,6 @@ func ParseIntFromBytes(b []byte, base int) (n int64, err error) {
 		n = -n
 	}
 	return
-}
-
-func isWindows() bool {
-	return runtime.GOOS == "windows"
 }
 
 func isFileExists(path string) (bool, error) {
@@ -253,10 +289,48 @@ func expandTilde(pth string) string {
 	return pth
 }
 
-// copyN copys N bytes from r to w, using the specified buf as buffer. pre and
+// copyN copys N bytes from src to dst, reading at most rdSize for each read.
+// rdSize should be smaller than the buffer size of Reader.
+// Returns any encountered error.
+func copyN(dst io.Writer, src *bufio.Reader, n, rdSize int) (err error) {
+	// Most of the copy is copied from io.Copy
+	for n > 0 {
+		var b []byte
+		var er error
+		if n > rdSize {
+			b, er = src.ReadN(rdSize)
+		} else {
+			b, er = src.ReadN(n)
+		}
+		nr := len(b)
+		n -= nr
+		if nr > 0 {
+			nw, ew := dst.Write(b)
+			if ew != nil {
+				err = ew
+				break
+			}
+			if nr != nw {
+				err = io.ErrShortWrite
+				break
+			}
+		}
+		if er == io.EOF {
+			break
+		}
+		if er != nil {
+			err = er
+			break
+		}
+	}
+	return err
+}
+
+// copyNWithBuf copys N bytes from src to dst, using the specified buf as buffer. pre and
 // end are written to w before and after the n bytes. copyN will try to
 // minimize number of writes.
-func copyN(r io.Reader, w io.Writer, n int, buf, pre, end []byte) (err error) {
+// No longer used now.
+func copyNWithBuf(dst io.Writer, src io.Reader, n int, buf, pre, end []byte) (err error) {
 	// XXX well, this is complicated in order to save writes
 	var nn int
 	bufLen := len(buf)
@@ -265,7 +339,7 @@ func copyN(r io.Reader, w io.Writer, n int, buf, pre, end []byte) (err error) {
 		if pre != nil {
 			if len(pre) >= bufLen {
 				// pre is larger than bufLen, can't save write operation here
-				if _, err = w.Write(pre); err != nil {
+				if _, err = dst.Write(pre); err != nil {
 					return
 				}
 				pre = nil
@@ -286,7 +360,7 @@ func copyN(r io.Reader, w io.Writer, n int, buf, pre, end []byte) (err error) {
 				b = buf
 			}
 		}
-		if nn, err = r.Read(b); err != nil {
+		if nn, err = src.Read(b); err != nil {
 			return
 		}
 		n -= nn
@@ -301,12 +375,12 @@ func copyN(r io.Reader, w io.Writer, n int, buf, pre, end []byte) (err error) {
 			nn += len(end)
 			end = nil
 		}
-		if _, err = w.Write(buf[:nn]); err != nil {
+		if _, err = dst.Write(buf[:nn]); err != nil {
 			return
 		}
 	}
 	if end != nil {
-		if _, err = w.Write(end); err != nil {
+		if _, err = dst.Write(end); err != nil {
 			return
 		}
 	}

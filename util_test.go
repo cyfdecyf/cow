@@ -1,10 +1,11 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
 	"errors"
+	"github.com/cyfdecyf/bufio"
 	"io"
+	"strings"
 	"testing"
 )
 
@@ -22,7 +23,7 @@ func TestReadLine(t *testing.T) {
 		{"\n", []string{""}},
 	}
 	for _, td := range testData {
-		raw := bytes.NewBufferString(td.text)
+		raw := strings.NewReader(td.text)
 		rd := bufio.NewReader(raw)
 		for i, line := range td.lines {
 			l, err := ReadLine(rd)
@@ -96,8 +97,12 @@ func TestIsSpace(t *testing.T) {
 	}{
 		{'a', false},
 		{'B', false},
+		{'z', false},
+		{'(', false},
+		{'}', false},
 		{' ', true},
 		{'\r', true},
+		{'\t', true},
 		{'\n', true},
 	}
 	for _, td := range testData {
@@ -127,6 +132,37 @@ func TestTrimSpace(t *testing.T) {
 	}
 }
 
+func TestFieldsN(t *testing.T) {
+	testData := []struct {
+		raw string
+		n   int
+		arr []string
+	}{
+		{"", 2, nil}, // this should not crash
+		{"hello world", -1, nil},
+		{"hello \t world welcome", 1, []string{"hello \t world welcome"}},
+		{"   hello \t world welcome ", 1, []string{"hello \t world welcome"}},
+		{"hello world", 2, []string{"hello", "world"}},
+		{"  hello\tworld  ", 2, []string{"hello", "world"}},
+		// note \r\n in the middle of a string will be considered as a field
+		{"  hello  world  \r\n", 4, []string{"hello", "world"}},
+		{" hello \t world welcome\r\n", 2, []string{"hello", "world welcome"}},
+		{" hello \t world welcome \t ", 2, []string{"hello", "world welcome"}},
+	}
+
+	for _, td := range testData {
+		arr := FieldsN([]byte(td.raw), td.n)
+		if len(arr) != len(td.arr) {
+			t.Fatalf("%q want %d fields, got %d\n", td.raw, len(td.arr), len(arr))
+		}
+		for i := 0; i < len(arr); i++ {
+			if string(arr[i]) != td.arr[i] {
+				t.Errorf("%q %d item, want %q, got %q\n", td.raw, i, td.arr[i], arr[i])
+			}
+		}
+	}
+}
+
 func TestParseIntFromBytes(t *testing.T) {
 	errDummy := errors.New("dummy error")
 	testData := []struct {
@@ -144,6 +180,7 @@ func TestParseIntFromBytes(t *testing.T) {
 		{[]byte("+aBc"), 16, nil, 0xabc},
 		{[]byte("-aBc"), 16, nil, -0xabc},
 		{[]byte("213e"), 16, nil, 0x213e},
+		{[]byte("12deadbeef"), 16, nil, 0x12deadbeef},
 		{[]byte("213n"), 16, errDummy, 0},
 	}
 	for _, td := range testData {
@@ -161,12 +198,29 @@ func TestParseIntFromBytes(t *testing.T) {
 }
 
 func TestCopyN(t *testing.T) {
+	testStr := "go is really a nice language"
+	for _, step := range []int{4, 9, 17, 32} {
+		src := bufio.NewReader(strings.NewReader(testStr))
+		dst := new(bytes.Buffer)
+
+		err := copyN(dst, src, len(testStr), step)
+		if err != nil {
+			t.Error("unexpected err:", err)
+			break
+		}
+		if dst.String() != testStr {
+			t.Errorf("step %d want %q, got: %q\n", step, testStr, dst.Bytes())
+		}
+	}
+}
+
+func TestCopyNWithBuf(t *testing.T) {
 	testStr := "hello world"
 	src := bytes.NewBufferString(testStr)
 	dst := new(bytes.Buffer)
 	buf := make([]byte, 5)
 
-	copyN(src, dst, len(testStr), buf, nil, nil)
+	copyNWithBuf(dst, src, len(testStr), buf, nil, nil)
 	if dst.String() != "hello world" {
 		t.Error("copy without pre and end failed, got:", dst.String())
 	}
@@ -174,7 +228,7 @@ func TestCopyN(t *testing.T) {
 	src.Reset()
 	dst.Reset()
 	src.WriteString(testStr)
-	copyN(src, dst, len(testStr), buf, []byte("by cyf "), nil)
+	copyNWithBuf(dst, src, len(testStr), buf, []byte("by cyf "), nil)
 	if dst.String() != "by cyf hello world" {
 		t.Error("copy with pre no end failed, got:", dst.String())
 	}
@@ -182,7 +236,7 @@ func TestCopyN(t *testing.T) {
 	src.Reset()
 	dst.Reset()
 	src.WriteString(testStr)
-	copyN(src, dst, len(testStr), buf, []byte("by cyf "), []byte(" welcome"))
+	copyNWithBuf(dst, src, len(testStr), buf, []byte("by cyf "), []byte(" welcome"))
 	if dst.String() != "by cyf hello world welcome" {
 		t.Error("copy with both pre and end failed, got:", dst.String())
 	}
@@ -190,7 +244,7 @@ func TestCopyN(t *testing.T) {
 	src.Reset()
 	dst.Reset()
 	src.WriteString(testStr)
-	copyN(src, dst, len(testStr), buf, []byte("pre longer then buffer "), []byte(" welcome"))
+	copyNWithBuf(dst, src, len(testStr), buf, []byte("pre longer then buffer "), []byte(" welcome"))
 	if dst.String() != "pre longer then buffer hello world welcome" {
 		t.Error("copy with long pre failed, got:", dst.String())
 	}
@@ -199,7 +253,7 @@ func TestCopyN(t *testing.T) {
 	dst.Reset()
 	testStr = "34"
 	src.WriteString(testStr)
-	copyN(src, dst, len(testStr), buf, []byte("12"), []byte(" welcome"))
+	copyNWithBuf(dst, src, len(testStr), buf, []byte("12"), []byte(" welcome"))
 	if dst.String() != "1234 welcome" {
 		t.Error("copy len(pre)+size<bufLen failed, got:", dst.String())
 	}
@@ -208,7 +262,7 @@ func TestCopyN(t *testing.T) {
 	dst.Reset()
 	testStr = "2"
 	src.WriteString(testStr)
-	copyN(src, dst, len(testStr), buf, []byte("1"), []byte("34"))
+	copyNWithBuf(dst, src, len(testStr), buf, []byte("1"), []byte("34"))
 	if dst.String() != "1234" {
 		t.Error("copy len(pre)+size+len(end)<bufLen failed, got:", dst.String())
 	}

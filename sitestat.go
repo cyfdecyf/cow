@@ -1,10 +1,10 @@
 package main
 
 import (
-	"bufio"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/cyfdecyf/bufio"
 	"io"
 	"io/ioutil"
 	"math/rand"
@@ -261,7 +261,7 @@ func (ss *SiteStat) store(file string) (err error) {
 		s = ss
 		// Changing update time too fast will also drop useful record
 		s.Update = Date(time.Time(ss.Update).Add(siteStaleThreshold / 5))
-		if time.Time(s.Update).Sub(now) > 0 {
+		if time.Time(s.Update).After(now) {
 			s.Update = Date(now)
 		}
 	} else {
@@ -376,16 +376,14 @@ func initSiteStat() {
 	if siteStat.load(dsFile.stat) != nil {
 		os.Exit(1)
 	}
-	if isWindows() {
-		// TODO How to detect program exit on Windows? This
-		// is just a workaround.
-		go func() {
-			for {
-				time.Sleep(time.Hour)
-				storeSiteStat()
-			}
-		}()
-	}
+	// dump site stat once every hour, so we don't always need to close cow to
+	// get updated stat
+	go func() {
+		for {
+			time.Sleep(time.Hour)
+			storeSiteStat()
+		}
+	}()
 }
 
 func storeSiteStat() {
@@ -402,7 +400,7 @@ func loadSiteList(fpath string) (lst []string, err error) {
 	}
 	f, err := os.Open(fpath)
 	if err != nil {
-		errl.Printf("Error opening domain list %s: %v\n", fpath)
+		errl.Println("Error opening domain list:", err)
 		return
 	}
 	defer f.Close()
