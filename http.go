@@ -475,7 +475,6 @@ func (rp *Response) hasBody(method string) bool {
 func parseResponse(sv *serverConn, r *Request) (rp *Response, err error) {
 	var s []byte
 	reader := sv.bufRd
-START:
 	sv.setReadTimeout("parseResponse")
 	if s, err = reader.ReadSlice('\n'); err != nil {
 		if err != io.EOF {
@@ -495,10 +494,6 @@ START:
 		return nil, errMalformResponse
 	}
 	status, err := ParseIntFromBytes(f[1], 10)
-	if status == 100 { // Handle 1xx response
-		skipCRLF(reader)
-		goto START
-	}
 
 	rp = newResponse()
 	rp.Status = int(status)
