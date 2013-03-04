@@ -132,6 +132,11 @@ func Authenticate(conn *clientConn, r *Request) (err error) {
 	if authIP(clientIP) { // IP is allowed
 		return
 	}
+	// No user specified
+	if auth.user == "" {
+		sendErrorPage(conn, "403 Forbidden", "Access forbidden", "You are not allowed to use the proxy.")
+		return errShouldClose
+	}
 	err = authUserPasswd(conn, r)
 	if err == nil {
 		auth.authed.add(clientIP)
@@ -250,7 +255,7 @@ func authUserPasswd(conn *clientConn, r *Request) (err error) {
 		return errInternal
 	}
 	if debug {
-		debug.Println("authorization response:", buf.String())
+		debug.Printf("authorization response:\n%s", buf.String())
 	}
 	if _, err := conn.Write(buf.Bytes()); err != nil {
 		errl.Println("Sending auth response error:", err)
