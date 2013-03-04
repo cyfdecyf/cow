@@ -68,6 +68,17 @@ func (r *Request) String() (s string) {
 	return fmt.Sprintf("%s %s%s", r.Method, r.URL.HostPort, r.URL.Path)
 }
 
+func (r *Request) Verbose() []byte {
+	var rqbyte []byte
+	if r.isConnect {
+		rqbyte = r.rawBeforeBody()
+	} else {
+		// This includes client request line if has http parent proxy
+		rqbyte = r.raw.Bytes()
+	}
+	return rqbyte
+}
+
 func (r *Request) isRetry() bool {
 	return r.tryCnt > 1
 }
@@ -163,13 +174,11 @@ func (rp *Response) genStatusLine() (res string) {
 }
 
 func (rp *Response) String() string {
-	var r string
-	if verbose {
-		r = rp.raw.String()
-	} else {
-		r = fmt.Sprintf("%d %s", rp.Status, rp.Reason)
-	}
-	return r
+	return fmt.Sprintf("%d %s", rp.Status, rp.Reason)
+}
+
+func (rp *Response) Verbose() []byte {
+	return rp.raw.Bytes()
 }
 
 type URL struct {
