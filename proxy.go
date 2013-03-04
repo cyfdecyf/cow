@@ -275,14 +275,11 @@ func (c *clientConn) serve() {
 			return
 		}
 		if dbgRq {
-			var rqbyte []byte
-			if r.isConnect {
-				rqbyte = r.rawBeforeBody()
+			if verbose {
+				dbgRq.Printf("request from client %s: %s\n%s", c.RemoteAddr(), &r, r.Verbose())
 			} else {
-				// This includes client request line if has http parent proxy
-				rqbyte = r.raw.Bytes()
+				dbgRq.Printf("request from client %s: %s\n", c.RemoteAddr(), &r)
 			}
-			dbgRq.Printf("request from client %s\n%s", c.RemoteAddr(), rqbyte)
 		}
 
 		if isSelfURL(r.URL.HostPort) {
@@ -472,7 +469,12 @@ func (c *clientConn) readResponse(sv *serverConn, r *Request, rp *Response) (err
 		return c.handleClientWriteError(r, err, "Write response header back to client")
 	}
 	if dbgRep {
-		dbgRep.Printf("response to client %v\n%s", c.RemoteAddr(), rp.raw.Bytes())
+		if verbose {
+			// extra space after resposne to align with request debug message
+			dbgRep.Printf("response  to client %v: %s %s\n%s", c.RemoteAddr(), r, rp, rp.Verbose())
+		} else {
+			dbgRep.Printf("response  to client %v: %s %s\n", c.RemoteAddr(), r, rp)
+		}
 	}
 	rp.releaseBuf()
 
