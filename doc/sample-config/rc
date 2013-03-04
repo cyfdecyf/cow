@@ -39,7 +39,7 @@ logFile =
 # shadowsocks 密码
 #shadowPasswd = barfoo!
 # shadowsocks 加密方法, 空字符串或者 rc4
-#shadowMethod = 
+#shadowMethod =
 
 #############################
 # HTTP 代理
@@ -52,17 +52,17 @@ logFile =
 # 认证
 #############################
 
-# 指定允许的 IP 或者网段。网段仅支持 IPv4，IP 可以指定 v6 地址，用逗号分隔多个项
-#allowedClient = 192.168.1.0/24, 10.0.0.0/8, 8.8.8.8
+# 指定允许的 IP 或者网段。网段仅支持 IPv4，可以指定 IPv6 地址，用逗号分隔多个项
+# 使用此选项时别忘了添加 127.0.0.1，否则本机访问也需要认证
+#allowedClient = 127.0.0.1, 192.168.1.0/24, 10.0.0.0/8
 
-# 通过用户名密码认证
+# 要求客户端通过用户名密码认证
+# COW 总是先验证 IP 是否在 allowedClient 中，若不在其中再通过用户名密码认证
 #userPasswd = username:password
 
 # 认证失效时间
 # 语法：2h3m4s 表示 2 小时 3 分钟 4 秒
 #authTimeout = 2h
-
-# COW 总是先验证 IP 是否在 allowedClient 中，若不在其中再通过用户名密码认证
 
 #############################
 # 高级选项
