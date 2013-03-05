@@ -46,6 +46,16 @@ const sslLeastDuration = time.Second
 
 // Some code are learnt from the http package
 
+// encapulate actual error for an retry error
+type RetryError struct {
+	error
+}
+
+func isErrRetry(err error) bool {
+	_, ok := err.(RetryError)
+	return ok
+}
+
 type Proxy struct {
 	addr      string // listen address, contains port
 	port      string
@@ -120,7 +130,7 @@ type clientConn struct {
 }
 
 var (
-	errRetry         = errors.New("Retry")
+	errTooManyRetry  = errors.New("Too many retry")
 	errPageSent      = errors.New("Error page has sent")
 	errShouldClose   = errors.New("Error can only be handled by close connection")
 	errInternal      = errors.New("Internal error")
@@ -229,26 +239,31 @@ end:
 	return errPageSent
 }
 
-func (c *clientConn) handleRetry(r *Request, sv *serverConn) (err error) {
+func (c *clientConn) handleRetry(r *Request, sv *serverConn, re error) error {
+	err, ok := re.(RetryError)
+	if !ok {
+		panic("handleRetry should always get RetryError")
+	}
 	if !r.responseNotSent() {
 		debug.Printf("%v has send some response, can't retry\n", r)
 		return errShouldClose
 	}
 	if r.partial {
 		debug.Printf("%v partial request, can't retry\n", r)
-		sendErrorPage(c, "502 partial request", "Can't retry partial request",
-			genErrMsg(r, sv, "Request is too large to hold in buffer. Refresh to retry may work."))
+		sendErrorPage(c, "502 partial request", err.Error(),
+			genErrMsg(r, sv, "Request is too large to hold in buffer, can't retry. "+
+				"Refresh to retry may work."))
 		return errPageSent
 	}
-	if !r.tooMuchRetry() {
-		return errRetry
+	if !r.tooManyRetry() {
+		return RetryError{errTooManyRetry}
 	}
 	if sv.maybeFake() {
 		// Sometimes GFW reset will got EOF error leading to retry too many times
 		// In that case, consider temp blocked and try parent proxy.
 		siteStat.TempBlocked(r.URL)
 		r.tryCnt = 0
-		return errRetry
+		return re
 	}
 	debug.Printf("Can't retry %v tryCnt=%d\n", r, r.tryCnt)
 	sendErrorPage(c, "502 retry failed", "Can't finish HTTP request",
@@ -322,9 +337,9 @@ func (c *clientConn) serve() {
 		}
 
 		if r.isConnect {
-			if err = sv.doConnect(&r, c); err == errRetry {
+			if err = sv.doConnect(&r, c); isErrRetry(err) {
 				// connection for CONNECT is not reused, no need to remove
-				if err = c.handleRetry(&r, sv); err == errRetry {
+				if err = c.handleRetry(&r, sv, err); isErrRetry(err) {
 					goto retry
 				}
 			}
@@ -341,9 +356,9 @@ func (c *clientConn) serve() {
 
 		if err = sv.doRequest(c, &r, &rp); err != nil {
 			c.removeServerConn(sv)
-			if err == errRetry {
-				err = c.handleRetry(&r, sv)
-				if err == errRetry {
+			if isErrRetry(err) {
+				err = c.handleRetry(&r, sv, err)
+				if isErrRetry(err) {
 					goto retry
 				}
 			}
@@ -374,9 +389,9 @@ const (
 	errCodeBadReq  = "400 bad request"
 )
 
-func (c *clientConn) handleBlockedRequest(r *Request) error {
+func (c *clientConn) handleBlockedRequest(r *Request, err error) error {
 	siteStat.TempBlocked(r.URL)
-	return errRetry
+	return RetryError{err}
 }
 
 func (c *clientConn) handleServerReadError(r *Request, sv *serverConn, err error, msg string) error {
@@ -385,10 +400,10 @@ func (c *clientConn) handleServerReadError(r *Request, sv *serverConn, err error
 		if debug {
 			debug.Printf("client %s; %s read from server EOF\n", c.RemoteAddr(), msg)
 		}
-		return errRetry
+		return RetryError{err}
 	}
 	if sv.maybeFake() && maybeBlocked(err) {
-		return c.handleBlockedRequest(r)
+		return c.handleBlockedRequest(r, err)
 	}
 	if r.responseNotSent() {
 		errMsg = genErrMsg(r, sv, msg)
@@ -405,7 +420,7 @@ func (c *clientConn) handleServerWriteError(r *Request, sv *serverConn, err erro
 	if sv.maybeFake() && isErrConnReset(err) {
 		siteStat.TempBlocked(r.URL)
 	}
-	return errRetry
+	return RetryError{err}
 }
 
 func (c *clientConn) handleClientReadError(r *Request, err error, msg string) error {
@@ -454,7 +469,7 @@ func (c *clientConn) readResponse(sv *serverConn, r *Request, rp *Response) (err
 	/*
 		// force retry for debugging
 		if r.tryCnt == 1 {
-			return errRetry
+			return RetryError{errors.New("debug retry in readResponse")}
 		}
 	*/
 
@@ -630,7 +645,7 @@ func (c *clientConn) createConnection(r *Request, siteInfo *VisitCnt) (srvconn c
 			// Try to create connection by parent proxy
 			var socksErr error
 			if srvconn, socksErr = createParentProxyConnection(r.URL); socksErr == nil {
-				c.handleBlockedRequest(r)
+				c.handleBlockedRequest(r, err)
 				debug.Println("direct connection failed, use parent proxy for", r)
 				return srvconn, nil
 			}
@@ -775,7 +790,7 @@ func copyServer2Client(sv *serverConn, c *clientConn, r *Request) (err error) {
 		// force retry for debugging
 		if r.tryCnt == 1 && sv.maybeFake() {
 			time.Sleep(1)
-			return errRetry
+			return RetryError{errors.New("debug retry in copyServer2Client")}
 		}
 	*/
 
@@ -787,12 +802,12 @@ func copyServer2Client(sv *serverConn, c *clientConn, r *Request) (err error) {
 		var n int
 		if n, err = sv.Read(buf); err != nil {
 			if err == io.EOF {
-				return errRetry
+				return RetryError{err}
 			}
 			if sv.maybeFake() && maybeBlocked(err) {
 				siteStat.TempBlocked(r.URL)
 				debug.Printf("srv->cli blocked site %s detected, err: %v retry\n", r.URL.HostPort, err)
-				return errRetry
+				return RetryError{err}
 			}
 			// Expected error: "use of closed network connection",
 			// this is to make blocking read return.
@@ -918,7 +933,7 @@ func copyClient2Server(c *clientConn, sv *serverConn, r *Request, srvStopped not
 				if sv.maybeFake() && isErrConnReset(err) {
 					siteStat.TempBlocked(r.URL)
 					errl.Printf("copyClient2Server blocked site %d detected, retry\n", r.URL.HostPort)
-					return errRetry
+					return RetryError{err}
 				}
 			*/
 			// debug.Printf("cli->srv write err: %v\n", err)
@@ -967,7 +982,7 @@ func (sv *serverConn) doConnect(r *Request, c *clientConn) (err error) {
 
 	// debug.Printf("doConnect: srv(%s)->cli(%s)\n", r.URL.HostPort, c.RemoteAddr())
 	err = copyServer2Client(sv, c, r)
-	if err == errRetry {
+	if isErrRetry(err) {
 		srvStopped.notify()
 		<-done
 		// debug.Printf("doConnect: cli(%s)->srv(%s) stopped\n", c.RemoteAddr(), r.URL.HostPort)
@@ -975,8 +990,11 @@ func (sv *serverConn) doConnect(r *Request, c *clientConn) (err error) {
 		// close client connection to force read from client in copyClient2Server return
 		c.Conn.Close()
 	}
-	if cli2srvErr == errRetry || err == errRetry {
-		return errRetry
+	if isErrRetry(cli2srvErr) {
+		return RetryError{cli2srvErr}
+	}
+	if isErrRetry(err) {
+		return RetryError{err}
 	}
 	return
 }

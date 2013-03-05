@@ -88,7 +88,7 @@ func (r *Request) tryOnce() {
 	r.tryCnt++
 }
 
-func (r *Request) tooMuchRetry() bool {
+func (r *Request) tooManyRetry() bool {
 	return r.tryCnt > 3
 }
 
