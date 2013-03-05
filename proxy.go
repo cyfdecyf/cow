@@ -814,14 +814,23 @@ func copyServer2Client(sv *serverConn, c *clientConn, r *Request) (err error) {
 	return
 }
 
-func copy2Server(sv *serverConn, r *Request, p []byte) (err error) {
-	if r.responseNotSent() {
-		r.raw.Write(p)
-	} else if r.raw != nil {
-		r.releaseBuf()
+// write to server, store written data in request buffer if necessary
+type serverWriter struct {
+	rq *Request
+	sv *serverConn
+}
+
+func newServerWriter(r *Request, sv *serverConn) *serverWriter {
+	return &serverWriter{r, sv}
+}
+
+func (rw *serverWriter) Write(p []byte) (int, error) {
+	if rw.rq.responseNotSent() {
+		rw.rq.raw.Write(p)
+	} else if rw.rq.raw != nil {
+		rw.rq.releaseBuf()
 	}
-	_, err = sv.Write(p)
-	return
+	return rw.sv.Write(p)
 }
 
 func copyClient2Server(c *clientConn, sv *serverConn, r *Request, srvStopped notification, done chan byte) (err error) {
@@ -849,11 +858,12 @@ func copyClient2Server(c *clientConn, sv *serverConn, r *Request, srvStopped not
 		}
 	}
 
+	w := newServerWriter(r, sv)
 	if c.bufRd != nil {
 		n = c.bufRd.Buffered()
 		if n > 0 {
 			buffered, _ := c.bufRd.Peek(n) // should not return error
-			if err = copy2Server(sv, r, buffered); err != nil {
+			if _, err = w.Write(buffered); err != nil {
 				// debug.Printf("cli->srv write buffered err: %v\n", err)
 				return
 			}
@@ -892,7 +902,7 @@ func copyClient2Server(c *clientConn, sv *serverConn, r *Request, srvStopped not
 		}
 
 		// copyServer2Client will detect write to closed server. Just store client content for retry.
-		if err = copy2Server(sv, r, buf[:n]); err != nil {
+		if _, err = w.Write(buf[:n]); err != nil {
 			// XXX is it enough to only do block detection in copyServer2Client?
 			/*
 				if sv.maybeFake() && isErrConnReset(err) {
@@ -1134,10 +1144,14 @@ func sendBody(c *clientConn, sv *serverConn, req *Request, rp *Response) (err er
 		bufRd = sv.bufRd
 		contLen = int(rp.ContLen)
 		chunk = rp.Chunking
-	} else if req != nil { // request request body from client, send to server
+	} else if req != nil { // read request body from client, send to server
 		// The server connection may have been closed, need to retry request in that case.
-		// So we save request body here.
-		w = io.MultiWriter(sv, req.raw)
+		// So need to save request body.
+		if !sv.maybeFake() {
+			w = newServerWriter(req, sv)
+		} else {
+			w = sv
+		}
 		bufRd = c.bufRd
 		contLen = int(req.ContLen)
 		chunk = req.Chunking
