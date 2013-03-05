@@ -43,6 +43,7 @@ type Request struct {
 
 	Header
 	isConnect bool
+	partial   bool // whether contains only partial request data
 	state     rqState
 	tryCnt    byte
 }

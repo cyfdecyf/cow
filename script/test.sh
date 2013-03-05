@@ -69,9 +69,10 @@ test_get https://www.twitter.com "</html>"
 # Chinese sites may timeout on travis.
 if [[ -z $TRAVIS ]]; then
     test_get www.wpxap.com "<html" # HTTP 1.0 server
-    test_get youku.com "</html>" # 302 redirect
+    test_get youku.com "<html" # 302 redirect
     test_get douban.com "</html>" # 301 redirect
     test_get www.taobao.com "<html>" # chunked encoding, weird can't tests for </html> in script
+    test_get https://www.alipay.com "<html>"
 fi
 
 kill -SIGTERM $cow_pid

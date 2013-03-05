@@ -231,26 +231,29 @@ end:
 
 func (c *clientConn) handleRetry(r *Request, sv *serverConn) (err error) {
 	if !r.responseNotSent() {
-		debug.Printf("%v has sent response, can't retry\n", r)
+		debug.Printf("%v has send some response, can't retry\n", r)
 		return errShouldClose
+	}
+	if r.partial {
+		debug.Printf("%v partial request, can't retry\n", r)
+		sendErrorPage(c, "502 partial request", "Can't retry partial request",
+			genErrMsg(r, sv, "Request is too large to hold in buffer. Refresh to retry may work."))
+		return errPageSent
 	}
 	if !r.tooMuchRetry() {
 		return errRetry
 	}
 	if sv.maybeFake() {
 		// Sometimes GFW reset will got EOF error leading to retry too many times
-		// In that case, try parent proxy.
+		// In that case, consider temp blocked and try parent proxy.
 		siteStat.TempBlocked(r.URL)
 		r.tryCnt = 0
 		return errRetry
 	}
 	debug.Printf("Can't retry %v tryCnt=%d\n", r, r.tryCnt)
-	if !r.isConnect {
-		sendErrorPage(c, "502 retry failed", "Can't finish HTTP request",
-			genErrMsg(r, sv, "Has tried several times."))
-		return errPageSent
-	}
-	return errShouldClose
+	sendErrorPage(c, "502 retry failed", "Can't finish HTTP request",
+		genErrMsg(r, sv, "Has tried several times."))
+	return errPageSent
 }
 
 func (c *clientConn) serve() {
@@ -825,9 +828,17 @@ func newServerWriter(r *Request, sv *serverConn) *serverWriter {
 }
 
 func (rw *serverWriter) Write(p []byte) (int, error) {
-	if rw.rq.responseNotSent() {
+	if rw.rq.raw == nil {
+		// buffer released
+	} else if rw.rq.raw.Len() >= 2*httpBufSize {
+		// Avoid using too much memory to hold request body. If a request is
+		// not buffered completely, COW can't retry and we can release memory.
+		debug.Println("request body too large, not buffering any more")
+		rw.rq.releaseBuf()
+		rw.rq.partial = true
+	} else if rw.rq.responseNotSent() {
 		rw.rq.raw.Write(p)
-	} else if rw.rq.raw != nil {
+	} else {
 		rw.rq.releaseBuf()
 	}
 	return rw.sv.Write(p)
@@ -1024,6 +1035,9 @@ func (sv *serverConn) doRequest(c *clientConn, r *Request, rp *Response) (err er
 			}
 			return
 		}
+		if debug {
+			debug.Printf("%s %s body sent\n", c.RemoteAddr(), r)
+		}
 	}
 	r.state = rsSent
 	err = c.readResponse(sv, r, rp)
@@ -1146,12 +1160,8 @@ func sendBody(c *clientConn, sv *serverConn, req *Request, rp *Response) (err er
 		chunk = rp.Chunking
 	} else if req != nil { // read request body from client, send to server
 		// The server connection may have been closed, need to retry request in that case.
-		// So need to save request body.
-		if !sv.maybeFake() {
-			w = newServerWriter(req, sv)
-		} else {
-			w = sv
-		}
+		// So always need to save request body.
+		w = newServerWriter(req, sv)
 		bufRd = c.bufRd
 		contLen = int(req.ContLen)
 		chunk = req.Chunking
