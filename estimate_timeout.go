@@ -6,6 +6,8 @@ import (
 	"time"
 )
 
+const minDialTimeout = 3 * time.Second
+const minReadTimeout = 4 * time.Second
 const defaultDialTimeout = 5 * time.Second
 const defaultReadTimeout = 5 * time.Second
 const maxTimeout = 20 * time.Second

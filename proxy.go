@@ -541,7 +541,7 @@ func (c *clientConn) removeServerConn(sv *serverConn) {
 func createctDirectConnection(url *URL, siteInfo *VisitCnt) (conn, error) {
 	to := dialTimeout
 	if siteInfo.OnceBlocked() && to >= defaultDialTimeout {
-		to /= 2
+		to = minDialTimeout
 	}
 	c, err := net.DialTimeout("tcp", url.HostPort, to)
 	if err != nil {
@@ -729,9 +729,8 @@ func unsetConnReadTimeout(cn net.Conn, msg string) {
 func (sv *serverConn) setReadTimeout(msg string) {
 	if sv.maybeFake() {
 		to := readTimeout
-		if sv.siteInfo.OnceBlocked() && to >= defaultReadTimeout {
-			// use shorter readTimeout for potential blocked sites
-			to /= 2
+		if sv.siteInfo.OnceBlocked() && to > defaultReadTimeout {
+			to = minReadTimeout
 		}
 		setConnReadTimeout(sv, to, msg)
 		sv.timeoutSet = true
