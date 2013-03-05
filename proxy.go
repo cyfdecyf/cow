@@ -467,6 +467,12 @@ func (c *clientConn) readResponse(sv *serverConn, r *Request, rp *Response) (err
 	}()
 
 	/*
+		if r.partial {
+			return RetryError{errors.New("debug retry for partial request")}
+		}
+	*/
+
+	/*
 		// force retry for debugging
 		if r.tryCnt == 1 {
 			return RetryError{errors.New("debug retry in readResponse")}
