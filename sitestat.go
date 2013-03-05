@@ -23,8 +23,8 @@ func init() {
 // judging whether a site is blocked or not is more reliable.
 
 const (
-	directDelta  = 30
-	blockedDelta = 20
+	directDelta  = 20
+	blockedDelta = 10
 	maxCnt       = 100 // no protect to update visit cnt, smaller value is unlikely to overflow
 	userCnt      = -1  // this represents user specified host or domain
 )
@@ -73,7 +73,7 @@ func (vc *VisitCnt) userSpecified() bool {
 	return vc.Blocked == userCnt || vc.Direct == userCnt
 }
 
-const siteStaleThreshold = 15 * 24 * time.Hour
+const siteStaleThreshold = 10 * 24 * time.Hour
 
 // shouldDrop returns true if the a VisitCnt is not visited for a long time
 // (several days) or is specified by user.
@@ -260,7 +260,7 @@ func (ss *SiteStat) store(file string) (err error) {
 		// Not updated for a long time, don't drop any record
 		s = ss
 		// Changing update time too fast will also drop useful record
-		s.Update = Date(time.Time(ss.Update).Add(siteStaleThreshold / 5))
+		s.Update = Date(time.Time(ss.Update).Add(siteStaleThreshold / 2))
 		if time.Time(s.Update).After(now) {
 			s.Update = Date(now)
 		}
