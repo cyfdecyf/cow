@@ -4,7 +4,7 @@ var httpProxy = 'PROXY';
 var directList = [
 	"", // corresponds to simple host name
 	"taobao.com",
-	"www.baidu.com",
+	"www.baidu.com"
 ];
 
 var directAcc = {};
@@ -28,10 +28,10 @@ function hostIsIP(host) {
 		return false;
 	}
 	for (var i = 3; i >= 0; i--) {
-		if (parts[i].length == 0 || parts[i].length > 3) {
-			return false
+		if (parts[i].length === 0 || parts[i].length > 3) {
+			return false;
 		}
-		var n = Number(parts[i])
+		var n = Number(parts[i]);
 		if (isNaN(n) || n < 0 || n > 255) {
 			return false;
 		}
