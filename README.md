@@ -59,7 +59,7 @@ OS X 和 Linux 上，推荐使用下面的命令来下载二进制文件和样�
 
 - Unix 系统在命令行上执行 `cow`
   - [Linux 启动脚本](doc/init.d/cow) 在 Debian 上测试过，其他 Linux 发行版应该也可以使用
-- Windows 上双击 `cow.exe` 执行即可
+- Windows 上双击 `cow.exe` 执行即可，或者使用 [`cow-taskbar.exe`](script/cow-taskbar.exe) (可隐藏窗口到系统托盘)
 
 PAC url 为 `http://<listen address>/pac`。
 
