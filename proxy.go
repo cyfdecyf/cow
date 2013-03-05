@@ -248,6 +248,13 @@ func (c *clientConn) handleRetry(r *Request, sv *serverConn, re error) error {
 		debug.Printf("%v has send some response, can't retry\n", r)
 		return errShouldClose
 	}
+	if r.raw == nil {
+		errl.Println("Retry with request buffer released:", r)
+		sendErrorPage(c, "502 request released", err.Error(),
+			genErrMsg(r, sv, "Request buffer released, can't retry. "+
+				"This shoud be a bug in COW, please report to the author."))
+		return errPageSent
+	}
 	if r.partial {
 		debug.Printf("%v partial request, can't retry\n", r)
 		sendErrorPage(c, "502 partial request", err.Error(),
