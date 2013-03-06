@@ -47,7 +47,7 @@ logFile =
 
 # 可使用 goagent 等 HTTP 代理作为二级代理翻墙
 #httpParent = 127.0.0.1:8087
-# 支持二级HTTP代理的Basic认证
+# 支持二级 HTTP 代理的 Basic 认证
 #httpUserPasswd = username:password
 
 #############################

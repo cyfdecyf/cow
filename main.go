@@ -43,6 +43,7 @@ func main() {
 
 	parseConfig(cmdLineConfig.RcFile)
 	updateConfig(cmdLineConfig)
+	checkConfig()
 
 	initLog()
 	initAuth()

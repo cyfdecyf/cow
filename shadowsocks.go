@@ -12,24 +12,20 @@ var noShadowSocksErr = errors.New("No shadowsocks configuration")
 var cipher ss.Cipher
 
 func initShadowSocks() {
-	if config.ShadowSocks != "" && config.ShadowPasswd != "" {
-		var err error
-		if err = ss.SetDefaultCipher(config.ShadowMethod); err != nil {
-			fmt.Println("Initializing shadowsocks:", err)
-			os.Exit(1)
-		}
-		if cipher, err = ss.NewCipher(config.ShadowPasswd); err != nil {
-			fmt.Println("Creating shadowsocks cipher:", err)
-			os.Exit(1)
-		}
-		debug.Println("shadowsocks server:", config.ShadowSocks)
+	// error checking is done in checkConfig
+	if config.ShadowSocks == "" {
 		return
 	}
-	if (config.ShadowSocks != "" && config.ShadowPasswd == "") ||
-		(config.ShadowSocks == "" && config.ShadowPasswd != "") {
-		fmt.Println("Missing option: shadowSocks and shadowPasswd should be both given")
+	var err error
+	if err = ss.SetDefaultCipher(config.ShadowMethod); err != nil {
+		fmt.Println("Initializing shadowsocks:", err)
 		os.Exit(1)
 	}
+	if cipher, err = ss.NewCipher(config.ShadowPasswd); err != nil {
+		fmt.Println("Creating shadowsocks cipher:", err)
+		os.Exit(1)
+	}
+	debug.Println("shadowsocks server:", config.ShadowSocks)
 }
 
 func createShadowSocksConnection(url *URL) (cn conn, err error) {

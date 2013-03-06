@@ -39,7 +39,7 @@ var auth struct {
 
 	allowedClient []netAddr
 
-	authed *TimeoutSet // cache authentication based on client i
+	authed *TimeoutSet // cache authentication based on client ip
 
 	template *template.Template
 }
@@ -87,11 +87,8 @@ func parseUserPasswd(val string) {
 		return
 	}
 	auth.required = true
+	// password format checking is done in checkConfig in config.go
 	arr := strings.SplitN(val, ":", 2)
-	if len(arr) != 2 || arr[0] == "" || arr[1] == "" {
-		fmt.Println("User password syntax wrong, should be in the form of user:passwd")
-		os.Exit(1)
-	}
 	auth.user, auth.passwd = arr[0], arr[1]
 }
 

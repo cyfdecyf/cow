@@ -31,7 +31,7 @@ var socksMsgVerMethodSelection = []byte{
 }
 
 func initSocksServer() {
-	if len(config.SocksParent) != 0 {
+	if config.SocksParent != "" {
 		debug.Println("has socks server:", config.SocksParent)
 	}
 }

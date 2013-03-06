@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"flag"
 	"fmt"
 	"github.com/cyfdecyf/bufio"
@@ -11,7 +12,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"encoding/base64"
 )
 
 const (
@@ -20,26 +20,27 @@ const (
 )
 
 type Config struct {
-	RcFile        string // config file
-	ListenAddr    []string
-	AddrInPAC     []string
-	SocksParent   string
-	HttpParent    string
+	RcFile         string // config file
+	ListenAddr     []string
+	AddrInPAC      []string
+	SocksParent    string
+	HttpParent     string
+	hasHttpParent  bool
 	HttpUserPasswd string
-	HttpAuthHeader []byte
-	Core          int
-	SshServer     string
-	DetectSSLErr  bool
-	LogFile       string
-	AlwaysProxy   bool
-	ShadowSocks   string
-	ShadowPasswd  string
-	ShadowMethod  string // shadowsocks encryption method
-	UserPasswd    string
-	AllowedClient string
-	AuthTimeout   time.Duration
-	DialTimeout   time.Duration
-	ReadTimeout   time.Duration
+	httpAuthHeader []byte // basic authentication header constructed from HttpUserPasswd
+	Core           int
+	SshServer      string
+	DetectSSLErr   bool
+	LogFile        string
+	AlwaysProxy    bool
+	ShadowSocks    string
+	ShadowPasswd   string
+	ShadowMethod   string // shadowsocks encryption method
+	UserPasswd     string
+	AllowedClient  string
+	AuthTimeout    time.Duration
+	DialTimeout    time.Duration
+	ReadTimeout    time.Duration
 
 	// not configurable in config file
 	PrintVer bool
@@ -187,8 +188,8 @@ func (p configParser) ParseAddrInPAC(val string) {
 }
 
 func isServerAddrValid(val string) bool {
-	if val == "" {
-		return false
+	if val == "" { // default value is empty
+		return true
 	}
 	_, port := splitHostPort(val)
 	if port == "" {
@@ -197,29 +198,37 @@ func isServerAddrValid(val string) bool {
 	return true
 }
 
-var hasHttpParentProxy bool
+func isUserPasswdValid(val string) bool {
+	if val == "" {
+		return true
+	}
+	arr := strings.SplitN(val, ":", 2)
+	if len(arr) != 2 || arr[0] == "" || arr[1] == "" {
+		return false
+	}
+	return true
+}
 
 func (p configParser) ParseSocks(val string) {
 	fmt.Println("socks option is going to be renamed to socksParent in the future, please change it")
 	p.ParseSocksParent(val)
 }
 
+// error checking is done in check config
+
 func (p configParser) ParseSocksParent(val string) {
-	if !isServerAddrValid(val) {
-		fmt.Println("parent socks server must have port specified")
-		os.Exit(1)
+	if val == "" {
+		return
 	}
 	config.SocksParent = val
 	parentProxyCreator = append(parentProxyCreator, createctSocksConnection)
 }
 
 func (p configParser) ParseHttpParent(val string) {
-	if !isServerAddrValid(val) {
-		fmt.Println("parent http server must have port specified")
-		os.Exit(1)
+	if val == "" {
+		return
 	}
 	config.HttpParent = val
-	hasHttpParentProxy = true
 	parentProxyCreator = append(parentProxyCreator, createHttpProxyConnection)
 }
 
@@ -227,13 +236,7 @@ func (p configParser) ParseHttpUserPasswd(val string) {
 	if val == "" {
 		return
 	}
-	arr := strings.SplitN(val, ":", 2)
-	if len(arr) != 2 || arr[0] == "" || arr[1] == "" {
-		fmt.Println("Parent HTTP User password syntax wrong, should be in the form of user:passwd")
-		os.Exit(1)
-	}
-	userPwd64 := base64.StdEncoding.EncodeToString([]byte(val))
-	config.HttpAuthHeader = []byte(headerProxyAuthorization + ": Basic " + userPwd64 + CRLF)
+	config.HttpUserPasswd = val
 }
 
 func (p configParser) ParseCore(val string) {
@@ -272,9 +275,8 @@ func (p configParser) ParseAlwaysProxy(val string) {
 }
 
 func (p configParser) ParseShadowSocks(val string) {
-	if !isServerAddrValid(val) {
-		fmt.Println("shadowsocks server must have port specified")
-		os.Exit(1)
+	if val == "" {
+		return
 	}
 	config.ShadowSocks = val
 	parentProxyCreator = append(parentProxyCreator, createShadowSocksConnection)
@@ -399,7 +401,45 @@ func updateConfig(nc *Config) {
 			os.Exit(1)
 		}
 	} else {
+		// empty string in addrInPac means same as listenAddr
 		config.AddrInPAC = make([]string, len(config.ListenAddr))
+	}
+	if config.HttpParent != "" {
+		config.hasHttpParent = true
+	}
+	if config.HttpUserPasswd != "" {
+		userPwd64 := base64.StdEncoding.EncodeToString([]byte(config.HttpUserPasswd))
+		config.httpAuthHeader = []byte(headerProxyAuthorization + ": Basic " + userPwd64 + CRLF)
+	}
+}
+
+// Command line options also need to be checked, so put all checking here and
+// call it after updateConfig.
+func checkConfig() {
+	if !isServerAddrValid(config.HttpParent) {
+		fmt.Println("parent http server must have port specified")
+		os.Exit(1)
+	}
+	if !isServerAddrValid(config.SocksParent) {
+		fmt.Println("parent socks server must have port specified")
+		os.Exit(1)
+	}
+	if !isServerAddrValid(config.ShadowSocks) {
+		fmt.Println("shadowsocks server must have port specified")
+		os.Exit(1)
+	}
+	if !isUserPasswdValid(config.UserPasswd) {
+		fmt.Println("user password syntax wrong, should be in the form of user:passwd")
+		os.Exit(1)
+	}
+	if !isUserPasswdValid(config.HttpUserPasswd) {
+		fmt.Println("http parent user password syntax wrong, should be in the form of user:passwd")
+		os.Exit(1)
+	}
+	if (config.ShadowSocks != "" && config.ShadowPasswd == "") ||
+		(config.ShadowSocks == "" && config.ShadowPasswd != "") {
+		fmt.Println("should give both shadowSocks and shadowPasswd options")
+		os.Exit(1)
 	}
 }
 
