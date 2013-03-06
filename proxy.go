@@ -1016,6 +1016,10 @@ func (sv *serverConn) sendHTTPProxyRequest(r *Request, c *clientConn) (err error
 	if _, err = sv.Write(r.proxyRequestLine()); err != nil {
 		return c.handleServerWriteError(r, sv, err, "sending proxy request line to server")
 	}
+	// Add authorization header for parent http proxy
+	if config.HttpAuthHeader != nil {
+		sv.Write(config.HttpAuthHeader)
+	}
 	if _, err = sv.Write(r.rawHeaderBody()); err != nil {
 		return c.handleServerWriteError(r, sv, err, "sending proxy request header to server")
 	}
