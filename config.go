@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"encoding/base64"
 )
 
 const (
@@ -24,6 +25,7 @@ type Config struct {
 	AddrInPAC     []string
 	SocksParent   string
 	HttpParent    string
+	HttpUserPasswd string
 	Core          int
 	SshServer     string
 	DetectSSLErr  bool
@@ -79,6 +81,7 @@ func parseCmdLineConfig() *Config {
 	flag.StringVar(&listenAddr, "listen", "", "proxy server listen address, default to "+defaultListenAddr)
 	flag.StringVar(&c.SocksParent, "socksParent", "", "parent socks5 proxy address")
 	flag.StringVar(&c.HttpParent, "httpParent", "", "parent http proxy address")
+	flag.StringVar(&c.HttpUserPasswd, "httpUserPasswd", "", "user name and password for parent http proxy basic authentication")
 	flag.IntVar(&c.Core, "core", 2, "number of cores to use")
 	flag.StringVar(&c.SshServer, "sshServer", "", "remote server which will ssh to and provide socks server")
 	flag.StringVar(&c.LogFile, "logFile", "", "write output to file")
@@ -217,6 +220,18 @@ func (p configParser) ParseHttpParent(val string) {
 	config.HttpParent = val
 	hasHttpParentProxy = true
 	parentProxyCreator = append(parentProxyCreator, createHttpProxyConnection)
+}
+
+func (p configParser) ParseHttpUserPasswd(val string) {
+	if val == "" {
+		return
+	}
+	arr := strings.SplitN(val, ":", 2)
+	if len(arr) != 2 || arr[0] == "" || arr[1] == "" {
+		fmt.Println("Parent HTTP User password syntax wrong, should be in the form of user:passwd")
+		os.Exit(1)
+	}
+	config.HttpUserPasswd = base64.StdEncoding.EncodeToString([]byte(val))
 }
 
 func (p configParser) ParseCore(val string) {
