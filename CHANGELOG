@@ -1,3 +1,8 @@
+0.6.1 (not released)
+
+    * Avoid using too much memory to hold http requests
+    * Support http parent proxy basic authentication
+
 0.6 (2013-03-03)
 
     * Allow user to specify proxy address in PAC

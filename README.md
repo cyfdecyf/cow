@@ -99,3 +99,7 @@ COW 将以下错误认为是墙在作怪：
 COW 默认配置下检测到被墙后，过两分钟再次尝试直连也是为了避免误判。
 
 如果超时自动重试给你造成了问题，请参考[样例配置](doc/sample-config/rc)高级选项中的 `readTimeout`, `dialTimeout` 选项。
+
+# 致谢
+
+感谢所有的 bug reporter 和代码贡献者，详细名单见 [Acknowledgment.md](Acknowledgment.md)。
