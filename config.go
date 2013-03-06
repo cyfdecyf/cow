@@ -26,6 +26,7 @@ type Config struct {
 	SocksParent   string
 	HttpParent    string
 	HttpUserPasswd string
+	HttpAuthHeader []byte
 	Core          int
 	SshServer     string
 	DetectSSLErr  bool
@@ -231,7 +232,8 @@ func (p configParser) ParseHttpUserPasswd(val string) {
 		fmt.Println("Parent HTTP User password syntax wrong, should be in the form of user:passwd")
 		os.Exit(1)
 	}
-	config.HttpUserPasswd = base64.StdEncoding.EncodeToString([]byte(val))
+	userPwd64 := base64.StdEncoding.EncodeToString([]byte(val))
+	config.HttpAuthHeader = []byte(headerProxyAuthorization + ": Basic " + userPwd64 + CRLF)
 }
 
 func (p configParser) ParseCore(val string) {
