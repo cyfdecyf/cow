@@ -104,4 +104,12 @@ COW 默认配置下检测到被墙后，过两分钟再次尝试直连也是为�
 
 # 致谢
 
-感谢所有的 bug reporter 和代码贡献者，详细名单见 [Acknowledgment.md](Acknowledgment.md)。
+感谢所有提交 bug report 和贡献代码的人。
+
+贡献代码：
+
+@tevino: http parent proxy basic authentication
+
+Bug report:
+
+@hieixu, @Blaskyy, @lucifer9, @zellux
