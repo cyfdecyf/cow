@@ -592,7 +592,7 @@ var parentProxyCreator = []parentProxyConnectionFunc{}
 func createHttpProxyConnection(url *URL) (cn conn, err error) {
 	c, err := net.Dial("tcp", config.HttpParent)
 	if err != nil {
-		debug.Printf("Error connect to parent proxy for %s: %v\n", url.HostPort, err)
+		errl.Printf("Can't connect to http parent proxy for %s: %v\n", url.HostPort, err)
 		return zeroConn, err
 	}
 	debug.Println("Connected to http parent proxy")

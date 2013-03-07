@@ -39,7 +39,7 @@ func initSocksServer() {
 func createctSocksConnection(url *URL) (cn conn, err error) {
 	c, err := net.Dial("tcp", config.SocksParent)
 	if err != nil {
-		debug.Printf("Can't connect to socks server %v\n", err)
+		errl.Printf("Can't connect to socks server %v for %s\n", err, url.HostPort)
 		return
 	}
 	hasErr := false
