@@ -70,7 +70,9 @@ PAC url 为 `http://<listen address>/pac`。
 `~/.cow/blocked` 和 `~/.cow/direct` 可指定被墙和直连网站：
 
 - 每行一个域名或者主机名（COW 会先检查主机名是否在列表中，再检查域名）
-- 可以使用类似 `google.com.hk` 这样的域名
+  - 二级域名 `google.com` 相当于 `*.google.com`
+  - `com.hk`, `edu.cn` 等二级域名下的三级域名，作为二级域名处理。如 `google.com.hk` 相当于 `*.google.com.hk`
+  - 其他二级、三级及以上域名做精确匹配，例如 `plus.google.com`
 
 注意：对 IPv4 地址，COW 默认尝试直接连接，生成的 PAC 也让浏览器直接访问 IPv4 url。(这个功能的设计初衷是开发人员经常会访问本地或局域网 IP 地址。)
 
