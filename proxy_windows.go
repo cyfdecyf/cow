@@ -31,9 +31,3 @@ func isDNSError(err error) bool {
 	return strings.Contains(err.Error(), "No such host")
 	return false
 }
-
-func isErrTimeout(err error) bool {
-	// fmt.Printf("calling isErrTimeout for err type: %v Error() %s\n",
-	// reflect.TypeOf(err), err.Error())
-	return strings.Contains(err.Error(), "i/o timeout")
-}

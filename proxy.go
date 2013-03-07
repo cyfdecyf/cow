@@ -581,6 +581,13 @@ func createctDirectConnection(url *URL, siteInfo *VisitCnt) (conn, error) {
 	return conn{c, ctDirectConn}, nil
 }
 
+func isErrTimeout(err error) bool {
+	if ne, ok := err.(net.Error); ok {
+		return ne.Timeout()
+	}
+	return false
+}
+
 func maybeBlocked(err error) bool {
 	return isErrTimeout(err) || isErrConnReset(err)
 }

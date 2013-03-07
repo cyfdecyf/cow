@@ -20,10 +20,3 @@ func isDNSError(err error) bool {
 	}
 	return false
 }
-
-func isErrTimeout(err error) bool {
-	if ne, ok := err.(*net.OpError); ok {
-		return ne.Timeout()
-	}
-	return false
-}
