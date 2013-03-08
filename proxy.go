@@ -671,6 +671,7 @@ func (c *clientConn) createConnection(r *Request, siteInfo *VisitCnt) (srvconn c
 			}
 			errMsg = genErrMsg(r, nil, "Direct and parent proxy connection failed, maybe blocked site.")
 		} else {
+			errl.Printf("Direct connection for %s failed, unhandled error: %v\n", r, err)
 			errMsg = genErrMsg(r, nil, "Direct connection failed, unhandled error.")
 		}
 	}
@@ -968,6 +969,7 @@ var connEstablished = []byte("HTTP/1.1 200 Tunnel established\r\n\r\n")
 
 // Do HTTP CONNECT
 func (sv *serverConn) doConnect(r *Request, c *clientConn) (err error) {
+	defer sv.Close()
 	r.state = rsCreated
 
 	if sv.connType == ctHttpProxyConn {
@@ -977,7 +979,6 @@ func (sv *serverConn) doConnect(r *Request, c *clientConn) (err error) {
 				debug.Printf("%s Error sending CONNECT request to http proxy server: %v\n",
 					c.RemoteAddr(), err)
 			}
-			sv.Close()
 			return err
 		}
 	} else if !r.isRetry() {
@@ -986,7 +987,6 @@ func (sv *serverConn) doConnect(r *Request, c *clientConn) (err error) {
 			if debug {
 				debug.Printf("%v Error sending 200 Connecion established: %v\n", c.RemoteAddr(), err)
 			}
-			sv.Close()
 			return err
 		}
 	}

@@ -29,5 +29,4 @@ func isDNSError(err error) bool {
 	// fmt.Printf("calling isDNSError for err type: %v Error() %s\n",
 	// reflect.TypeOf(err), err.Error())
 	return strings.Contains(err.Error(), "No such host")
-	return false
 }

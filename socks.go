@@ -124,7 +124,7 @@ func createctSocksConnection(url *URL) (cn conn, err error) {
 		return zeroConn, socksProtocolErr
 	}
 	if replyBuf[1] != 0 {
-		errl.Printf("Socks reply connect %s error %d\n", url.HostPort, socksError[replyBuf[1]])
+		errl.Printf("Socks reply connect %s error %s\n", url.HostPort, socksError[replyBuf[1]])
 		hasErr = true
 		return zeroConn, socksProtocolErr
 	}

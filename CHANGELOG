@@ -2,6 +2,7 @@
 
     * Avoid using too much memory to hold http requests
     * Support http parent proxy basic authentication
+    * Fix timeout error detection
 
 0.6 (2013-03-03)
 

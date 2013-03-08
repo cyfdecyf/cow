@@ -112,4 +112,6 @@ COW 默认配置下检测到被墙后，过两分钟再次尝试直连也是为�
 
 Bug report:
 
-@hieixu, @Blaskyy, @lucifer9, @zellux
+@glacjay, @fantasticfears, @hieixu, @Blaskyy, @lucifer9, @zellux
+
+@glacjay 对 0.3 版本的 COW 提出了让它更加自动化的建议，使我重新考虑 COW 的设计目标并且改进成 0.5 版本中的工作方式。
