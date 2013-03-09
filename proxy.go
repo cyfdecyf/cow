@@ -860,21 +860,21 @@ func newServerWriter(r *Request, sv *serverConn) *serverWriter {
 	return &serverWriter{r, sv}
 }
 
-func (rw *serverWriter) Write(p []byte) (int, error) {
-	if rw.rq.raw == nil {
+func (sw *serverWriter) Write(p []byte) (int, error) {
+	if sw.rq.raw == nil {
 		// buffer released
-	} else if rw.rq.raw.Len() >= 2*httpBufSize {
+	} else if sw.rq.raw.Len() >= 2*httpBufSize {
 		// Avoid using too much memory to hold request body. If a request is
 		// not buffered completely, COW can't retry and we can release memory.
 		debug.Println("request body too large, not buffering any more")
-		rw.rq.releaseBuf()
-		rw.rq.partial = true
-	} else if rw.rq.responseNotSent() {
-		rw.rq.raw.Write(p)
+		sw.rq.releaseBuf()
+		sw.rq.partial = true
+	} else if sw.rq.responseNotSent() {
+		sw.rq.raw.Write(p)
 	} else {
-		rw.rq.releaseBuf()
+		sw.rq.releaseBuf()
 	}
-	return rw.sv.Write(p)
+	return sw.sv.Write(p)
 }
 
 func copyClient2Server(c *clientConn, sv *serverConn, r *Request, srvStopped notification, done chan byte) (err error) {
