@@ -52,6 +52,9 @@ type RetryError struct {
 }
 
 func isErrRetry(err error) bool {
+	if err == nil {
+		return false
+	}
 	_, ok := err.(RetryError)
 	return ok
 }
@@ -344,20 +347,15 @@ func (c *clientConn) serve() {
 		}
 
 		if r.isConnect {
-			if err = sv.doConnect(&r, c); isErrRetry(err) {
+			err = sv.doConnect(&r, c)
+			sv.Close()
+			if isErrRetry(err) {
 				// connection for CONNECT is not reused, no need to remove
 				if err = c.handleRetry(&r, sv, err); isErrRetry(err) {
 					goto retry
 				}
 			}
-			// Why return after doConnect:
-			// 1. proxy can only know whether the request is finished when either
-			// the server or the client close connection
-			// 2. if the web server closes connection, the only way to
-			// tell the client this is to close client connection (proxy
-			// don't know the protocol between the client and server)
-
-			// debug.Printf("doConnect for %s to %s done\n", c.RemoteAddr(), r.URL.HostPort)
+			// debug.Printf("doConnect %s to %s done\n", c.RemoteAddr(), r.URL.HostPort)
 			return
 		}
 
@@ -969,7 +967,6 @@ var connEstablished = []byte("HTTP/1.1 200 Tunnel established\r\n\r\n")
 
 // Do HTTP CONNECT
 func (sv *serverConn) doConnect(r *Request, c *clientConn) (err error) {
-	defer sv.Close()
 	r.state = rsCreated
 
 	if sv.connType == ctHttpProxyConn {
@@ -1011,10 +1008,7 @@ func (sv *serverConn) doConnect(r *Request, c *clientConn) (err error) {
 		c.Conn.Close()
 	}
 	if isErrRetry(cli2srvErr) {
-		return RetryError{cli2srvErr}
-	}
-	if isErrRetry(err) {
-		return RetryError{err}
+		return cli2srvErr
 	}
 	return
 }
