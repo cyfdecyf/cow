@@ -245,18 +245,16 @@ end:
 func (c *clientConn) handleRetry(r *Request, sv *serverConn, re error) error {
 	err, ok := re.(RetryError)
 	if !ok {
+		errl.Println("handleRetry should always get RetryError:", r)
 		panic("handleRetry should always get RetryError")
 	}
-	if !r.responseNotSent() {
-		debug.Printf("%v has send some response, can't retry\n", r)
-		return errShouldClose
+	if r.raw == nil && !r.isConnect {
+		errl.Println("Non CONNECT retry with request buffer released:", r)
+		panic("Non CONNECT handleRetry with request buffer released")
 	}
-	if r.raw == nil {
-		errl.Println("Retry with request buffer released:", r)
-		sendErrorPage(c, "502 request released", err.Error(),
-			genErrMsg(r, sv, "Request buffer released, can't retry. "+
-				"This shoud be a bug in COW, please report to the author."))
-		return errPageSent
+	if !r.responseNotSent() {
+		debug.Printf("%v has sent some response, can't retry\n", r)
+		return errShouldClose
 	}
 	if r.partial {
 		debug.Printf("%v partial request, can't retry\n", r)
@@ -265,20 +263,20 @@ func (c *clientConn) handleRetry(r *Request, sv *serverConn, re error) error {
 				"Refresh to retry may work."))
 		return errPageSent
 	}
-	if !r.tooManyRetry() {
-		return RetryError{errTooManyRetry}
+	if r.tooManyRetry() {
+		if sv.maybeFake() {
+			// Sometimes GFW reset will got EOF error leading to retry too many times.
+			// In that case, consider the url as temp blocked and try parent proxy.
+			siteStat.TempBlocked(r.URL)
+			r.tryCnt = 0
+			return re
+		}
+		debug.Printf("Can't retry %v tryCnt=%d\n", r, r.tryCnt)
+		sendErrorPage(c, "502 retry failed", "Can't finish HTTP request",
+			genErrMsg(r, sv, "Has tried several times."))
+		return errPageSent
 	}
-	if sv.maybeFake() {
-		// Sometimes GFW reset will got EOF error leading to retry too many times
-		// In that case, consider temp blocked and try parent proxy.
-		siteStat.TempBlocked(r.URL)
-		r.tryCnt = 0
-		return re
-	}
-	debug.Printf("Can't retry %v tryCnt=%d\n", r, r.tryCnt)
-	sendErrorPage(c, "502 retry failed", "Can't finish HTTP request",
-		genErrMsg(r, sv, "Has tried several times."))
-	return errPageSent
+	return re
 }
 
 func (c *clientConn) serve() {
