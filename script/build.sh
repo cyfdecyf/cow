@@ -17,9 +17,12 @@ build() {
     echo "building $name"
     GOOS=$1 GOARCH=$2 go build -a || exit 1
     if [[ $1 == "windows" ]]; then
-        zip $name.zip cow.exe
+        mv cow.exe script
+        pushd script
+        zip $name.zip cow.exe cow-taskbar.exe
         rm -f cow.exe
-        mv $name.zip bin/
+        mv $name.zip ../bin/
+        popd
     else 
         mv cow bin/$name
         gzip -f bin/$name
