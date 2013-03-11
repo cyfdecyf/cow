@@ -338,9 +338,11 @@ func (c *clientConn) serve() {
 			errl.Printf("%s retry request tryCnt=%d %v\n", c.RemoteAddr(), r.tryCnt, &r)
 		}
 		if sv, err = c.getServerConn(&r); err != nil {
-			// Failed connection will send error page back to client
 			// debug.Printf("Failed to get serverConn for %s %v\n", c.RemoteAddr(), r)
-			if err == errPageSent {
+			// Failed connection will send error page back to the client.
+			// For CONNECT, the client read buffer is released in copyClient2Server,
+			// so can't go back to getRequest.
+			if err == errPageSent && !r.isConnect {
 				continue
 			}
 			return
@@ -911,6 +913,9 @@ func copyClient2Server(c *clientConn, sv *serverConn, r *Request, srvStopped not
 				// debug.Printf("cli->srv write buffered err: %v\n", err)
 				return
 			}
+		}
+		if debug {
+			debug.Printf("cli->srv client %s released read buffer\n", c.RemoteAddr())
 		}
 		c.releaseBuf()
 	}
