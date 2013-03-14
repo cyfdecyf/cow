@@ -1,8 +1,10 @@
-0.6.1 (not released)
+0.6.1 (2013-03-14)
 
     * Avoid using too much memory to hold http requests
     * Support http parent proxy basic authentication
+    * For windows: add cow-taskbar.exe to hide cmd window to status area
     * Fix timeout error detection
+    * Some bug fixes
 
 0.6 (2013-03-03)
 
