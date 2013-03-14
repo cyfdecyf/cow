@@ -103,7 +103,7 @@ func TestSiteStatVisitCnt(t *testing.T) {
 	g3, _ := ParseRequestURI("docs.gtemp.com")
 
 	sg1 := ss.GetVisitCnt(g1)
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 30; i++ {
 		sg1.DirectVisit()
 	}
 	sg2 := ss.GetVisitCnt(g2)
@@ -119,8 +119,8 @@ func TestSiteStatVisitCnt(t *testing.T) {
 	if vc == nil {
 		t.Fatalf("no VisitCnt for %s\n", g1.Host)
 	}
-	if vc.Direct != 10 {
-		t.Errorf("direct cnt for %s not correct, should be 3, got: %d\n", g1.Host, vc.Direct)
+	if vc.Direct != 30 {
+		t.Errorf("direct cnt for %s not correct, should be 30, got: %d\n", g1.Host, vc.Direct)
 	}
 	if vc.Blocked != 0 {
 		t.Errorf("block cnt for %s not correct, should be 0 before blocked visit, got: %d\n", g1.Host, vc.Blocked)
@@ -133,8 +133,11 @@ func TestSiteStatVisitCnt(t *testing.T) {
 	if vc.Blocked != 1 {
 		t.Errorf("blocked cnt for %s after 1 blocked visit should be 1, got: %d\n", g1.Host, vc.Blocked)
 	}
-	if vc.Direct != 5 {
+	if vc.Direct != 25 {
 		t.Errorf("direct cnt for %s after 1 blocked visit should be 5, got: %d\n", g1.Host, vc.Direct)
+	}
+	if vc.AsDirect() {
+		t.Errorf("after blocked visit, a site should not be considered as direct\n")
 	}
 
 	// test blocked visit
