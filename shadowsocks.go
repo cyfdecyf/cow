@@ -17,11 +17,7 @@ func initShadowSocks() {
 		return
 	}
 	var err error
-	if err = ss.SetDefaultCipher(config.ShadowMethod); err != nil {
-		fmt.Println("Initializing shadowsocks:", err)
-		os.Exit(1)
-	}
-	if cipher, err = ss.NewCipher(config.ShadowPasswd); err != nil {
+	if cipher, err = ss.NewCipher(config.ShadowMethod, config.ShadowPasswd); err != nil {
 		fmt.Println("Creating shadowsocks cipher:", err)
 		os.Exit(1)
 	}
