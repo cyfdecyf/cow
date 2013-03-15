@@ -7,6 +7,7 @@ import (
 	"github.com/cyfdecyf/bufio"
 	"github.com/cyfdecyf/leakybuf"
 	"io"
+	"math/rand"
 	"net"
 	// "reflect"
 	"strings"
@@ -587,10 +588,6 @@ func maybeBlocked(err error) bool {
 	return isErrTimeout(err) || isErrConnReset(err)
 }
 
-type parentProxyConnectionFunc func(*URL) (conn, error)
-
-var parentProxyCreator = []parentProxyConnectionFunc{}
-
 func createHttpProxyConnection(url *URL) (cn conn, err error) {
 	c, err := net.Dial("tcp", config.HttpParent)
 	if err != nil {
@@ -601,10 +598,41 @@ func createHttpProxyConnection(url *URL) (cn conn, err error) {
 	return conn{c, ctHttpProxyConn}, nil
 }
 
+type parentProxyConnectionFunc func(*URL) (conn, error)
+
+var parentProxyCreator []parentProxyConnectionFunc
+var parentProxyFailCnt []int // initialized in checkConfig
+
+func callParentProxyCreateFunc(i int, url *URL) (srvconn conn, err error) {
+	const maxFailCnt = 30
+	srvconn, err = parentProxyCreator[i](url)
+	if err != nil {
+		if parentProxyFailCnt[i] < maxFailCnt {
+			parentProxyFailCnt[i]++
+		}
+		return
+	}
+	parentProxyFailCnt[i] = 0
+	return
+}
+
 func createParentProxyConnection(url *URL) (srvconn conn, err error) {
-	// Try parent proxy in the order specified in the config
-	for _, f := range parentProxyCreator {
-		if srvconn, err = f(url); err == nil {
+	const baseFailCnt = 20
+	skipped := make([]int, 0)
+	n := len(parentProxyCreator)
+	for i := 0; i < n; i++ {
+		// skip failed server, but try it with some probability
+		if parentProxyFailCnt[i] > 0 && rand.Intn(parentProxyFailCnt[i]+baseFailCnt) != 0 {
+			skipped = append(skipped, i)
+			continue
+		}
+		if srvconn, err = callParentProxyCreateFunc(i, url); err == nil {
+			return
+		}
+	}
+	// last resort, try skipped one, not likely to succeed
+	for _, i := range skipped {
+		if srvconn, err = callParentProxyCreateFunc(i, url); err == nil {
 			return
 		}
 	}
