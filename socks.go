@@ -39,7 +39,7 @@ func initSocksServer() {
 func createctSocksConnection(url *URL) (cn conn, err error) {
 	c, err := net.Dial("tcp", config.SocksParent)
 	if err != nil {
-		errl.Printf("Can't connect to socks server %s for %s: %v\n",
+		errl.Printf("can't connect to socks server %s for %s: %v\n",
 			config.SocksParent, url.HostPort, err)
 		return
 	}
@@ -49,7 +49,6 @@ func createctSocksConnection(url *URL) (cn conn, err error) {
 			c.Close()
 		}
 	}()
-	// debug.Println("Connected to socks server")
 
 	var n int
 	if n, err = c.Write(socksMsgVerMethodSelection); n != 3 || err != nil {
@@ -78,7 +77,7 @@ func createctSocksConnection(url *URL) (cn conn, err error) {
 	host := url.Host
 	port, err := strconv.Atoi(url.Port)
 	if err != nil {
-		errl.Printf("Should not happen, port error %v\n", port)
+		errl.Printf("should not happen, port error %v\n", port)
 		hasErr = true
 		return
 	}
@@ -101,7 +100,7 @@ func createctSocksConnection(url *URL) (cn conn, err error) {
 	*/
 
 	if n, err = c.Write(reqBuf); err != nil || n != bufLen {
-		errl.Printf("Send socks request err %v n %d\n", err, n)
+		errl.Printf("send socks request err %v n %d\n", err, n)
 		hasErr = true
 		return
 	}
@@ -112,7 +111,7 @@ func createctSocksConnection(url *URL) (cn conn, err error) {
 	if n, err = c.Read(replyBuf); err != nil {
 		// Seems that socks server will close connection if it can't find host
 		if err != io.EOF {
-			errl.Printf("Read socks reply err %v n %d\n", err, n)
+			errl.Printf("read socks reply err %v n %d\n", err, n)
 		}
 		hasErr = true
 		return zeroConn, errors.New("Connection failed (by socks server). No such host?")
@@ -120,21 +119,22 @@ func createctSocksConnection(url *URL) (cn conn, err error) {
 	// debug.Printf("Socks reply length %d\n", n)
 
 	if replyBuf[0] != 5 {
-		errl.Printf("Socks reply connect %s VER %d not supported\n", url.HostPort, replyBuf[0])
+		errl.Printf("socks reply connect %s VER %d not supported\n", url.HostPort, replyBuf[0])
 		hasErr = true
 		return zeroConn, socksProtocolErr
 	}
 	if replyBuf[1] != 0 {
-		errl.Printf("Socks reply connect %s error %s\n", url.HostPort, socksError[replyBuf[1]])
+		errl.Printf("socks reply connect %s error %s\n", url.HostPort, socksError[replyBuf[1]])
 		hasErr = true
 		return zeroConn, socksProtocolErr
 	}
 	if replyBuf[3] != 1 {
-		errl.Printf("Socks reply connect %s ATYP %d\n", url.HostPort, replyBuf[3])
+		errl.Printf("socks reply connect %s ATYP %d\n", url.HostPort, replyBuf[3])
 		hasErr = true
 		return zeroConn, socksProtocolErr
 	}
 
+	debug.Println("connected to socks server for", url.HostPort)
 	// Now the socket can be used to pass data.
 	return conn{c, ctSocksConn}, nil
 }
