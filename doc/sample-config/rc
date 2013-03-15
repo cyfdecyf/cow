@@ -32,13 +32,14 @@ logFile =
 # shadowsocks 代理
 #############################
 
-# 若你有自己的 VPS，推荐使用 shadowsocks。服务器端部署完成后本机无需 socks 代理
+# 若有自己的 VPS，推荐使用 shadowsocks，服务器端部署完成后本机无需另外开 socks 代理
+# 按顺序重复下面的配置来指定多个 shadowsocks server
 
-# shadowsocks 服务器地址，一定要指定端口
+# 指定一个新的 shadowsocks 服务器地址，一定要指定端口
 #shadowSocks = 1.1.1.1:8838
-# shadowsocks 密码
+# 上一个 shadowsocks 服务器的密码
 #shadowPasswd = barfoo!
-# shadowsocks 加密方法, 空字符串或者 rc4
+# 上一个 shadowsocks 服务器的加密方法, 空字符串或者 rc4，不指定默认为空字符串
 #shadowMethod =
 
 #############################
