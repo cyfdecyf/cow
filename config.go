@@ -33,9 +33,9 @@ type Config struct {
 	DetectSSLErr   bool
 	LogFile        string
 	AlwaysProxy    bool
-	ShadowSocks    string
-	ShadowPasswd   string
-	ShadowMethod   string // shadowsocks encryption method
+	ShadowSocks    []string
+	ShadowPasswd   []string
+	ShadowMethod   []string // shadowsocks encryption method
 	UserPasswd     string
 	AllowedClient  string
 	AuthTimeout    time.Duration
@@ -85,21 +85,9 @@ func parseCmdLineConfig() *Config {
 	flag.StringVar(&c.HttpParent, "httpParent", "", "parent http proxy address")
 	flag.StringVar(&c.HttpUserPasswd, "httpUserPasswd", "", "user name and password for parent http proxy basic authentication")
 	flag.IntVar(&c.Core, "core", 2, "number of cores to use")
-	flag.StringVar(&c.SshServer, "sshServer", "", "remote server which will ssh to and provide socks server")
 	flag.StringVar(&c.LogFile, "logFile", "", "write output to file")
-	flag.StringVar(&c.ShadowSocks, "shadowSocks", "", "shadowsocks server address")
-	flag.StringVar(&c.ShadowPasswd, "shadowPasswd", "", "shadowsocks password")
-	flag.StringVar(&c.ShadowMethod, "shadowMethod", "", "shadowsocks encryption method, empty string or rc4")
 	flag.StringVar(&c.UserPasswd, "userPasswd", "", "user name and password for authentication")
 	flag.BoolVar(&c.PrintVer, "version", false, "print version")
-
-	// Bool options can't be specified on command line because the flag
-	// pacakge dosen't provide an easy way to detect if an option is actually
-	// given on command line, so we don't know if the option in config file
-	// should be override.
-
-	// flag.BoolVar(&c.DetectSSLErr, "detectSSLErr", true, "detect SSL error based on how soon client closes connection")
-	// flag.BoolVar(&c.AlwaysProxy, "alwaysProxy", false, "always use parent proxy")
 
 	flag.Parse()
 	if listenAddr != "" {
@@ -187,7 +175,7 @@ func (p configParser) ParseAddrInPAC(val string) {
 	}
 }
 
-func isServerAddrValid(val string) bool {
+func hasPort(val string) bool {
 	if val == "" { // default value is empty
 		return true
 	}
@@ -218,7 +206,8 @@ func (p configParser) ParseSocks(val string) {
 
 func (p configParser) ParseSocksParent(val string) {
 	if val == "" {
-		return
+		fmt.Println("empty socks parent")
+		os.Exit(1)
 	}
 	config.SocksParent = val
 	parentProxyCreator = append(parentProxyCreator, createctSocksConnection)
@@ -226,7 +215,8 @@ func (p configParser) ParseSocksParent(val string) {
 
 func (p configParser) ParseHttpParent(val string) {
 	if val == "" {
-		return
+		fmt.Println("empty http parent")
+		os.Exit(1)
 	}
 	config.HttpParent = val
 	parentProxyCreator = append(parentProxyCreator, createHttpProxyConnection)
@@ -234,7 +224,8 @@ func (p configParser) ParseHttpParent(val string) {
 
 func (p configParser) ParseHttpUserPasswd(val string) {
 	if val == "" {
-		return
+		fmt.Println("empty http user passwd")
+		os.Exit(1)
 	}
 	config.HttpUserPasswd = val
 }
@@ -276,18 +267,43 @@ func (p configParser) ParseAlwaysProxy(val string) {
 
 func (p configParser) ParseShadowSocks(val string) {
 	if val == "" {
-		return
+		fmt.Println("empty shadowsocks server")
+		os.Exit(1)
 	}
-	config.ShadowSocks = val
-	parentProxyCreator = append(parentProxyCreator, createShadowSocksConnection)
+	if !hasPort(val) {
+		fmt.Println("shadowsocks server must have port specified")
+		os.Exit(1)
+	}
+	parentProxyCreator = append(parentProxyCreator, createShadowSocksConnecter(len(config.ShadowSocks)))
+	config.ShadowSocks = append(config.ShadowSocks, val)
 }
 
 func (p configParser) ParseShadowPasswd(val string) {
-	config.ShadowPasswd = val
+	if val == "" {
+		fmt.Println("empty shadowsocks password")
+		os.Exit(1)
+	}
+	if len(config.ShadowPasswd)+1 > len(config.ShadowSocks) {
+		fmt.Println("must specify shadowsocks server before it's password")
+		os.Exit(1)
+	}
+	if len(config.ShadowPasswd)+1 < len(config.ShadowSocks) {
+		fmt.Println("must specify shadowsocks password for each server")
+		os.Exit(1)
+	}
+	config.ShadowPasswd = append(config.ShadowPasswd, val)
 }
 
 func (p configParser) ParseShadowMethod(val string) {
-	config.ShadowMethod = val
+	if len(config.ShadowMethod)+1 > len(config.ShadowSocks) {
+		fmt.Println("must specify shadowsocks server before it's encryption method")
+		os.Exit(1)
+	}
+	for len(config.ShadowMethod)+1 < len(config.ShadowSocks) {
+		// use empty string for unspecified encryption method
+		config.ShadowMethod = append(config.ShadowMethod, "")
+	}
+	config.ShadowMethod = append(config.ShadowMethod, val)
 }
 
 // Put actual authentication related config parsing in auth.go, so config.go
@@ -416,16 +432,12 @@ func updateConfig(nc *Config) {
 // Command line options also need to be checked, so put all checking here and
 // call it after updateConfig.
 func checkConfig() {
-	if !isServerAddrValid(config.HttpParent) {
+	if !hasPort(config.HttpParent) {
 		fmt.Println("parent http server must have port specified")
 		os.Exit(1)
 	}
-	if !isServerAddrValid(config.SocksParent) {
+	if !hasPort(config.SocksParent) {
 		fmt.Println("parent socks server must have port specified")
-		os.Exit(1)
-	}
-	if !isServerAddrValid(config.ShadowSocks) {
-		fmt.Println("shadowsocks server must have port specified")
 		os.Exit(1)
 	}
 	if !isUserPasswdValid(config.UserPasswd) {
@@ -436,10 +448,12 @@ func checkConfig() {
 		fmt.Println("http parent user password syntax wrong, should be in the form of user:passwd")
 		os.Exit(1)
 	}
-	if (config.ShadowSocks != "" && config.ShadowPasswd == "") ||
-		(config.ShadowSocks == "" && config.ShadowPasswd != "") {
-		fmt.Println("should give both shadowSocks and shadowPasswd options")
+	if len(config.ShadowSocks) != len(config.ShadowPasswd) {
+		fmt.Println("number of shadowsocks server and password does not match")
 		os.Exit(1)
+	}
+	for len(config.ShadowMethod) < len(config.ShadowSocks) {
+		config.ShadowMethod = append(config.ShadowMethod, "")
 	}
 }
 
