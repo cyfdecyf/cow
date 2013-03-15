@@ -99,19 +99,6 @@ type conn struct {
 var zeroConn conn
 var zeroTime time.Time
 
-// For both client and server connection, there's only read buffer. If we
-// create write buffer for the connection and pass it to io.CopyN, there will
-// be unnecessary copies: from read buffer to tmp buffer, then call io.Write.
-
-// net.Conn implements ReadFrom, but it only works if the src is a regular
-// file. io.Copy will try ReadFrom first and fallback to generic copy if src
-// is not a regular file, introducing unnecessary overhead.
-// Export only the write interface can avoid this try and fallback. Learnt
-// from net/sock.go
-type writerOnly struct {
-	io.Writer
-}
-
 type serverConn struct {
 	conn
 	bufRd       *bufio.Reader
@@ -528,7 +515,7 @@ func (c *clientConn) readResponse(sv *serverConn, r *Request, rp *Response) (err
 				// The client connection will be closed to indicate this error.
 				// Proxy can't send error page here because response header has
 				// been sent.
-				errl.Println("Unexpected EOF reading body from server", r)
+				errl.Println("unexpected EOF reading body from server", r)
 			} else if isErrOpWrite(err) {
 				err = c.handleClientWriteError(r, err, "Write to client response body.")
 			} else {
@@ -582,10 +569,10 @@ func createctDirectConnection(url *URL, siteInfo *VisitCnt) (conn, error) {
 	c, err := net.DialTimeout("tcp", url.HostPort, to)
 	if err != nil {
 		// Time out is very likely to be caused by GFW
-		debug.Printf("Error direct connect to: %s %v\n", url.HostPort, err)
+		debug.Printf("error direct connect to: %s %v\n", url.HostPort, err)
 		return zeroConn, err
 	}
-	debug.Println("Connected to", url.HostPort)
+	debug.Println("connected to", url.HostPort)
 	return conn{c, ctDirectConn}, nil
 }
 
@@ -607,10 +594,10 @@ var parentProxyCreator = []parentProxyConnectionFunc{}
 func createHttpProxyConnection(url *URL) (cn conn, err error) {
 	c, err := net.Dial("tcp", config.HttpParent)
 	if err != nil {
-		errl.Printf("Can't connect to http parent proxy for %s: %v\n", url.HostPort, err)
+		errl.Printf("can't connect to http parent proxy for %s: %v\n", url.HostPort, err)
 		return zeroConn, err
 	}
-	debug.Println("Connected to http parent proxy")
+	debug.Println("connected to http parent proxy for", url.HostPort)
 	return conn{c, ctHttpProxyConn}, nil
 }
 
@@ -679,7 +666,7 @@ func (c *clientConn) createConnection(r *Request, siteInfo *VisitCnt) (srvconn c
 			}
 			errMsg = genErrMsg(r, nil, "Direct and parent proxy connection failed, maybe blocked site.")
 		} else {
-			errl.Printf("Direct connection for %s failed, unhandled error: %v\n", r, err)
+			errl.Printf("direct connection for %s failed, unhandled error: %v\n", r, err)
 			errMsg = genErrMsg(r, nil, "Direct connection failed, unhandled error.")
 		}
 	}
@@ -986,7 +973,7 @@ func (sv *serverConn) doConnect(r *Request, c *clientConn) (err error) {
 		// debug.Printf("%s Sending CONNECT request to http proxy server\n", c.RemoteAddr())
 		if err = sv.sendHTTPProxyRequest(r, c); err != nil {
 			if debug {
-				debug.Printf("%s Error sending CONNECT request to http proxy server: %v\n",
+				debug.Printf("%s error sending CONNECT request to http proxy server: %v\n",
 					c.RemoteAddr(), err)
 			}
 			return err
@@ -1084,7 +1071,7 @@ func (sv *serverConn) doRequest(c *clientConn, r *Request, rp *Response) (err er
 			} else if isErrOpWrite(err) {
 				err = c.handleServerWriteError(r, sv, err, "Sending request body")
 			} else {
-				errl.Println("Reading request body:", err)
+				errl.Println("reading request body:", err)
 			}
 			return
 		}
@@ -1121,7 +1108,7 @@ func sendBodyChunked(r *bufio.Reader, w io.Writer, rdSize int) (err error) {
 		var s []byte
 		// Read chunk size line, ignore chunk extension if any.
 		if s, err = r.PeekSlice('\n'); err != nil {
-			errl.Println("Peeking chunk size:", err)
+			errl.Println("peeking chunk size:", err)
 			return
 		}
 		// debug.Printf("Chunk size line %s\n", s)
@@ -1131,7 +1118,7 @@ func sendBodyChunked(r *bufio.Reader, w io.Writer, rdSize int) (err error) {
 		}
 		var size int64
 		if size, err = ParseIntFromBytes(TrimSpace(s[:smid]), 16); err != nil {
-			errl.Println("Chunk size invalid:", err)
+			errl.Println("chunk size invalid:", err)
 			return
 		}
 		// end of chunked data. As we remove trailer header in request sending
@@ -1141,7 +1128,7 @@ func sendBodyChunked(r *bufio.Reader, w io.Writer, rdSize int) (err error) {
 			r.Skip(len(s))
 			skipCRLF(r)
 			if _, err = w.Write([]byte(chunkEnd)); err != nil {
-				debug.Println("Sending chunk ending:", err)
+				debug.Println("sending chunk ending:", err)
 			}
 			return
 		}
@@ -1151,7 +1138,7 @@ func sendBodyChunked(r *bufio.Reader, w io.Writer, rdSize int) (err error) {
 		total := len(s) + int(size) + 2 // total data size for this chunk, including ending CRLF
 		// PeekSlice will not advance reader, so we can just copy total sized data.
 		if err = copyN(w, r, total, rdSize); err != nil {
-			debug.Println("Copying chunked data:", err)
+			debug.Println("copying chunked data:", err)
 			return
 		}
 	}
@@ -1177,21 +1164,21 @@ func sendBodySplitIntoChunk(r *bufio.Reader, w io.Writer) (err error) {
 				}
 				return
 			}
-			debug.Println("Reading error in sendBodySplitIntoChunk", err)
+			debug.Println("read error in sendBodySplitIntoChunk", err)
 			return
 		}
 
 		chunkSize := []byte(fmt.Sprintf("%x\r\n", len(b)))
 		if _, err = w.Write(chunkSize); err != nil {
-			debug.Printf("Writing chunk size %v\n", err)
+			debug.Printf("writing chunk size %v\n", err)
 			return
 		}
 		if _, err = w.Write(b); err != nil {
-			debug.Println("Writing chunk data:", err)
+			debug.Println("writing chunk data:", err)
 			return
 		}
 		if _, err = w.Write([]byte(CRLF)); err != nil {
-			debug.Println("Writing chunk ending CRLF:", err)
+			debug.Println("writing chunk ending CRLF:", err)
 			return
 		}
 	}
@@ -1230,7 +1217,7 @@ func sendBody(c *clientConn, sv *serverConn, req *Request, rp *Response) (err er
 		err = sendBodyWithContLen(bufRd, w, contLen)
 	} else {
 		if req != nil {
-			errl.Println("Client request with body but no length or chunked encoding specified.")
+			errl.Println("client request with body but no length or chunked encoding specified.")
 			return errBadRequest
 		}
 		err = sendBodySplitIntoChunk(bufRd, w)

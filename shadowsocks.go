@@ -37,6 +37,6 @@ func createShadowSocksConnection(url *URL) (cn conn, err error) {
 		errl.Printf("Can't create shadowsocks connection for: %s %v\n", url.HostPort, err)
 		return zeroConn, err
 	}
-	// debug.Println("shadowsocks connection created to:", hostFull)
+	debug.Println("shadowsocks connection created to:", url.HostPort)
 	return conn{c, ctShadowctSocksConn}, nil
 }
