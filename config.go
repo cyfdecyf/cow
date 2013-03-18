@@ -81,12 +81,8 @@ func parseCmdLineConfig() *Config {
 	flag.StringVar(&c.RcFile, "rc", path.Join(dsFile.dir, rcFname), "configuration file")
 	// Specifying listen default value to StringVar would override config file options
 	flag.StringVar(&listenAddr, "listen", "", "proxy server listen address, default to "+defaultListenAddr)
-	flag.StringVar(&c.SocksParent, "socksParent", "", "parent socks5 proxy address")
-	flag.StringVar(&c.HttpParent, "httpParent", "", "parent http proxy address")
-	flag.StringVar(&c.HttpUserPasswd, "httpUserPasswd", "", "user name and password for parent http proxy basic authentication")
 	flag.IntVar(&c.Core, "core", 2, "number of cores to use")
 	flag.StringVar(&c.LogFile, "logFile", "", "write output to file")
-	flag.StringVar(&c.UserPasswd, "userPasswd", "", "user name and password for authentication")
 	flag.BoolVar(&c.PrintVer, "version", false, "print version")
 
 	flag.Parse()
@@ -455,7 +451,7 @@ func checkConfig() {
 	for len(config.ShadowMethod) < len(config.ShadowSocks) {
 		config.ShadowMethod = append(config.ShadowMethod, "")
 	}
-	parentProxyFailCnt = make([]int, len(config.ShadowSocks))
+	parentProxyFailCnt = make([]int, len(parentProxyCreator))
 }
 
 func mkConfigDir() (err error) {
