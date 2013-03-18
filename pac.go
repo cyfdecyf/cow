@@ -65,20 +65,20 @@ function host2domain(host) {
 	if (dot2ndLast === -1)
 		return host;
 
-	var part = host.substring(dot2ndLast+1, lastDot)
+	var part = host.substring(dot2ndLast+1, lastDot);
 	if (topLevel[part]) {
-		var dot3rdLast = host.lastIndexOf(".", dot2ndLast-1)
+		var dot3rdLast = host.lastIndexOf(".", dot2ndLast-1);
 		if (dot3rdLast === -1) {
 			return host;
 		}
 		return host.substring(dot3rdLast+1);
 	}
 	return host.substring(dot2ndLast+1);
-};
+}
 
 function FindProxyForURL(url, host) {
 	return (hostIsIP(host) || directAcc[host] || directAcc[host2domain(host)]) ? direct : httpProxy;
-};
+}
 `
 	var err error
 	pac.template, err = template.New("pac").Parse(pacRawTmpl)
