@@ -455,7 +455,7 @@ func checkConfig() {
 	for len(config.ShadowMethod) < len(config.ShadowSocks) {
 		config.ShadowMethod = append(config.ShadowMethod, "")
 	}
-	parentProxyFailCnt = make([]int, len(config.ShadowSocks))
+	parentProxyFailCnt = make([]int, len(parentProxyCreator))
 }
 
 func mkConfigDir() (err error) {
