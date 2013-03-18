@@ -43,8 +43,8 @@ func init() {
 	flag.BoolVar((*bool)(&errl), "err", true, "error log")
 	flag.BoolVar((*bool)(&dbgRq), "request", false, "request log")
 	flag.BoolVar((*bool)(&dbgRep), "reply", false, "reply log")
-	flag.BoolVar(&verbose, "v", false, "More info in request/response logging")
-	flag.BoolVar(&colorize, "color", false, "Colorize log output")
+	flag.BoolVar(&verbose, "v", false, "more info in request/response logging")
+	flag.BoolVar(&colorize, "color", false, "colorize log output")
 }
 
 func initLog() {
