@@ -95,7 +95,7 @@ func createctSocksConnection(url *URL) (cn conn, err error) {
 
 	/*
 		if debug {
-			debug.Println("Send socks connect request", (host + ":" + portStr))
+			debug.Println("Send socks connect request", (url.HostPort))
 		}
 	*/
 
