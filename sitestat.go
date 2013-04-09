@@ -157,11 +157,11 @@ func (vc *VisitCnt) BlockedVisit() {
 		return
 	}
 	vc.visit(&vc.Blocked)
-	// blockage maybe caused by bad network connection
-	vc.Direct = vc.Direct - 5
-	if vc.Direct < 0 {
-		vc.Direct = 0
-	}
+	// When a site changes from direct to blocked by GFW, COW should learn
+	// this quickly and remove it from the PAC ASAP. So change direct to 0
+	// once there's a single blocked visit, this ensures the site is removed
+	// upon the next PAC update.
+	vc.Direct = 0
 }
 
 type SiteStat struct {

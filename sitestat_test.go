@@ -133,8 +133,8 @@ func TestSiteStatVisitCnt(t *testing.T) {
 	if vc.Blocked != 1 {
 		t.Errorf("blocked cnt for %s after 1 blocked visit should be 1, got: %d\n", g1.Host, vc.Blocked)
 	}
-	if vc.Direct != 25 {
-		t.Errorf("direct cnt for %s after 1 blocked visit should be 5, got: %d\n", g1.Host, vc.Direct)
+	if vc.Direct != 0 {
+		t.Errorf("direct cnt for %s after 1 blocked visit should be 0, got: %d\n", g1.Host, vc.Direct)
 	}
 	if vc.AsDirect() {
 		t.Errorf("after blocked visit, a site should not be considered as direct\n")
