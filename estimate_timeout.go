@@ -10,7 +10,6 @@ const minDialTimeout = 3 * time.Second
 const minReadTimeout = 4 * time.Second
 const defaultDialTimeout = 5 * time.Second
 const defaultReadTimeout = 5 * time.Second
-const maxTimeout = 20 * time.Second
 
 var dialTimeout, readTimeout time.Duration // initialized in runEstimateTimeout
 
@@ -30,7 +29,8 @@ var estimateReq = []byte("GET / HTTP/1.1\r\n" +
 // considering non-blocked sites as blocked when network connection is bad.
 func estimateTimeout() {
 	debug.Println("estimating timeout")
-	buf := make([]byte, 4096)
+	buf := connectBuf.Get()
+	defer connectBuf.Put(buf)
 	var est time.Duration
 
 	start := time.Now()
@@ -44,9 +44,6 @@ func estimateTimeout() {
 
 	est = time.Now().Sub(start) * 5
 	debug.Println("estimated dialTimeout:", est)
-	if est > maxTimeout {
-		est = maxTimeout
-	}
 	if est > config.DialTimeout {
 		dialTimeout = est
 		info.Println("new dial timeout:", dialTimeout)
@@ -68,12 +65,10 @@ func estimateTimeout() {
 	if err != io.EOF {
 		errl.Printf("estimateTimeout: error getting %s: %v, network has problem?\n",
 			estimateSite, err)
+		goto onErr
 	}
 	est = time.Now().Sub(start) * 10
 	debug.Println("estimated read timeout:", est)
-	if est > maxTimeout {
-		est = maxTimeout
-	}
 	if est > time.Duration(config.ReadTimeout) {
 		readTimeout = est
 		info.Println("new read timeout:", readTimeout)
@@ -92,6 +87,12 @@ func runEstimateTimeout() {
 	dialTimeout = config.DialTimeout
 	for {
 		estimateTimeout()
-		time.Sleep(time.Minute)
+		time.Sleep(30 * time.Second)
 	}
+}
+
+// Guess network status based on doing HTTP request to estimateSite
+func networkGood() bool {
+	return (readTimeout == config.ReadTimeout) &&
+		(dialTimeout == config.DialTimeout)
 }

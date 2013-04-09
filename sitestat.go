@@ -143,6 +143,9 @@ func (vc *VisitCnt) visit(inc *vcntint) {
 }
 
 func (vc *VisitCnt) DirectVisit() {
+	if !networkGood() {
+		return
+	}
 	if vc.userSpecified() {
 		return
 	}
@@ -153,6 +156,9 @@ func (vc *VisitCnt) DirectVisit() {
 }
 
 func (vc *VisitCnt) BlockedVisit() {
+	if !networkGood() {
+		return
+	}
 	if vc.userSpecified() || vc.AsTempBlocked() {
 		return
 	}
