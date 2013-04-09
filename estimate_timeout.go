@@ -11,7 +11,8 @@ const minReadTimeout = 4 * time.Second
 const defaultDialTimeout = 5 * time.Second
 const defaultReadTimeout = 5 * time.Second
 
-var dialTimeout, readTimeout time.Duration // initialized in runEstimateTimeout
+var dialTimeout = defaultDialTimeout
+var readTimeout = defaultReadTimeout
 
 // use a fast to fetch web site
 const estimateSite = "www.baidu.com"

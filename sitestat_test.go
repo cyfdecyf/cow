@@ -8,6 +8,12 @@ import (
 
 var _ = os.Remove
 
+func TestNetworkGood(t *testing.T) {
+	if !networkGood() {
+		t.Error("NetworkGood by default should return true")
+	}
+}
+
 func TestDateMarshal(t *testing.T) {
 	d := Date(time.Date(2013, 2, 4, 0, 0, 0, 0, time.UTC))
 	j, err := d.MarshalJSON()
