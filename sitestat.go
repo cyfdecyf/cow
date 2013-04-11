@@ -310,29 +310,29 @@ func (ss *SiteStat) loadList(lst []string, direct, blocked vcntint) {
 	}
 }
 
-func (ss *SiteStat) loadBuiltinAndUserSpecifiedList() {
+func (ss *SiteStat) loadBuiltinList() {
 	ss.loadList(blockedDomainList, 0, userCnt)
 	ss.loadList(directDomainList, userCnt, 0)
+}
 
-	// load user specified sites at last to override previous values
+func (ss *SiteStat) loadUserList() {
 	if directList, err := loadSiteList(dsFile.alwaysDirect); err == nil {
 		ss.loadList(directList, userCnt, 0)
 	}
 	if blockedList, err := loadSiteList(dsFile.alwaysBlocked); err == nil {
 		ss.loadList(blockedList, 0, userCnt)
 	}
-
-	for k, v := range ss.Vcnt {
-		if v.Blocked > 0 {
-			ss.hasBlockedHost[k] = true
-		}
-	}
 }
 
 func (ss *SiteStat) load(file string) (err error) {
 	defer func() {
-		if err == nil {
-			ss.loadBuiltinAndUserSpecifiedList()
+		// load builtin list first, so user list can override builtin
+		ss.loadBuiltinList()
+		ss.loadUserList()
+		for host, vcnt := range ss.Vcnt {
+			if vcnt.OnceBlocked() {
+				ss.hasBlockedHost[host2Domain(host)] = true
+			}
 		}
 	}()
 	var exists bool
@@ -379,7 +379,7 @@ func (ss *SiteStat) GetDirectList() []string {
 var siteStat = newSiteStat()
 
 func initSiteStat() {
-	if siteStat.load(dsFile.stat) != nil {
+	if err := siteStat.load(dsFile.stat); err != nil {
 		os.Exit(1)
 	}
 	// dump site stat once every hour, so we don't always need to close cow to
