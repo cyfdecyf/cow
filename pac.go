@@ -6,7 +6,6 @@ import (
 	"net"
 	"os"
 	"strings"
-	"sync"
 	"text/template"
 	"time"
 )
@@ -14,9 +13,7 @@ import (
 var pac struct {
 	template       *template.Template
 	topLevelDomain string
-	directList     *string // use pointer to guarantee atomic update
-	updated        time.Time
-	lock           sync.Mutex
+	directList     string
 }
 
 func init() {
@@ -98,6 +95,7 @@ function FindProxyForURL(url, host) {
 var pacHeader = []byte("HTTP/1.1 200 OK\r\nServer: cow-proxy\r\n" +
 	"Content-Type: application/x-ns-proxy-autoconfig\r\nConnection: close\r\n\r\n")
 
+// Different client will have different proxy URL, so generate it upon each request.
 func genPAC(c *clientConn) []byte {
 	buf := new(bytes.Buffer)
 
@@ -107,7 +105,7 @@ func genPAC(c *clientConn) []byte {
 		proxyAddr = net.JoinHostPort(host, c.proxy.port)
 	}
 
-	if *pac.directList == "" {
+	if pac.directList == "" {
 		// Empty direct domain list
 		buf.Write(pacHeader)
 		pacproxy := fmt.Sprintf("function FindProxyForURL(url, host) { return 'PROXY %s; DIRECT'; };",
@@ -122,7 +120,7 @@ func genPAC(c *clientConn) []byte {
 		TopLevel      string
 	}{
 		proxyAddr,
-		*pac.directList,
+		pac.directList,
 		pac.topLevelDomain,
 	}
 
@@ -135,13 +133,11 @@ func genPAC(c *clientConn) []byte {
 }
 
 func initPAC() {
-	s := strings.Join(siteStat.GetDirectList(), "\",\n\"")
-	pac.directList = &s
+	pac.directList = strings.Join(siteStat.GetDirectList(), "\",\n\"")
 	go func() {
 		for {
 			time.Sleep(10 * time.Minute)
-			s = strings.Join(siteStat.GetDirectList(), "\",\n\"")
-			pac.directList = &s
+			pac.directList = strings.Join(siteStat.GetDirectList(), "\",\n\"")
 		}
 	}()
 }
