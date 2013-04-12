@@ -8,9 +8,9 @@ import (
 
 var _ = os.Remove
 
-func TestNetworkGood(t *testing.T) {
-	if !networkGood() {
-		t.Error("NetworkGood by default should return true")
+func TestNetworkBad(t *testing.T) {
+	if networkBad() {
+		t.Error("Network by default should be good")
 	}
 }
 
@@ -170,17 +170,13 @@ func TestSiteStatVisitCnt(t *testing.T) {
 	if !si.AsTempBlocked() {
 		t.Error("should be blocked for 2 minutes after blocked visit")
 	}
-	if si.Blocked != 1 { // temp blocked should set blocked count to 1
+	si.BlockedVisit() // After temp blocked, update blocked visit count
+	if si.Blocked != 1 {
 		t.Errorf("blocked cnt for %s not correct, should be 1, got: %d\n", g4.Host, vc.Blocked)
 	}
-	si.BlockedVisit() // these should not update visit count
-	si.BlockedVisit()
 	vc = ss.get(g4.Host)
 	if vc == nil {
 		t.Fatal("no VisitCnt for ", g4.Host)
-	}
-	if vc.Blocked != 1 {
-		t.Errorf("blocked cnt after temp blocked should not change, %s not correct, should be 1, got: %d\n", g4.Host, vc.Blocked)
 	}
 	if vc.Direct != 0 {
 		t.Errorf("direct cnt for %s not correct, should be 0, got: %d\n", g4.Host, vc.Direct)

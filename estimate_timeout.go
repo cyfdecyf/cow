@@ -93,7 +93,7 @@ func runEstimateTimeout() {
 }
 
 // Guess network status based on doing HTTP request to estimateSite
-func networkGood() bool {
-	return (readTimeout == config.ReadTimeout) &&
-		(dialTimeout == config.DialTimeout)
+func networkBad() bool {
+	return (readTimeout != config.ReadTimeout) ||
+		(dialTimeout != config.DialTimeout)
 }

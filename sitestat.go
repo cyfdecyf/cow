@@ -31,6 +31,7 @@ const (
 
 type siteVisitMethod int
 
+// minus operation on visit count may get negative value, so use signed int
 type vcntint int8
 
 type Date time.Time
@@ -114,7 +115,6 @@ func (vc *VisitCnt) OnceBlocked() bool {
 }
 
 func (vc *VisitCnt) tempBlocked() {
-	vc.BlockedVisit() // first blocked visit, then set it as temp blocked
 	vc.blockedOn = time.Now()
 }
 
@@ -143,30 +143,24 @@ func (vc *VisitCnt) visit(inc *vcntint) {
 }
 
 func (vc *VisitCnt) DirectVisit() {
-	if !networkGood() {
+	if networkBad() || vc.userSpecified() {
 		return
 	}
-	if vc.userSpecified() {
-		return
-	}
-	vc.visit(&vc.Direct)
 	// one successful direct visit probably means the site is not actually
 	// blocked
+	vc.visit(&vc.Direct)
 	vc.Blocked = 0
 }
 
 func (vc *VisitCnt) BlockedVisit() {
-	if !networkGood() {
+	if networkBad() || vc.userSpecified() {
 		return
 	}
-	if vc.userSpecified() || vc.AsTempBlocked() {
-		return
-	}
-	vc.visit(&vc.Blocked)
 	// When a site changes from direct to blocked by GFW, COW should learn
 	// this quickly and remove it from the PAC ASAP. So change direct to 0
 	// once there's a single blocked visit, this ensures the site is removed
 	// upon the next PAC update.
+	vc.visit(&vc.Blocked)
 	vc.Direct = 0
 }
 
