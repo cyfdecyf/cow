@@ -1,5 +1,6 @@
 0.6.2 (not released)
     * Support multiple shadowsocks servers
+    * PAC fix: do not add domains with blocked host/sub domain
     * Remove some no longer working command line options
 
 0.6.1 (2013-03-14)

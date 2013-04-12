@@ -25,6 +25,7 @@ test_get() {
     noproxy=$3
     code=$4
 
+    echo -n "GET $url "
     if [[ -z $code ]]; then
         code="200"
     fi
@@ -53,7 +54,7 @@ test_get() {
         fi
         sleep 0.3
     done
-    echo "GET $url passed"
+    echo "passed"
 }
 
 test_get $PROXY_ADDR/pac "apple.com" "noproxy" # test for pac
@@ -61,13 +62,13 @@ test_get google.com "<html" # 301 redirect
 test_get www.google.com "<html" # 302 redirect , chunked encoding
 test_get www.reddit.com "<html" # chunked encoding
 test_get openvpn.net "</html>" # blocked site, all kinds of block method
-test_get plan9.bell-labs.com/magic/man2html/1/2l "<head>" "" "404" # single LF in response header
 test_get https://google.com "<html" # test for HTTP connect
 test_get https://www.google.com "<html"
 test_get https://www.twitter.com "</html>"
 
-# Chinese sites may timeout on travis.
+# Sites that may timeout on travis.
 if [[ -z $TRAVIS ]]; then
+    test_get plan9.bell-labs.com/magic/man2html/1/2l "<head>" "" "404" # single LF in response header
     test_get www.wpxap.com "<html" # HTTP 1.0 server
     test_get youku.com "<html" # 302 redirect
     test_get douban.com "</html>" # 301 redirect

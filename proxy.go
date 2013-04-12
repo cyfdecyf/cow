@@ -34,11 +34,12 @@ var httpBuf = leakybuf.NewLeakyBuf(512, httpBufSize)
 
 // Close client connection if no new request received in some time. Keep it
 // small to avoid keeping too many client connections (which associates with
-// server connections) and lead to too much open file error. On OS X, the
+// server connections) and causing too much open file error. (On OS X, the
 // default soft limit of open file descriptor is 256, which is really
-// conservative.
-const clientConnTimeout = 5 * time.Second
-const keepAliveHeader = "Keep-Alive: timeout=5\r\n"
+// conservative.) On the other hand, making this too small may cause reading
+// normal client request timeout.
+const clientConnTimeout = 10 * time.Second
+const keepAliveHeader = "Keep-Alive: timeout=10\r\n"
 
 // If client closed connection for HTTP CONNECT method in less then 1 second,
 // consider it as an ssl error. This is only effective for Chrome which will

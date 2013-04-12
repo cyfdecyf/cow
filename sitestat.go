@@ -31,6 +31,7 @@ const (
 
 type siteVisitMethod int
 
+// minus operation on visit count may get negative value, so use signed int
 type vcntint int8
 
 type Date time.Time
@@ -114,7 +115,6 @@ func (vc *VisitCnt) OnceBlocked() bool {
 }
 
 func (vc *VisitCnt) tempBlocked() {
-	vc.BlockedVisit() // first blocked visit, then set it as temp blocked
 	vc.blockedOn = time.Now()
 }
 
@@ -143,25 +143,25 @@ func (vc *VisitCnt) visit(inc *vcntint) {
 }
 
 func (vc *VisitCnt) DirectVisit() {
-	if vc.userSpecified() {
+	if networkBad() || vc.userSpecified() {
 		return
 	}
-	vc.visit(&vc.Direct)
 	// one successful direct visit probably means the site is not actually
 	// blocked
+	vc.visit(&vc.Direct)
 	vc.Blocked = 0
 }
 
 func (vc *VisitCnt) BlockedVisit() {
-	if vc.userSpecified() || vc.AsTempBlocked() {
+	if networkBad() || vc.userSpecified() {
 		return
 	}
+	// When a site changes from direct to blocked by GFW, COW should learn
+	// this quickly and remove it from the PAC ASAP. So change direct to 0
+	// once there's a single blocked visit, this ensures the site is removed
+	// upon the next PAC update.
 	vc.visit(&vc.Blocked)
-	// blockage maybe caused by bad network connection
-	vc.Direct = vc.Direct - 5
-	if vc.Direct < 0 {
-		vc.Direct = 0
-	}
+	vc.Direct = 0
 }
 
 type SiteStat struct {
@@ -304,29 +304,29 @@ func (ss *SiteStat) loadList(lst []string, direct, blocked vcntint) {
 	}
 }
 
-func (ss *SiteStat) loadBuiltinAndUserSpecifiedList() {
+func (ss *SiteStat) loadBuiltinList() {
 	ss.loadList(blockedDomainList, 0, userCnt)
 	ss.loadList(directDomainList, userCnt, 0)
+}
 
-	// load user specified sites at last to override previous values
+func (ss *SiteStat) loadUserList() {
 	if directList, err := loadSiteList(dsFile.alwaysDirect); err == nil {
 		ss.loadList(directList, userCnt, 0)
 	}
 	if blockedList, err := loadSiteList(dsFile.alwaysBlocked); err == nil {
 		ss.loadList(blockedList, 0, userCnt)
 	}
-
-	for k, v := range ss.Vcnt {
-		if v.Blocked > 0 {
-			ss.hasBlockedHost[k] = true
-		}
-	}
 }
 
 func (ss *SiteStat) load(file string) (err error) {
 	defer func() {
-		if err == nil {
-			ss.loadBuiltinAndUserSpecifiedList()
+		// load builtin list first, so user list can override builtin
+		ss.loadBuiltinList()
+		ss.loadUserList()
+		for host, vcnt := range ss.Vcnt {
+			if vcnt.OnceBlocked() {
+				ss.hasBlockedHost[host2Domain(host)] = true
+			}
 		}
 	}()
 	var exists bool
@@ -373,7 +373,7 @@ func (ss *SiteStat) GetDirectList() []string {
 var siteStat = newSiteStat()
 
 func initSiteStat() {
-	if siteStat.load(dsFile.stat) != nil {
+	if err := siteStat.load(dsFile.stat); err != nil {
 		os.Exit(1)
 	}
 	// dump site stat once every hour, so we don't always need to close cow to

@@ -8,6 +8,12 @@ import (
 
 var _ = os.Remove
 
+func TestNetworkBad(t *testing.T) {
+	if networkBad() {
+		t.Error("Network by default should be good")
+	}
+}
+
 func TestDateMarshal(t *testing.T) {
 	d := Date(time.Date(2013, 2, 4, 0, 0, 0, 0, time.UTC))
 	j, err := d.MarshalJSON()
@@ -35,21 +41,27 @@ func TestSiteStatLoadStore(t *testing.T) {
 		t.Error("builtin site should appear in direct site list even with no stat file")
 	}
 
-	d1, _ := ParseRequestURI("www.foobar.com")
-	d2, _ := ParseRequestURI("img.foobar.com")
-	sd1 := ss.GetVisitCnt(d1)
-	sd1.DirectVisit()
-	sd1.DirectVisit()
-	sd1.DirectVisit()
-	sd2 := ss.GetVisitCnt(d2)
-	sd2.DirectVisit()
+	url1, _ := ParseRequestURI("www.foobar.com")
+	url2, _ := ParseRequestURI("img.foobar.com")
+	vcnt1 := ss.GetVisitCnt(url1)
+	vcnt1.DirectVisit()
+	vcnt1.DirectVisit()
+	vcnt1.DirectVisit()
+	vcnt2 := ss.GetVisitCnt(url2)
+	vcnt2.DirectVisit()
 
-	b1, _ := ParseRequestURI("blocked.com")
-	b2, _ := ParseRequestURI("blocked2.com")
-	si1 := ss.GetVisitCnt(b1)
+	blockurl1, _ := ParseRequestURI("blocked.com")
+	blockurl2, _ := ParseRequestURI("blockeurl2.com")
+	si1 := ss.GetVisitCnt(blockurl1)
 	si1.BlockedVisit()
-	si2 := ss.GetVisitCnt(b2)
+	si2 := ss.GetVisitCnt(blockurl2)
 	si2.BlockedVisit()
+
+	// make google.com with a large direct count, but plus.google.com is in blocked list
+	// so it shouldn't be considered as direct site
+	gurl, _ := ParseRequestURI("google.com")
+	gvcnt := ss.GetVisitCnt(gurl)
+	gvcnt.Direct = 100
 
 	const stfile = "testdata/stat"
 	if err := ss.store(stfile); err != nil {
@@ -60,17 +72,17 @@ func TestSiteStatLoadStore(t *testing.T) {
 	if err := ld.load(stfile); err != nil {
 		t.Fatal("load stat error:", err)
 	}
-	vc := ld.get(d1.Host)
+	vc := ld.get(url1.Host)
 	if vc == nil {
-		t.Fatalf("load error, %s not loaded\n", d1.Host)
+		t.Fatalf("load error, %s not loaded\n", url1.Host)
 	}
 	if vc.Direct != 3 {
-		t.Errorf("load error, %s should have visit cnt 3, got: %d\n", d1.Host, vc.Direct)
+		t.Errorf("load error, %s should have visit cnt 3, got: %d\n", url1.Host, vc.Direct)
 	}
 
-	vc = ld.get(b1.Host)
+	vc = ld.get(blockurl1.Host)
 	if vc == nil {
-		t.Errorf("load error, %s not loaded\n", b1.Host)
+		t.Errorf("load error, %s not loaded\n", blockurl1.Host)
 	}
 
 	// test bulitin site
@@ -89,8 +101,18 @@ func TestSiteStatLoadStore(t *testing.T) {
 	if !si.AsBlocked() || !si.AlwaysBlocked() {
 		t.Error("builtin site plus.google.com should use blocked access")
 	}
-	if len(ld.GetDirectList()) == 0 {
+
+	directList := ld.GetDirectList()
+	if len(directList) == 0 {
 		t.Error("builtin site should appear in direct site list")
+	}
+	if !ld.hasBlockedHost["google.com"] {
+		t.Error("google.com should have blocked host")
+	}
+	for _, d := range directList {
+		if d == "google.com" {
+			t.Errorf("direct list contains 2nd level domain which has sub host that's blocked")
+		}
 	}
 	os.Remove(stfile)
 }
@@ -133,8 +155,8 @@ func TestSiteStatVisitCnt(t *testing.T) {
 	if vc.Blocked != 1 {
 		t.Errorf("blocked cnt for %s after 1 blocked visit should be 1, got: %d\n", g1.Host, vc.Blocked)
 	}
-	if vc.Direct != 25 {
-		t.Errorf("direct cnt for %s after 1 blocked visit should be 5, got: %d\n", g1.Host, vc.Direct)
+	if vc.Direct != 0 {
+		t.Errorf("direct cnt for %s after 1 blocked visit should be 0, got: %d\n", g1.Host, vc.Direct)
 	}
 	if vc.AsDirect() {
 		t.Errorf("after blocked visit, a site should not be considered as direct\n")
@@ -148,17 +170,13 @@ func TestSiteStatVisitCnt(t *testing.T) {
 	if !si.AsTempBlocked() {
 		t.Error("should be blocked for 2 minutes after blocked visit")
 	}
-	if si.Blocked != 1 { // temp blocked should set blocked count to 1
+	si.BlockedVisit() // After temp blocked, update blocked visit count
+	if si.Blocked != 1 {
 		t.Errorf("blocked cnt for %s not correct, should be 1, got: %d\n", g4.Host, vc.Blocked)
 	}
-	si.BlockedVisit() // these should not update visit count
-	si.BlockedVisit()
 	vc = ss.get(g4.Host)
 	if vc == nil {
 		t.Fatal("no VisitCnt for ", g4.Host)
-	}
-	if vc.Blocked != 1 {
-		t.Errorf("blocked cnt after temp blocked should not change, %s not correct, should be 1, got: %d\n", g4.Host, vc.Blocked)
 	}
 	if vc.Direct != 0 {
 		t.Errorf("direct cnt for %s not correct, should be 0, got: %d\n", g4.Host, vc.Direct)
