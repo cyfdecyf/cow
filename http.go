@@ -201,6 +201,9 @@ func (url *URL) HostIsIP() bool {
 // For port, return empty string if no port specified.
 // This also works for IPv6 address.
 func splitHostPort(s string) (host, port string) {
+	if len(s) == 0 {
+		return "", ""
+	}
 	// Common case should has no port, check the last char first
 	if !IsDigit(s[len(s)-1]) {
 		return s, ""

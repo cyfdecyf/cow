@@ -2,9 +2,7 @@ package main
 
 import (
 	"bytes"
-	"fmt"
 	"io"
-	"os"
 	"text/template"
 	"time"
 )
@@ -35,12 +33,10 @@ var errPageTmpl, headTmpl, blockedFormTmpl, directFormTmpl *template.Template
 func init() {
 	var err error
 	if headTmpl, err = template.New("errorHead").Parse(headRawTmpl); err != nil {
-		fmt.Println("Internal error on generating error head template")
-		os.Exit(1)
+		Fatal("Internal error on generating error head template")
 	}
 	if errPageTmpl, err = template.New("errorPage").Parse(errPageRawTmpl); err != nil {
-		fmt.Println("Internal error on generating error page template")
-		os.Exit(1)
+		Fatalf("Internal error on generating error page template")
 	}
 }
 

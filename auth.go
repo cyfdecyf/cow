@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"net"
-	"os"
 	"strconv"
 	"strings"
 	"text/template"
@@ -55,24 +54,20 @@ func parseAllowedClient(val string) {
 		s := strings.TrimSpace(v)
 		ipAndMask := strings.Split(s, "/")
 		if len(ipAndMask) > 2 {
-			fmt.Println("allowedClient syntax error: client should be the form ip/nbitmask")
-			os.Exit(1)
+			Fatal("allowedClient syntax error: client should be the form ip/nbitmask")
 		}
 		ip := net.ParseIP(ipAndMask[0])
 		if ip == nil {
-			fmt.Printf("allowedClient syntax error %s: ip address not valid\n", s)
-			os.Exit(1)
+			Fatal("allowedClient syntax error %s: ip address not valid\n", s)
 		}
 		var mask net.IPMask
 		if len(ipAndMask) == 2 {
 			nbit, err := strconv.Atoi(ipAndMask[1])
 			if err != nil {
-				fmt.Printf("allowedClient syntax error %s: %v\n", s, err)
-				os.Exit(1)
+				Fatal("allowedClient syntax error %s: %v\n", s, err)
 			}
 			if nbit > 32 {
-				fmt.Println("allowedClient error: mask number should <= 32")
-				os.Exit(1)
+				Fatal("allowedClient error: mask number should <= 32")
 			}
 			mask = NewNbitIPv4Mask(nbit)
 		} else {
@@ -113,8 +108,7 @@ func initAuth() {
 		"Content-Length: " + fmt.Sprintf("%d", len(authRawBodyTmpl)) + "\r\n\r\n" + authRawBodyTmpl
 	var err error
 	if auth.template, err = template.New("auth").Parse(rawTemplate); err != nil {
-		errl.Println("Internal error generating auth template:", err)
-		os.Exit(1)
+		Fatal("Internal error generating auth template:", err)
 	}
 }
 

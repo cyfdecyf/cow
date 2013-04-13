@@ -2,9 +2,7 @@ package main
 
 import (
 	"errors"
-	"fmt"
 	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
-	"os"
 )
 
 var noShadowSocksErr = errors.New("No shadowsocks configuration")
@@ -19,8 +17,7 @@ func initShadowSocks() {
 	for i, _ := range config.ShadowSocks {
 		// initialize cipher for each shadowsocks connection
 		if c, err := ss.NewCipher(config.ShadowMethod[i], config.ShadowPasswd[i]); err != nil {
-			fmt.Println("creating shadowsocks cipher:", err)
-			os.Exit(1)
+			Fatal("creating shadowsocks cipher:", err)
 		} else {
 			cipher = append(cipher, c)
 		}
