@@ -140,9 +140,6 @@ func hasPort(val string) bool {
 }
 
 func isUserPasswdValid(val string) bool {
-	if val == "" {
-		return true
-	}
 	arr := strings.SplitN(val, ":", 2)
 	if len(arr) != 2 || arr[0] == "" || arr[1] == "" {
 		return false
@@ -157,7 +154,7 @@ func (p configParser) ParseLogFile(val string) {
 }
 
 func (p configParser) ParseListen(val string) {
-	// Has specified command line options
+	// Command line options has already specified listenAddr
 	if config.ListenAddr != nil {
 		return
 	}
@@ -206,10 +203,10 @@ func (p configParser) ParseSocks(val string) {
 // error checking is done in check config
 
 func (p configParser) ParseSocksParent(val string) {
-	if val == "" {
-		Fatal("empty socks parent")
-	}
 	config.SocksParent = val
+	if !hasPort(config.SocksParent) {
+		Fatal("parent socks server must have port specified")
+	}
 	parentProxyCreator = append(parentProxyCreator, createctSocksConnection)
 }
 
@@ -218,18 +215,21 @@ func (p configParser) ParseSshServer(val string) {
 }
 
 func (p configParser) ParseHttpParent(val string) {
-	if val == "" {
-		Fatal("empty http parent")
-	}
 	config.HttpParent = val
+	if !hasPort(config.HttpParent) {
+		Fatal("parent http server must have port specified")
+	}
 	parentProxyCreator = append(parentProxyCreator, createHttpProxyConnection)
+	config.hasHttpParent = true
 }
 
 func (p configParser) ParseHttpUserPasswd(val string) {
-	if val == "" {
-		Fatal("empty http user passwd")
-	}
 	config.HttpUserPasswd = val
+	if !isUserPasswdValid(config.HttpUserPasswd) {
+		Fatal("http parent user password syntax wrong, should be in the form of user:passwd")
+	}
+	userPwd64 := base64.StdEncoding.EncodeToString([]byte(val))
+	config.httpAuthHeader = []byte(headerProxyAuthorization + ": Basic " + userPwd64 + CRLF)
 }
 
 func (p configParser) ParseUpdateBlocked(val string) {
@@ -252,9 +252,6 @@ func (p configParser) ParseAlwaysProxy(val string) {
 }
 
 func (p configParser) ParseShadowSocks(val string) {
-	if val == "" {
-		Fatal("empty shadowsocks server")
-	}
 	if !hasPort(val) {
 		Fatal("shadowsocks server must have port specified")
 	}
@@ -263,21 +260,18 @@ func (p configParser) ParseShadowSocks(val string) {
 }
 
 func (p configParser) ParseShadowPasswd(val string) {
-	if val == "" {
-		Fatal("empty shadowsocks password")
-	}
 	if len(config.ShadowPasswd)+1 > len(config.ShadowSocks) {
-		Fatal("must specify shadowsocks server before it's password")
+		Fatal("must specify shadowSocks before corresponding shadowPasswd")
 	}
 	if len(config.ShadowPasswd)+1 < len(config.ShadowSocks) {
-		Fatal("must specify shadowsocks password for each server")
+		Fatal("must specify shadowPasswd for every shadowSocks")
 	}
 	config.ShadowPasswd = append(config.ShadowPasswd, val)
 }
 
 func (p configParser) ParseShadowMethod(val string) {
 	if len(config.ShadowMethod)+1 > len(config.ShadowSocks) {
-		Fatal("must specify shadowsocks server before it's encryption method")
+		Fatal("must specify shadowSocks before corresponding shadowMethod")
 	}
 	for len(config.ShadowMethod)+1 < len(config.ShadowSocks) {
 		// use empty string for unspecified encryption method
@@ -290,10 +284,10 @@ func (p configParser) ParseShadowMethod(val string) {
 // doesn't need to know the details of authentication implementation.
 
 func (p configParser) ParseUserPasswd(val string) {
-	if val == "" {
-		Fatal("empty userPasswd")
-	}
 	config.UserPasswd = val
+	if !isUserPasswdValid(config.UserPasswd) {
+		Fatal("user password syntax wrong, should be in the form of user:passwd")
+	}
 }
 
 func (p configParser) ParseAllowedClient(val string) {
@@ -359,14 +353,14 @@ func parseConfig(path string) {
 			Fatal("Config error: syntax error on line", n)
 		}
 		key, val := strings.TrimSpace(v[0]), strings.TrimSpace(v[1])
-		if val == "" {
-			continue
-		}
 
 		methodName := "Parse" + strings.ToUpper(key[0:1]) + key[1:]
 		method := parser.MethodByName(methodName)
 		if method == zeroMethod {
 			Fatalf("Config error: no such option \"%s\"\n", key)
+		}
+		if val == "" {
+			Fatalf("Config error: empty %s, please comment out unused option\n", key)
 		}
 		args := []reflect.Value{reflect.ValueOf(val)}
 		method.Call(args)
@@ -396,6 +390,17 @@ func updateConfig(nc *Config) {
 			}
 		}
 	}
+}
+
+// Must call checkConfig before using config. It also has config initialization code.
+func checkConfig() {
+	if len(config.ShadowSocks) != len(config.ShadowPasswd) {
+		Fatal("number of shadowsocks server and password does not match")
+	}
+	for len(config.ShadowMethod) < len(config.ShadowSocks) {
+		config.ShadowMethod = append(config.ShadowMethod, "") // default shadowMethod
+	}
+	// listenAddr must be handled first, as addrInPAC dependends on this.
 	if config.ListenAddr == nil {
 		config.ListenAddr = []string{defaultListenAddr}
 	}
@@ -406,36 +411,6 @@ func updateConfig(nc *Config) {
 	} else {
 		// empty string in addrInPac means same as listenAddr
 		config.AddrInPAC = make([]string, len(config.ListenAddr))
-	}
-	if config.HttpParent != "" {
-		config.hasHttpParent = true
-	}
-	if config.HttpUserPasswd != "" {
-		userPwd64 := base64.StdEncoding.EncodeToString([]byte(config.HttpUserPasswd))
-		config.httpAuthHeader = []byte(headerProxyAuthorization + ": Basic " + userPwd64 + CRLF)
-	}
-}
-
-// Command line options also need to be checked, so put all checking here and
-// call it after updateConfig.
-func checkConfig() {
-	if !hasPort(config.HttpParent) {
-		Fatal("parent http server must have port specified")
-	}
-	if !hasPort(config.SocksParent) {
-		Fatal("parent socks server must have port specified")
-	}
-	if !isUserPasswdValid(config.UserPasswd) {
-		Fatal("user password syntax wrong, should be in the form of user:passwd")
-	}
-	if !isUserPasswdValid(config.HttpUserPasswd) {
-		Fatal("http parent user password syntax wrong, should be in the form of user:passwd")
-	}
-	if len(config.ShadowSocks) != len(config.ShadowPasswd) {
-		Fatal("number of shadowsocks server and password does not match")
-	}
-	for len(config.ShadowMethod) < len(config.ShadowSocks) {
-		config.ShadowMethod = append(config.ShadowMethod, "")
 	}
 	parentProxyFailCnt = make([]int, len(parentProxyCreator))
 }
