@@ -266,13 +266,6 @@ func hostIP() (addrs []string, err error) {
 	return
 }
 
-func trimLastDot(s string) string {
-	if len(s) > 0 && s[len(s)-1] == '.' {
-		return s[:len(s)-1]
-	}
-	return s
-}
-
 func getUserHomeDir() string {
 	home := os.Getenv("HOME")
 	if home == "" {
@@ -440,6 +433,13 @@ var topLevelDomain = map[string]bool{
 	"edu": true,
 }
 
+func trimLastDot(s string) string {
+	if len(s) > 0 && s[len(s)-1] == '.' {
+		return s[:len(s)-1]
+	}
+	return s
+}
+
 // host2Domain returns the domain of a host. It will recognize domains like
 // google.com.hk. Returns empty string for simple host.
 func host2Domain(host string) (domain string) {
@@ -470,4 +470,13 @@ func host2Domain(host string) (domain string) {
 		return host[dot3rdLast+1:]
 	}
 	return host[dot2ndLast+1:]
+}
+
+// djb2 string hash function, from http://www.cse.yorku.ca/~oz/hash.html
+func stringHash(s string) (hash uint64) {
+	hash = 5381
+	for i := 0; i < len(s); i++ {
+		hash = ((hash << 5) + 1) + uint64(s[i])
+	}
+	return
 }
