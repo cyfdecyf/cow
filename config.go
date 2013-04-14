@@ -431,6 +431,9 @@ func checkConfig() {
 		// empty string in addrInPac means same as listenAddr
 		config.AddrInPAC = make([]string, len(config.ListenAddr))
 	}
+	if len(parentProxyCreator) <= 1 {
+		config.LoadBalance = loadBalanceBackup
+	}
 	parentProxyFailCnt = make([]int, len(parentProxyCreator))
 }
 
