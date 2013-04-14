@@ -19,11 +19,19 @@ const (
 	defaultListenAddr = "127.0.0.1:7777"
 )
 
+type LoadBalanceMode byte
+
+const (
+	loadBalanceBackup LoadBalanceMode = iota
+	loadBalanceHash
+)
+
 type Config struct {
 	RcFile      string // config file
 	ListenAddr  []string
 	LogFile     string
 	AlwaysProxy bool
+	LoadBalance LoadBalanceMode
 
 	// socks parent proxy
 	SocksParent string
@@ -110,7 +118,7 @@ func parseBool(v, msg string) bool {
 	case "false":
 		return false
 	default:
-		Fatalf("Config error: %s should be true or false\n", msg)
+		Fatalf("%s should be true or false\n", msg)
 	}
 	return false
 }
@@ -118,7 +126,7 @@ func parseBool(v, msg string) bool {
 func parseInt(val, msg string) (i int) {
 	var err error
 	if i, err = strconv.Atoi(val); err != nil {
-		Fatalf("Config error: %s should be an integer\n", msg)
+		Fatalf("%s should be an integer\n", msg)
 	}
 	return
 }
@@ -126,7 +134,7 @@ func parseInt(val, msg string) (i int) {
 func parseDuration(val, msg string) (d time.Duration) {
 	var err error
 	if d, err = time.ParseDuration(val); err != nil {
-		Fatalf("Config error: %s %v\n", msg, err)
+		Fatalf("%s %v\n", msg, err)
 	}
 	return
 }
@@ -168,7 +176,7 @@ func (p configParser) ParseListen(val string) {
 		}
 		if host == "" || host == "0.0.0.0" {
 			if len(arr) > 1 {
-				Fatalf("Too much listen addresses: "+
+				Fatalf("too much listen addresses: "+
 					"%s represents all ip addresses on this host.\n", s)
 			}
 		}
@@ -189,7 +197,7 @@ func (p configParser) ParseAddrInPAC(val string) {
 			Fatalf("proxy address in PAC %s has no port\n", s)
 		}
 		if host == "0.0.0.0" {
-			Fatal("Can't use 0.0.0.0 as proxy address in PAC")
+			Fatal("can't use 0.0.0.0 as proxy address in PAC")
 		}
 		config.AddrInPAC[i] = s
 	}
@@ -226,7 +234,7 @@ func (p configParser) ParseHttpParent(val string) {
 func (p configParser) ParseHttpUserPasswd(val string) {
 	config.HttpUserPasswd = val
 	if !isUserPasswdValid(config.HttpUserPasswd) {
-		Fatal("http parent user password syntax wrong, should be in the form of user:passwd")
+		Fatal("httpUserPassword syntax wrong, should be in the form of user:passwd")
 	}
 	userPwd64 := base64.StdEncoding.EncodeToString([]byte(val))
 	config.httpAuthHeader = []byte(headerProxyAuthorization + ": Basic " + userPwd64 + CRLF)
@@ -249,6 +257,17 @@ func (p configParser) ParseAutoRetry(val string) {
 
 func (p configParser) ParseAlwaysProxy(val string) {
 	config.AlwaysProxy = parseBool(val, "alwaysProxy")
+}
+
+func (p configParser) ParseLoadBalance(val string) {
+	switch val {
+	case "backup":
+		config.LoadBalance = loadBalanceBackup
+	case "hash":
+		config.LoadBalance = loadBalanceHash
+	default:
+		Fatalf("invalid loadBalance mode: %s", val)
+	}
 }
 
 func (p configParser) ParseShadowSocks(val string) {
@@ -286,7 +305,7 @@ func (p configParser) ParseShadowMethod(val string) {
 func (p configParser) ParseUserPasswd(val string) {
 	config.UserPasswd = val
 	if !isUserPasswdValid(config.UserPasswd) {
-		Fatal("user password syntax wrong, should be in the form of user:passwd")
+		Fatal("userPassword syntax wrong, should be in the form of user:passwd")
 	}
 }
 
@@ -350,17 +369,17 @@ func parseConfig(path string) {
 
 		v := strings.Split(line, "=")
 		if len(v) != 2 {
-			Fatal("Config error: syntax error on line", n)
+			Fatal("config syntax error on line", n)
 		}
 		key, val := strings.TrimSpace(v[0]), strings.TrimSpace(v[1])
 
 		methodName := "Parse" + strings.ToUpper(key[0:1]) + key[1:]
 		method := parser.MethodByName(methodName)
 		if method == zeroMethod {
-			Fatalf("Config error: no such option \"%s\"\n", key)
+			Fatalf("no such option \"%s\"\n", key)
 		}
 		if val == "" {
-			Fatalf("Config error: empty %s, please comment out unused option\n", key)
+			Fatalf("empty %s, please comment out unused option\n", key)
 		}
 		args := []reflect.Value{reflect.ValueOf(val)}
 		method.Call(args)
