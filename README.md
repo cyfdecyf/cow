@@ -8,6 +8,7 @@ COW 是一个利用二级代理帮助自动化翻墙的 HTTP 代理服务器。�
 ## 功能
 
 - 支持 HTTP, SOCKS5 和 [shadowsocks](https://github.com/shadowsocks/shadowsocks-go/) 作为二级代理
+  - 可同时指定多个二级代理，支持简单的负载均衡
 - 自动检测网站是否被墙，仅对被墙网站使用二级代理
   - 对未知网站，先尝试直接连接，失败后使用二级代理重试请求，2 分钟后再尝试直接
   - 内置[常见被墙网站](site_blocked.go)，减少检测被墙所需时间（可手工添加）
@@ -22,7 +23,9 @@ COW 是一个利用二级代理帮助自动化翻墙的 HTTP 代理服务器。�
         curl -s -L https://github.com/cyfdecyf/cow/raw/master/install-cow.sh | bash
 
 - **Windows:** 从 [Google Code](http://code.google.com/p/cow-proxy/downloads/list) 下载
-- 如需其他平台二进制文件，请提交 issue request
+- 如需其他平台二进制文件，请从源码安装
+
+bug fix 和新功能在测试后会直接进入 master branch 而不等到发布下一个版本，因此二进制版本可能缺少一些新功能。
 
 ## 从源码安装
 
