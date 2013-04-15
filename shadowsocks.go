@@ -2,9 +2,7 @@ package main
 
 import (
 	"errors"
-	"fmt"
 	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
-	"os"
 )
 
 var noShadowSocksErr = errors.New("No shadowsocks configuration")
@@ -19,8 +17,7 @@ func initShadowSocks() {
 	for i, _ := range config.ShadowSocks {
 		// initialize cipher for each shadowsocks connection
 		if c, err := ss.NewCipher(config.ShadowMethod[i], config.ShadowPasswd[i]); err != nil {
-			fmt.Println("creating shadowsocks cipher:", err)
-			os.Exit(1)
+			Fatal("creating shadowsocks cipher:", err)
 		} else {
 			cipher = append(cipher, c)
 		}
@@ -39,10 +36,10 @@ func createShadowSocksConnecter(i int) parentProxyConnectionFunc {
 	f := func(url *URL) (cn conn, err error) {
 		c, err := ss.Dial(url.HostPort, config.ShadowSocks[i], cipher[i].Copy())
 		if err != nil {
-			errl.Printf("Can't create shadowsocks connection for: %s %v\n", url.HostPort, err)
+			errl.Printf("can't create shadowsocks connection for: %s %v\n", url.HostPort, err)
 			return zeroConn, err
 		}
-		debug.Println("shadowsocks connection created to:", url.HostPort)
+		debug.Println("connected to:", url.HostPort, "via shadowsocks:", config.ShadowSocks[i])
 		return conn{c, ctShadowctSocksConn}, nil
 	}
 	return f

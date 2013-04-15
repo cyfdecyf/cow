@@ -134,7 +134,7 @@ func createctSocksConnection(url *URL) (cn conn, err error) {
 		return zeroConn, socksProtocolErr
 	}
 
-	debug.Println("connected to socks server for", url.HostPort)
+	debug.Println("connected to:", url.HostPort, "via socks server")
 	// Now the socket can be used to pass data.
 	return conn{c, ctSocksConn}, nil
 }

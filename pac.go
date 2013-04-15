@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"net"
-	"os"
 	"strings"
 	"text/template"
 	"time"
@@ -80,8 +79,7 @@ function FindProxyForURL(url, host) {
 	var err error
 	pac.template, err = template.New("pac").Parse(pacRawTmpl)
 	if err != nil {
-		fmt.Println("Internal error on generating pac file template:", err)
-		os.Exit(1)
+		Fatal("Internal error on generating pac file template:", err)
 	}
 
 	var buf bytes.Buffer

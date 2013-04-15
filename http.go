@@ -201,6 +201,9 @@ func (url *URL) HostIsIP() bool {
 // For port, return empty string if no port specified.
 // This also works for IPv6 address.
 func splitHostPort(s string) (host, port string) {
+	if len(s) == 0 {
+		return "", ""
+	}
 	// Common case should has no port, check the last char first
 	if !IsDigit(s[len(s)-1]) {
 		return s, ""
@@ -348,11 +351,13 @@ func (h *Header) parseProxyAuthorization(s []byte, raw *bytes.Buffer) error {
 }
 
 func (h *Header) parseTransferEncoding(s []byte, raw *bytes.Buffer) error {
+	// For transfer-encoding: identify, it's the same as specifying neither
+	// content-length nor transfer-encoding.
 	h.Chunking = bytes.Contains(s, []byte("chunked"))
 	if h.Chunking {
 		raw.WriteString(fullHeaderTransferEncoding)
-	} else {
-		errl.Printf("unsupported transfer encoding %s\n", string(s))
+	} else if !bytes.Contains(s, []byte("identity")) {
+		errl.Printf("invalid transfer encoding: %s\n", s)
 		return errNotSupported
 	}
 	return nil
@@ -368,7 +373,7 @@ func splitHeader(s []byte) (name, val []byte, err error) {
 	return ASCIIToLower(f[0]), f[1], nil
 }
 
-// Only add headers that are of interest for a proxy into request's header map.
+// Only add headers that are of interest for a proxy into request/response's header map.
 func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, url *URL) (err error) {
 	h.ContLen = -1
 	dummyLastLine := []byte{}

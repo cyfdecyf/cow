@@ -181,7 +181,7 @@ var digitTbl = [256]int8{
 // No prefix (e.g. 0xdeadbeef) should given.
 // base can only be 10 or 16.
 func ParseIntFromBytes(b []byte, base int) (n int64, err error) {
-	// Currently, one have to convert []byte to string to use strconv
+	// Currently, we have to convert []byte to string to use strconv
 	// Refer to: http://code.google.com/p/go/issues/detail?id=2632
 	// That's why I created this function.
 	if base != 10 && base != 16 {
@@ -264,13 +264,6 @@ func hostIP() (addrs []string, err error) {
 		return
 	}
 	return
-}
-
-func trimLastDot(s string) string {
-	if len(s) > 0 && s[len(s)-1] == '.' {
-		return s[:len(s)-1]
-	}
-	return s
 }
 
 func getUserHomeDir() string {
@@ -440,6 +433,13 @@ var topLevelDomain = map[string]bool{
 	"edu": true,
 }
 
+func trimLastDot(s string) string {
+	if len(s) > 0 && s[len(s)-1] == '.' {
+		return s[:len(s)-1]
+	}
+	return s
+}
+
 // host2Domain returns the domain of a host. It will recognize domains like
 // google.com.hk. Returns empty string for simple host.
 func host2Domain(host string) (domain string) {
@@ -470,4 +470,13 @@ func host2Domain(host string) (domain string) {
 		return host[dot3rdLast+1:]
 	}
 	return host[dot2ndLast+1:]
+}
+
+// djb2 string hash function, from http://www.cse.yorku.ca/~oz/hash.html
+func stringHash(s string) (hash uint64) {
+	hash = 5381
+	for i := 0; i < len(s); i++ {
+		hash = ((hash << 5) + 1) + uint64(s[i])
+	}
+	return
 }

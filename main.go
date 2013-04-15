@@ -62,8 +62,7 @@ func main() {
 		if *cpuprofile != "" {
 			f, err := os.Create(*cpuprofile)
 			if err != nil {
-				info.Println(err)
-				os.Exit(1)
+				Fatal(err)
 			}
 			pprof.StartCPUProfile(f)
 		}

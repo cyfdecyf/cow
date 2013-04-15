@@ -122,3 +122,13 @@ func (d responseLogging) Printf(format string, args ...interface{}) {
 		responseLog.Printf(format, args...)
 	}
 }
+
+func Fatal(args ...interface{}) {
+	fmt.Println(args...)
+	os.Exit(1)
+}
+
+func Fatalf(format string, args ...interface{}) {
+	fmt.Printf(format, args...)
+	os.Exit(1)
+}

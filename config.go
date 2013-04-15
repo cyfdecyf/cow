@@ -19,28 +19,47 @@ const (
 	defaultListenAddr = "127.0.0.1:7777"
 )
 
+type LoadBalanceMode byte
+
+const (
+	loadBalanceBackup LoadBalanceMode = iota
+	loadBalanceHash
+)
+
 type Config struct {
-	RcFile         string // config file
-	ListenAddr     []string
-	AddrInPAC      []string
-	SocksParent    string
+	RcFile      string // config file
+	ListenAddr  []string
+	LogFile     string
+	AlwaysProxy bool
+	LoadBalance LoadBalanceMode
+
+	// socks parent proxy
+	SocksParent string
+	SshServer   string
+
+	// http parent proxy
 	HttpParent     string
 	hasHttpParent  bool
 	HttpUserPasswd string
 	httpAuthHeader []byte // basic authentication header constructed from HttpUserPasswd
-	Core           int
-	SshServer      string
-	DetectSSLErr   bool
-	LogFile        string
-	AlwaysProxy    bool
-	ShadowSocks    []string
-	ShadowPasswd   []string
-	ShadowMethod   []string // shadowsocks encryption method
-	UserPasswd     string
-	AllowedClient  string
-	AuthTimeout    time.Duration
-	DialTimeout    time.Duration
-	ReadTimeout    time.Duration
+
+	// shadowsocks proxy
+	ShadowSocks  []string
+	ShadowPasswd []string
+	ShadowMethod []string // shadowsocks encryption method
+
+	// authenticate client
+	UserPasswd    string
+	AllowedClient string
+	AuthTimeout   time.Duration
+
+	// advanced options
+	DialTimeout time.Duration
+	ReadTimeout time.Duration
+
+	Core         int
+	AddrInPAC    []string
+	DetectSSLErr bool
 
 	// not configurable in config file
 	PrintVer bool
@@ -99,8 +118,7 @@ func parseBool(v, msg string) bool {
 	case "false":
 		return false
 	default:
-		fmt.Printf("Config error: %s should be true or false\n", msg)
-		os.Exit(1)
+		Fatalf("%s should be true or false\n", msg)
 	}
 	return false
 }
@@ -108,8 +126,7 @@ func parseBool(v, msg string) bool {
 func parseInt(val, msg string) (i int) {
 	var err error
 	if i, err = strconv.Atoi(val); err != nil {
-		fmt.Printf("Config error: %s should be an integer\n", msg)
-		os.Exit(1)
+		Fatalf("%s should be an integer\n", msg)
 	}
 	return
 }
@@ -117,16 +134,35 @@ func parseInt(val, msg string) (i int) {
 func parseDuration(val, msg string) (d time.Duration) {
 	var err error
 	if d, err = time.ParseDuration(val); err != nil {
-		fmt.Printf("Config error: %s %v\n", msg, err)
-		os.Exit(1)
+		Fatalf("%s %v\n", msg, err)
 	}
 	return
 }
 
+func hasPort(val string) bool {
+	_, port := splitHostPort(val)
+	if port == "" {
+		return false
+	}
+	return true
+}
+
+func isUserPasswdValid(val string) bool {
+	arr := strings.SplitN(val, ":", 2)
+	if len(arr) != 2 || arr[0] == "" || arr[1] == "" {
+		return false
+	}
+	return true
+}
+
 type configParser struct{}
 
+func (p configParser) ParseLogFile(val string) {
+	config.LogFile = val
+}
+
 func (p configParser) ParseListen(val string) {
-	// Has specified command line options
+	// Command line options has already specified listenAddr
 	if config.ListenAddr != nil {
 		return
 	}
@@ -136,14 +172,12 @@ func (p configParser) ParseListen(val string) {
 		s = strings.TrimSpace(s)
 		host, port := splitHostPort(s)
 		if port == "" {
-			fmt.Printf("listen address %s has no port\n", s)
-			os.Exit(1)
+			Fatalf("listen address %s has no port\n", s)
 		}
 		if host == "" || host == "0.0.0.0" {
 			if len(arr) > 1 {
-				fmt.Printf("Too much listen addresses: "+
+				Fatalf("too much listen addresses: "+
 					"%s represents all ip addresses on this host.\n", s)
-				os.Exit(1)
 			}
 		}
 		config.ListenAddr[i] = s
@@ -160,37 +194,13 @@ func (p configParser) ParseAddrInPAC(val string) {
 		s = strings.TrimSpace(s)
 		host, port := splitHostPort(s)
 		if port == "" {
-			fmt.Printf("proxy address in PAC %s has no port\n", s)
-			os.Exit(1)
+			Fatalf("proxy address in PAC %s has no port\n", s)
 		}
 		if host == "0.0.0.0" {
-			fmt.Println("Can't use 0.0.0.0 as proxy address in PAC")
-			os.Exit(1)
+			Fatal("can't use 0.0.0.0 as proxy address in PAC")
 		}
 		config.AddrInPAC[i] = s
 	}
-}
-
-func hasPort(val string) bool {
-	if val == "" { // default value is empty
-		return true
-	}
-	_, port := splitHostPort(val)
-	if port == "" {
-		return false
-	}
-	return true
-}
-
-func isUserPasswdValid(val string) bool {
-	if val == "" {
-		return true
-	}
-	arr := strings.SplitN(val, ":", 2)
-	if len(arr) != 2 || arr[0] == "" || arr[1] == "" {
-		return false
-	}
-	return true
 }
 
 func (p configParser) ParseSocks(val string) {
@@ -201,37 +211,33 @@ func (p configParser) ParseSocks(val string) {
 // error checking is done in check config
 
 func (p configParser) ParseSocksParent(val string) {
-	if val == "" {
-		fmt.Println("empty socks parent")
-		os.Exit(1)
-	}
 	config.SocksParent = val
+	if !hasPort(config.SocksParent) {
+		Fatal("parent socks server must have port specified")
+	}
 	parentProxyCreator = append(parentProxyCreator, createctSocksConnection)
-}
-
-func (p configParser) ParseHttpParent(val string) {
-	if val == "" {
-		fmt.Println("empty http parent")
-		os.Exit(1)
-	}
-	config.HttpParent = val
-	parentProxyCreator = append(parentProxyCreator, createHttpProxyConnection)
-}
-
-func (p configParser) ParseHttpUserPasswd(val string) {
-	if val == "" {
-		fmt.Println("empty http user passwd")
-		os.Exit(1)
-	}
-	config.HttpUserPasswd = val
-}
-
-func (p configParser) ParseCore(val string) {
-	config.Core = parseInt(val, "core")
 }
 
 func (p configParser) ParseSshServer(val string) {
 	config.SshServer = val
+}
+
+func (p configParser) ParseHttpParent(val string) {
+	config.HttpParent = val
+	if !hasPort(config.HttpParent) {
+		Fatal("parent http server must have port specified")
+	}
+	parentProxyCreator = append(parentProxyCreator, createHttpProxyConnection)
+	config.hasHttpParent = true
+}
+
+func (p configParser) ParseHttpUserPasswd(val string) {
+	config.HttpUserPasswd = val
+	if !isUserPasswdValid(config.HttpUserPasswd) {
+		Fatal("httpUserPassword syntax wrong, should be in the form of user:passwd")
+	}
+	userPwd64 := base64.StdEncoding.EncodeToString([]byte(val))
+	config.httpAuthHeader = []byte(headerProxyAuthorization + ": Basic " + userPwd64 + CRLF)
 }
 
 func (p configParser) ParseUpdateBlocked(val string) {
@@ -249,51 +255,42 @@ func (p configParser) ParseAutoRetry(val string) {
 	fmt.Println("autoRetry option will be removed in future, please remove it")
 }
 
-func (p configParser) ParseDetectSSLErr(val string) {
-	config.DetectSSLErr = parseBool(val, "detectSSLErr")
-}
-
-func (p configParser) ParseLogFile(val string) {
-	config.LogFile = val
-}
-
 func (p configParser) ParseAlwaysProxy(val string) {
 	config.AlwaysProxy = parseBool(val, "alwaysProxy")
 }
 
-func (p configParser) ParseShadowSocks(val string) {
-	if val == "" {
-		fmt.Println("empty shadowsocks server")
-		os.Exit(1)
+func (p configParser) ParseLoadBalance(val string) {
+	switch val {
+	case "backup":
+		config.LoadBalance = loadBalanceBackup
+	case "hash":
+		config.LoadBalance = loadBalanceHash
+	default:
+		Fatalf("invalid loadBalance mode: %s\n", val)
 	}
+}
+
+func (p configParser) ParseShadowSocks(val string) {
 	if !hasPort(val) {
-		fmt.Println("shadowsocks server must have port specified")
-		os.Exit(1)
+		Fatal("shadowsocks server must have port specified")
 	}
 	parentProxyCreator = append(parentProxyCreator, createShadowSocksConnecter(len(config.ShadowSocks)))
 	config.ShadowSocks = append(config.ShadowSocks, val)
 }
 
 func (p configParser) ParseShadowPasswd(val string) {
-	if val == "" {
-		fmt.Println("empty shadowsocks password")
-		os.Exit(1)
-	}
 	if len(config.ShadowPasswd)+1 > len(config.ShadowSocks) {
-		fmt.Println("must specify shadowsocks server before it's password")
-		os.Exit(1)
+		Fatal("must specify shadowSocks before corresponding shadowPasswd")
 	}
 	if len(config.ShadowPasswd)+1 < len(config.ShadowSocks) {
-		fmt.Println("must specify shadowsocks password for each server")
-		os.Exit(1)
+		Fatal("must specify shadowPasswd for every shadowSocks")
 	}
 	config.ShadowPasswd = append(config.ShadowPasswd, val)
 }
 
 func (p configParser) ParseShadowMethod(val string) {
 	if len(config.ShadowMethod)+1 > len(config.ShadowSocks) {
-		fmt.Println("must specify shadowsocks server before it's encryption method")
-		os.Exit(1)
+		Fatal("must specify shadowSocks before corresponding shadowMethod")
 	}
 	for len(config.ShadowMethod)+1 < len(config.ShadowSocks) {
 		// use empty string for unspecified encryption method
@@ -307,6 +304,9 @@ func (p configParser) ParseShadowMethod(val string) {
 
 func (p configParser) ParseUserPasswd(val string) {
 	config.UserPasswd = val
+	if !isUserPasswdValid(config.UserPasswd) {
+		Fatal("userPassword syntax wrong, should be in the form of user:passwd")
+	}
 }
 
 func (p configParser) ParseAllowedClient(val string) {
@@ -317,12 +317,20 @@ func (p configParser) ParseAuthTimeout(val string) {
 	config.AuthTimeout = parseDuration(val, "authTimeout")
 }
 
+func (p configParser) ParseCore(val string) {
+	config.Core = parseInt(val, "core")
+}
+
 func (p configParser) ParseReadTimeout(val string) {
 	config.ReadTimeout = parseDuration(val, "readTimeout")
 }
 
 func (p configParser) ParseDialTimeout(val string) {
 	config.DialTimeout = parseDuration(val, "dialTimeout")
+}
+
+func (p configParser) ParseDetectSSLErr(val string) {
+	config.DetectSSLErr = parseBool(val, "detectSSLErr")
 }
 
 func parseConfig(path string) {
@@ -351,8 +359,7 @@ func parseConfig(path string) {
 		if err == io.EOF {
 			return
 		} else if err != nil {
-			errl.Printf("Error reading rc file: %v\n", err)
-			os.Exit(1)
+			Fatalf("Error reading rc file: %v\n", err)
 		}
 
 		line = strings.TrimSpace(line)
@@ -362,19 +369,17 @@ func parseConfig(path string) {
 
 		v := strings.Split(line, "=")
 		if len(v) != 2 {
-			fmt.Println("Config error: syntax error on line", n)
-			os.Exit(1)
+			Fatal("config syntax error on line", n)
 		}
 		key, val := strings.TrimSpace(v[0]), strings.TrimSpace(v[1])
-		if val == "" {
-			continue
-		}
 
 		methodName := "Parse" + strings.ToUpper(key[0:1]) + key[1:]
 		method := parser.MethodByName(methodName)
 		if method == zeroMethod {
-			fmt.Printf("Config error: no such option \"%s\"\n", key)
-			os.Exit(1)
+			Fatalf("no such option \"%s\"\n", key)
+		}
+		if val == "" {
+			Fatalf("empty %s, please comment out unused option\n", key)
 		}
 		args := []reflect.Value{reflect.ValueOf(val)}
 		method.Call(args)
@@ -404,52 +409,30 @@ func updateConfig(nc *Config) {
 			}
 		}
 	}
+}
+
+// Must call checkConfig before using config. It also has config initialization code.
+func checkConfig() {
+	if len(config.ShadowSocks) != len(config.ShadowPasswd) {
+		Fatal("number of shadowsocks server and password does not match")
+	}
+	for len(config.ShadowMethod) < len(config.ShadowSocks) {
+		config.ShadowMethod = append(config.ShadowMethod, "") // default shadowMethod
+	}
+	// listenAddr must be handled first, as addrInPAC dependends on this.
 	if config.ListenAddr == nil {
 		config.ListenAddr = []string{defaultListenAddr}
 	}
 	if config.AddrInPAC != nil {
 		if len(config.AddrInPAC) != len(config.ListenAddr) {
-			fmt.Println("Number of listen addresses and addr in PAC not match.")
-			os.Exit(1)
+			Fatal("Number of listen addresses and addr in PAC not match.")
 		}
 	} else {
 		// empty string in addrInPac means same as listenAddr
 		config.AddrInPAC = make([]string, len(config.ListenAddr))
 	}
-	if config.HttpParent != "" {
-		config.hasHttpParent = true
-	}
-	if config.HttpUserPasswd != "" {
-		userPwd64 := base64.StdEncoding.EncodeToString([]byte(config.HttpUserPasswd))
-		config.httpAuthHeader = []byte(headerProxyAuthorization + ": Basic " + userPwd64 + CRLF)
-	}
-}
-
-// Command line options also need to be checked, so put all checking here and
-// call it after updateConfig.
-func checkConfig() {
-	if !hasPort(config.HttpParent) {
-		fmt.Println("parent http server must have port specified")
-		os.Exit(1)
-	}
-	if !hasPort(config.SocksParent) {
-		fmt.Println("parent socks server must have port specified")
-		os.Exit(1)
-	}
-	if !isUserPasswdValid(config.UserPasswd) {
-		fmt.Println("user password syntax wrong, should be in the form of user:passwd")
-		os.Exit(1)
-	}
-	if !isUserPasswdValid(config.HttpUserPasswd) {
-		fmt.Println("http parent user password syntax wrong, should be in the form of user:passwd")
-		os.Exit(1)
-	}
-	if len(config.ShadowSocks) != len(config.ShadowPasswd) {
-		fmt.Println("number of shadowsocks server and password does not match")
-		os.Exit(1)
-	}
-	for len(config.ShadowMethod) < len(config.ShadowSocks) {
-		config.ShadowMethod = append(config.ShadowMethod, "")
+	if len(parentProxyCreator) <= 1 {
+		config.LoadBalance = loadBalanceBackup
 	}
 	parentProxyFailCnt = make([]int, len(parentProxyCreator))
 }
