@@ -266,7 +266,7 @@ func (p configParser) ParseLoadBalance(val string) {
 	case "hash":
 		config.LoadBalance = loadBalanceHash
 	default:
-		Fatalf("invalid loadBalance mode: %s", val)
+		Fatalf("invalid loadBalance mode: %s\n", val)
 	}
 }
 
