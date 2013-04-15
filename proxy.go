@@ -162,11 +162,11 @@ func (py *Proxy) Serve(done chan byte) {
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
-			debug.Println("Client connection:", err)
+			debug.Println("client connection:", err)
 			continue
 		}
 		if debug {
-			debug.Println("New Client:", conn.RemoteAddr())
+			debug.Println("new client:", conn.RemoteAddr())
 		}
 		c := newClientConn(conn, py)
 		go c.serve()
@@ -595,7 +595,7 @@ func createHttpProxyConnection(url *URL) (cn conn, err error) {
 		errl.Printf("can't connect to http parent proxy for %s: %v\n", url.HostPort, err)
 		return zeroConn, err
 	}
-	debug.Println("connected to http parent proxy for", url.HostPort)
+	debug.Println("connected to:", url.HostPort, "via http parent proxy")
 	return conn{c, ctHttpProxyConn}, nil
 }
 
@@ -608,7 +608,7 @@ func callParentProxyCreateFunc(i int, url *URL) (srvconn conn, err error) {
 	const maxFailCnt = 30
 	srvconn, err = parentProxyCreator[i](url)
 	if err != nil {
-		if parentProxyFailCnt[i] < maxFailCnt {
+		if parentProxyFailCnt[i] < maxFailCnt && !networkBad() {
 			parentProxyFailCnt[i]++
 		}
 		return
@@ -618,22 +618,30 @@ func callParentProxyCreateFunc(i int, url *URL) (srvconn conn, err error) {
 }
 
 func createParentProxyConnection(url *URL) (srvconn conn, err error) {
-	const baseFailCnt = 20
-	skipped := make([]int, 0)
-	n := len(parentProxyCreator)
-	for i := 0; i < n; i++ {
+	const baseFailCnt = 9
+	var skipped []int
+	nproxy := len(parentProxyCreator)
+
+	proxyId := 0
+	if config.LoadBalance == loadBalanceHash {
+		proxyId = int(stringHash(url.Host) % uint64(nproxy))
+	}
+
+	for i := 0; i < nproxy; i++ {
+		proxyId = (proxyId + i) % nproxy
 		// skip failed server, but try it with some probability
-		if parentProxyFailCnt[i] > 0 && rand.Intn(parentProxyFailCnt[i]+baseFailCnt) != 0 {
-			skipped = append(skipped, i)
+		failcnt := parentProxyFailCnt[proxyId]
+		if failcnt > 0 && rand.Intn(failcnt+baseFailCnt) != 0 {
+			skipped = append(skipped, proxyId)
 			continue
 		}
-		if srvconn, err = callParentProxyCreateFunc(i, url); err == nil {
+		if srvconn, err = callParentProxyCreateFunc(proxyId, url); err == nil {
 			return
 		}
 	}
 	// last resort, try skipped one, not likely to succeed
-	for _, i := range skipped {
-		if srvconn, err = callParentProxyCreateFunc(i, url); err == nil {
+	for _, skippedId := range skipped {
+		if srvconn, err = callParentProxyCreateFunc(skippedId, url); err == nil {
 			return
 		}
 	}
