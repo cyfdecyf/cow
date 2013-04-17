@@ -378,8 +378,8 @@ func parseConfig(path string) {
 		if method == zeroMethod {
 			Fatalf("no such option \"%s\"\n", key)
 		}
-		// allow using empty string to specify shadowMethod, just for backward compatibility
-		if val == "" && key != "shadowMethod" {
+		// for backward compatibility, allow empty string in shadowMethod and logFile
+		if val == "" && key != "shadowMethod" && key != "logFile" {
 			Fatalf("empty %s, please comment or remove unused option\n", key)
 		}
 		args := []reflect.Value{reflect.ValueOf(val)}
