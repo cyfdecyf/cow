@@ -110,7 +110,6 @@ type serverConn struct {
 	willCloseOn time.Time
 	siteInfo    *VisitCnt
 	visited     bool
-	timeoutSet  bool
 }
 
 type clientConn struct {
@@ -795,23 +794,15 @@ func unsetConnReadTimeout(cn net.Conn, msg string) {
 // setReadTimeout will only set timeout if the server connection maybe fake.
 // In case it's not fake, this will unset timeout.
 func (sv *serverConn) setReadTimeout(msg string) {
-	if sv.maybeFake() {
-		to := readTimeout
-		if sv.siteInfo.OnceBlocked() && to > defaultReadTimeout {
-			to = minReadTimeout
-		}
-		setConnReadTimeout(sv, to, msg)
-		sv.timeoutSet = true
-	} else {
-		sv.unsetReadTimeout(msg)
+	to := readTimeout
+	if sv.siteInfo.OnceBlocked() && to > defaultReadTimeout {
+		to = minReadTimeout
 	}
+	setConnReadTimeout(sv, to, msg)
 }
 
 func (sv *serverConn) unsetReadTimeout(msg string) {
-	if sv.timeoutSet {
-		sv.timeoutSet = false
-		unsetConnReadTimeout(sv, msg)
-	}
+	unsetConnReadTimeout(sv, msg)
 }
 
 func (sv *serverConn) maybeSSLErr(cliStart time.Time) bool {
@@ -849,9 +840,16 @@ func copyServer2Client(sv *serverConn, c *clientConn, r *Request) (err error) {
 
 	total := 0
 	const directThreshold = 4096
+	readTimeoutSet := false
 	for {
 		// debug.Println("srv->cli")
-		sv.setReadTimeout("srv->cli")
+		if sv.maybeFake() {
+			sv.setReadTimeout("srv->cli")
+			readTimeoutSet = true
+		} else if readTimeoutSet {
+			sv.unsetReadTimeout("srv->cli")
+			readTimeoutSet = false
+		}
 		var n int
 		if n, err = sv.Read(buf); err != nil {
 			if sv.maybeFake() && maybeBlocked(err) {
@@ -873,7 +871,6 @@ func copyServer2Client(sv *serverConn, c *clientConn, r *Request) (err error) {
 		// set state to rsRecvBody to indicate the request has partial response sent to client
 		r.state = rsRecvBody
 		sv.state = svSendRecvResponse
-		sv.unsetReadTimeout("srv->cli")
 		if total > directThreshold {
 			sv.updateVisit()
 		}
