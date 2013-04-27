@@ -854,15 +854,12 @@ func copyServer2Client(sv *serverConn, c *clientConn, r *Request) (err error) {
 		sv.setReadTimeout("srv->cli")
 		var n int
 		if n, err = sv.Read(buf); err != nil {
-			if err == io.EOF {
-				return RetryError{err}
-			}
 			if sv.maybeFake() && maybeBlocked(err) {
 				siteStat.TempBlocked(r.URL)
 				debug.Printf("srv->cli blocked site %s detected, err: %v retry\n", r.URL.HostPort, err)
 				return RetryError{err}
 			}
-			// Expected error: "use of closed network connection",
+			// Expected error besides EOF: "use of closed network connection",
 			// this is to make blocking read return.
 			// debug.Printf("copyServer2Client read data: %v\n", err)
 			return
