@@ -230,22 +230,21 @@ end:
 	return errPageSent
 }
 
-func (c *clientConn) handleRetry(r *Request, sv *serverConn, re error) error {
-	err, ok := re.(RetryError)
-	if !ok {
-		errl.Println("handleRetry should always get RetryError:", r)
-		panic("handleRetry should always get RetryError")
+func (c *clientConn) shouldHandleRetry(r *Request, sv *serverConn, re error) bool {
+	if !isErrRetry(re) {
+		return false
 	}
+	err, _ := re.(RetryError)
 	if !r.responseNotSent() {
 		debug.Printf("%v has sent some response, can't retry\n", r)
-		return errShouldClose
+		return false
 	}
 	if r.partial {
 		debug.Printf("%v partial request, can't retry\n", r)
 		sendErrorPage(c, "502 partial request", err.Error(),
 			genErrMsg(r, sv, "Request is too large to hold in buffer, can't retry. "+
 				"Refresh to retry may work."))
-		return errPageSent
+		return false
 	} else if r.raw == nil {
 		errl.Println("Please report an issue: Non partial request with buffer released:", r)
 		panic("Please report an issue: Non partial request with buffer released")
@@ -256,14 +255,14 @@ func (c *clientConn) handleRetry(r *Request, sv *serverConn, re error) error {
 			// In that case, consider the url as temp blocked and try parent proxy.
 			siteStat.TempBlocked(r.URL)
 			r.tryCnt = 0
-			return re
+			return true
 		}
 		debug.Printf("Can't retry %v tryCnt=%d\n", r, r.tryCnt)
 		sendErrorPage(c, "502 retry failed", "Can't finish HTTP request",
 			genErrMsg(r, sv, "Has tried several times."))
-		return errPageSent
+		return false
 	}
-	return re
+	return true
 }
 
 func (c *clientConn) serve() {
@@ -346,11 +345,9 @@ func (c *clientConn) serve() {
 		if r.isConnect {
 			err = sv.doConnect(&r, c)
 			sv.Close()
-			if isErrRetry(err) {
+			if c.shouldHandleRetry(&r, sv, err) {
 				// connection for CONNECT is not reused, no need to remove
-				if err = c.handleRetry(&r, sv, err); isErrRetry(err) {
-					goto retry
-				}
+				goto retry
 			}
 			// debug.Printf("doConnect %s to %s done\n", c.RemoteAddr(), r.URL.HostPort)
 			return
@@ -358,11 +355,8 @@ func (c *clientConn) serve() {
 
 		if err = sv.doRequest(c, &r, &rp); err != nil {
 			c.removeServerConn(sv)
-			if isErrRetry(err) {
-				err = c.handleRetry(&r, sv, err)
-				if isErrRetry(err) {
-					goto retry
-				}
+			if c.shouldHandleRetry(&r, sv, err) {
+				goto retry
 			}
 			if err == errPageSent {
 				continue
