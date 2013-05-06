@@ -2,7 +2,7 @@ var direct = 'DIRECT';
 var httpProxy = 'PROXY';
 
 var directList = [
-	"", // corresponds to simple host name
+	"", // corresponds to simple host name and ip address
 	"taobao.com",
 	"www.baidu.com"
 ];
@@ -39,7 +39,10 @@ function hostIsIP(host) {
 	return true;
 }
 
-function host2domain(host) {
+function host2Domain(host) {
+	if (hostIsIP(host)) {
+		return ""; // IP address has no domain
+	}
 	var lastDot = host.lastIndexOf('.');
 	if (lastDot === -1) {
 		return ""; // simple host name has no domain
@@ -61,7 +64,7 @@ function host2domain(host) {
 }
 
 function FindProxyForURL(url, host) {
-	return (hostIsIP(host) || directAcc[host] || directAcc[host2domain(host)]) ? direct : httpProxy;
+	return (directAcc[host] || directAcc[host2Domain(host)]) ? direct : httpProxy;
 }
 
 // Tests
