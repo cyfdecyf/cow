@@ -236,10 +236,6 @@ func (c *clientConn) handleRetry(r *Request, sv *serverConn, re error) error {
 		errl.Println("handleRetry should always get RetryError:", r)
 		panic("handleRetry should always get RetryError")
 	}
-	if r.raw == nil && !r.isConnect {
-		errl.Println("Non CONNECT retry with request buffer released:", r)
-		panic("Non CONNECT handleRetry with request buffer released")
-	}
 	if !r.responseNotSent() {
 		debug.Printf("%v has sent some response, can't retry\n", r)
 		return errShouldClose
@@ -250,6 +246,9 @@ func (c *clientConn) handleRetry(r *Request, sv *serverConn, re error) error {
 			genErrMsg(r, sv, "Request is too large to hold in buffer, can't retry. "+
 				"Refresh to retry may work."))
 		return errPageSent
+	} else if r.raw == nil {
+		errl.Println("Please report an issue: Non partial request with buffer released:", r)
+		panic("Please report an issue: Non partial request with buffer released")
 	}
 	if r.tooManyRetry() {
 		if sv.maybeFake() {
@@ -878,7 +877,6 @@ func copyServer2Client(sv *serverConn, c *clientConn, r *Request) (err error) {
 	return
 }
 
-// write to server, store written data in request buffer if necessary
 type serverWriter struct {
 	rq *Request
 	sv *serverConn
@@ -888,18 +886,21 @@ func newServerWriter(r *Request, sv *serverConn) *serverWriter {
 	return &serverWriter{r, sv}
 }
 
+// Write to server, store written data in request buffer if necessary.
+// FIXME: too tighly coupled with Request.
 func (sw *serverWriter) Write(p []byte) (int, error) {
 	if sw.rq.raw == nil {
 		// buffer released
 	} else if sw.rq.raw.Len() >= 2*httpBufSize {
 		// Avoid using too much memory to hold request body. If a request is
-		// not buffered completely, COW can't retry and we can release memory.
+		// not buffered completely, COW can't retry and can release memory
+		// immediately.
 		debug.Println("request body too large, not buffering any more")
 		sw.rq.releaseBuf()
 		sw.rq.partial = true
 	} else if sw.rq.responseNotSent() {
 		sw.rq.raw.Write(p)
-	} else {
+	} else { // has sent response
 		sw.rq.releaseBuf()
 	}
 	return sw.sv.Write(p)
@@ -1098,7 +1099,7 @@ func (sv *serverConn) doRequest(c *clientConn, r *Request, rp *Response) (err er
 		// Length or Transfer-Encoding header. Refer to http://stackoverflow.com/a/299696/306935
 		if err = sendBody(c, sv, r, nil); err != nil {
 			if err == io.EOF && isErrOpRead(err) {
-				info.Println("EOF reading request body from client", r)
+				errl.Println("EOF reading request body from client", r)
 			} else if isErrOpWrite(err) {
 				err = c.handleServerWriteError(r, sv, err, "Sending request body")
 			} else {
