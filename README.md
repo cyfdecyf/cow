@@ -5,6 +5,8 @@ COW 是一个利用二级代理帮助自动化翻墙的 HTTP 代理服务器。�
 当前版本：0.6.1
 [![Build Status](https://travis-ci.org/cyfdecyf/cow.png?branch=develop)](https://travis-ci.org/cyfdecyf/cow)
 
+**如果要给我发 pull request，请在最新的 develop branch 上进行开发。**
+
 ## 功能
 
 - 支持 HTTP, SOCKS5 和 [shadowsocks](https://github.com/shadowsocks/shadowsocks-go/) 作为二级代理
@@ -43,7 +45,7 @@ bug fix 和新功能在测试后会直接进入 master branch 而不等到发布
   - [Linux 启动脚本](doc/init.d/cow) 在 Debian 上测试过，其他 Linux 发行版应该也可用
 - Windows 上执行 `cow-taskbar.exe` 即可
 
-PAC url 为 `http://<listen address>/pac`，也可设置 `listen address` 为 HTTP/HTTPS 代理。
+PAC url 为 `http://<listen address>/pac`，也可将浏览器的 HTTP/HTTPS 代理设置为 `listen address` 使所有网站都通过 COW 访问。
 
 **使用 PAC 可获得更好的性能，但若 PAC 中某网站从直连变成被封，浏览器会依然尝试直连。遇到这种情况可以暂时不使用 PAC 而总是走 HTTP 代理，让 COW 学习到新的被封网站。**
 
