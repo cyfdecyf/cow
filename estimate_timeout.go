@@ -6,10 +6,13 @@ import (
 	"time"
 )
 
+// For once blocked site, use min dial/read timeout to make switching to
+// parent proxy faster.
 const minDialTimeout = 3 * time.Second
 const minReadTimeout = 4 * time.Second
 const defaultDialTimeout = 5 * time.Second
 const defaultReadTimeout = 5 * time.Second
+const maxTimeout = 15 * time.Second
 
 var dialTimeout = defaultDialTimeout
 var readTimeout = defaultReadTimeout
@@ -45,6 +48,9 @@ func estimateTimeout() {
 
 	est = time.Now().Sub(start) * 5
 	debug.Println("estimated dialTimeout:", est)
+	if est > maxTimeout {
+		est = maxTimeout
+	}
 	if est > config.DialTimeout {
 		dialTimeout = est
 		info.Println("new dial timeout:", dialTimeout)
@@ -70,6 +76,9 @@ func estimateTimeout() {
 	}
 	est = time.Now().Sub(start) * 10
 	debug.Println("estimated read timeout:", est)
+	if est > maxTimeout {
+		est = maxTimeout
+	}
 	if est > time.Duration(config.ReadTimeout) {
 		readTimeout = est
 		info.Println("new read timeout:", readTimeout)

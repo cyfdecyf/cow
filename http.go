@@ -511,7 +511,9 @@ func (rp *Response) hasBody(method string) bool {
 func parseResponse(sv *serverConn, r *Request, rp *Response) (err error) {
 	var s []byte
 	reader := sv.bufRd
-	sv.setReadTimeout("parseResponse")
+	if sv.maybeFake() {
+		sv.setReadTimeout("parseResponse")
+	}
 	if s, err = reader.ReadSlice('\n'); err != nil {
 		if err != io.EOF {
 			// err maybe timeout caused by explicity setting deadline
@@ -520,7 +522,9 @@ func parseResponse(sv *serverConn, r *Request, rp *Response) (err error) {
 		// For timeout, the connection will not be used, so no need to unset timeout
 		return err
 	}
-	sv.unsetReadTimeout("parseResponse")
+	if sv.maybeFake() {
+		sv.unsetReadTimeout("parseResponse")
+	}
 	// debug.Printf("Response line %s", s)
 
 	// response status line parsing
