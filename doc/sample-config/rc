@@ -43,7 +43,7 @@ listen = 127.0.0.1:7777
 # 按顺序重复下面的配置来指定多个 shadowsocks server
 
 # 指定一个新的 shadowsocks 服务器地址，一定要指定端口
-#shadowSocks = 1.1.1.1:8838
+#shadowSocks = 1.1.1.1:8388
 # 上一个 shadowsocks 服务器的密码
 #shadowPasswd = barfoo!
 # 上一个 shadowsocks 服务器的加密方法, 空字符串或者 rc4，不指定默认为空字符串
