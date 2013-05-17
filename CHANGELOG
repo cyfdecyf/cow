@@ -1,4 +1,4 @@
-0.6.2 (not released)
+0.6.2 (2013-05-17)
     * Support multiple shadowsocks servers
     * Simple load balancing: backup or hash strategy
     * PAC fix: do not add domains with blocked host/sub domain
