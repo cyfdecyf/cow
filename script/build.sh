@@ -5,13 +5,18 @@ cd "$( dirname "${BASH_SOURCE[0]}" )/.."
 version=`grep '^version=' ./install-cow.sh | sed -s 's/version=//'`
 echo "creating cow binary version $version"
 
-export CGO_ENABLED=0
-
 mkdir -p bin
 build() {
     local name
     local GOOS
     local GOARCH
+
+    if [[ $1 == "darwin" ]]; then
+        # Enable CGO for OS X so change network location will not cause problem.
+        export CGO_ENABLED=1
+    else
+        export CGO_ENABLED=0
+    fi
 
     name=cow-$3-$version
     echo "building $name"
