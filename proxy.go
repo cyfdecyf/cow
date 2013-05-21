@@ -495,12 +495,12 @@ func (c *clientConn) readResponse(sv *serverConn, r *Request, rp *Response) (err
 				// been sent.
 				errl.Println("unexpected EOF reading body from server", r)
 			} else if isErrOpRead(err) {
-				err = c.handleServerReadError(r, sv, err, "Read response body from server.")
+				return c.handleServerReadError(r, sv, err, "Read response body from server.")
 			} else if isErrOpWrite(err) {
-				err = c.handleClientWriteError(r, err, "Write response body to client.")
-			} else {
-				errl.Println("sendBody unknown network op error", reflect.TypeOf(err), r)
+				return c.handleClientWriteError(r, err, "Write response body to client.")
 			}
+			errl.Println("sendBody unknown network op error", reflect.TypeOf(err), r)
+			return errShouldClose
 		}
 	}
 	r.state = rsDone
@@ -1096,7 +1096,7 @@ func (sv *serverConn) doRequest(c *clientConn, r *Request, rp *Response) (err er
 	if err == nil {
 		sv.updateVisit()
 	}
-	return
+	return err
 }
 
 // Send response body if header specifies content length
