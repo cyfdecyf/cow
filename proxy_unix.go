@@ -20,3 +20,19 @@ func isDNSError(err error) bool {
 	}
 	return false
 }
+
+func isErrOpWrite(err error) bool {
+	ne, ok := err.(*net.OpError)
+	if !ok {
+		return false
+	}
+	return ne.Op == "write"
+}
+
+func isErrOpRead(err error) bool {
+	ne, ok := err.(*net.OpError)
+	if !ok {
+		return false
+	}
+	return ne.Op == "read"
+}
