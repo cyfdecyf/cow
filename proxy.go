@@ -9,12 +9,10 @@ import (
 	"io"
 	"math/rand"
 	"net"
-	// "reflect"
+	"reflect"
 	"strings"
 	"time"
 )
-
-// var _ = reflect.TypeOf
 
 // As I'm using ReadSlice to read line, it's possible to get
 // bufio.ErrBufferFull while reading line, so set it to a large value to
@@ -406,7 +404,7 @@ func (c *clientConn) handleServerReadError(r *Request, sv *serverConn, err error
 		sendErrorPage(c, "502 read error", err.Error(), errMsg)
 		return errPageSent
 	}
-	errl.Println("Unhandled server read error:", err, r)
+	errl.Println(msg+" unhandled server read error:", err, reflect.TypeOf(err), r)
 	return errShouldClose
 }
 
@@ -438,20 +436,6 @@ func (c *clientConn) handleClientReadError(r *Request, err error, msg string) er
 func (c *clientConn) handleClientWriteError(r *Request, err error, msg string) error {
 	// debug.Printf("handleClientWriteError: %s %v %v\n", msg, err, r)
 	return err
-}
-
-func isErrOpWrite(err error) bool {
-	if ne, ok := err.(*net.OpError); ok && ne.Op == "write" {
-		return true
-	}
-	return false
-}
-
-func isErrOpRead(err error) bool {
-	if ne, ok := err.(*net.OpError); ok && ne.Op == "read" {
-		return true
-	}
-	return false
 }
 
 func (c *clientConn) readResponse(sv *serverConn, r *Request, rp *Response) (err error) {
@@ -510,11 +494,13 @@ func (c *clientConn) readResponse(sv *serverConn, r *Request, rp *Response) (err
 				// Proxy can't send error page here because response header has
 				// been sent.
 				errl.Println("unexpected EOF reading body from server", r)
+			} else if isErrOpRead(err) {
+				return c.handleServerReadError(r, sv, err, "Read response body from server.")
 			} else if isErrOpWrite(err) {
-				err = c.handleClientWriteError(r, err, "Write to client response body.")
-			} else {
-				err = c.handleServerReadError(r, sv, err, "Read response body from server.")
+				return c.handleClientWriteError(r, err, "Write response body to client.")
 			}
+			errl.Println("sendBody unknown network op error", reflect.TypeOf(err), r)
+			return errShouldClose
 		}
 	}
 	r.state = rsDone
@@ -1110,7 +1096,7 @@ func (sv *serverConn) doRequest(c *clientConn, r *Request, rp *Response) (err er
 	if err == nil {
 		sv.updateVisit()
 	}
-	return
+	return err
 }
 
 // Send response body if header specifies content length

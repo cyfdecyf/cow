@@ -30,3 +30,19 @@ func isDNSError(err error) bool {
 	// reflect.TypeOf(err), err.Error())
 	return strings.Contains(err.Error(), "No such host")
 }
+
+func isErrOpWrite(err error) bool {
+	ne, ok := err.(*net.OpError)
+	if !ok {
+		return false
+	}
+	return ne.Op == "WSASend"
+}
+
+func isErrOpRead(err error) bool {
+	ne, ok := err.(*net.OpError)
+	if !ok {
+		return false
+	}
+	return ne.Op == "WSARecv"
+}
