@@ -26,9 +26,16 @@ func isErrConnReset(err error) bool {
 }
 
 func isDNSError(err error) bool {
-	// fmt.Printf("calling isDNSError for err type: %v Error() %s\n",
-	// reflect.TypeOf(err), err.Error())
-	return strings.Contains(err.Error(), "No such host")
+	/*
+		fmt.Printf("calling isDNSError for err type: %v %s\n",
+			reflect.TypeOf(err), err.Error())
+	*/
+	// DNS error are not of type DNSError on Windows, so I used this ugly
+	// hack.
+	errMsg := err.Error()
+	return strings.Contains(errMsg, "No such host") ||
+		strings.Contains(errMsg, "GetAddrInfoW") ||
+		strings.Contains(errMsg, "dial tcp")
 }
 
 func isErrOpWrite(err error) bool {
