@@ -671,7 +671,7 @@ func (c *clientConn) createConnection(r *Request, siteInfo *VisitCnt) (srvconn c
 		// debug.Printf("type of err %v\n", reflect.TypeOf(err))
 		// GFW may cause dns lookup fail (net.DNSError),
 		// may also cause connection time out or reset (net.OpError)
-		if isDNSError(err) || maybeBlocked(err) {
+		if maybeBlocked(err) || isDNSError(err) {
 			// Try to create connection by parent proxy
 			var socksErr error
 			if srvconn, socksErr = createParentProxyConnection(r.URL); socksErr == nil {

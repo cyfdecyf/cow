@@ -7,7 +7,7 @@ import (
 
 var noShadowSocksErr = errors.New("No shadowsocks configuration")
 
-var cipher []ss.Cipher
+var cipher []*ss.Cipher
 
 func initShadowSocks() {
 	// error checking is done when parsing config
