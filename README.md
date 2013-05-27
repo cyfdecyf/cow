@@ -2,7 +2,7 @@
 
 COW 是一个利用二级代理帮助自动化翻墙的 HTTP 代理服务器。它能自动检测被墙网站，且仅对被墙网站使用二级代理。
 
-当前版本：0.6.2
+当前版本：0.6.3
 [![Build Status](https://travis-ci.org/cyfdecyf/cow.png?branch=develop)](https://travis-ci.org/cyfdecyf/cow)
 
 **如果要给我发 pull request，请在最新的 develop branch 上进行开发。**
@@ -24,7 +24,7 @@ COW 是一个利用二级代理帮助自动化翻墙的 HTTP 代理服务器。�
 
         curl -s -L https://github.com/cyfdecyf/cow/raw/master/install-cow.sh | bash
 
-- **Windows:** 从 [Google Code](http://code.google.com/p/cow-proxy/downloads/list) 下载
+- **Windows:** 访问[这个网页](http://dl.chenyufei.info/cow/) 下载
 - 如需其他平台二进制文件，请从源码安装
 
 bug fix 和新功能在测试后会直接进入 master branch 而不等到发布下一个版本，因此二进制版本可能缺少一些新功能。

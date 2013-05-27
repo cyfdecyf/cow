@@ -1,6 +1,6 @@
 #!/bin/bash
 
-version=0.6.2
+version=0.6.3
 
 arch=`uname -m`
 case $arch in
@@ -73,7 +73,7 @@ fi
 # Download COW binary
 bin=cow-$os$arch-$version
 tmpbin=/tmp/cow
-binary_url="https://cow-proxy.googlecode.com/files/$bin.gz"
+binary_url="http://dl.chenyufei.info/cow/$bin.gz"
 echo "Downloading cow binary $binary_url to $tmpbin.gz"
 curl -L "$binary_url" -o $tmpbin.gz || \
     exit_on_fail "Downloading cow binary failed"
