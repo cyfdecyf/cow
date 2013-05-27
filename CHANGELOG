@@ -1,3 +1,7 @@
+0.6.3 (2013-05-27)
+    * Support more shadowsocks encryption method
+    * Fix several windows network error detection issues (dirty hack)
+
 0.6.2 (2013-05-17)
     * Support multiple shadowsocks servers
     * Simple load balancing: backup or hash strategy
