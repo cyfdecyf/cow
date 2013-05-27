@@ -5,6 +5,8 @@ install:
   - go get github.com/shadowsocks/shadowsocks-go/shadowsocks
   - go get github.com/cyfdecyf/bufio
   - go get github.com/cyfdecyf/leakybuf
+  - go get code.google.com/p/go.crypto/blowfish
+  - go get code.google.com/p/go.crypto/cast5
 script:
   - cd $TRAVIS_BUILD_DIR
   - go test -v
