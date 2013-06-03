@@ -291,7 +291,9 @@ func (c *clientConn) serve() {
 		}
 		cnt++
 		if err = c.getRequest(&r); err != nil {
-			sendErrorPage(c, "404 Bad request", "Bad request", err.Error())
+			if !isErrTimeout(err) {
+				sendErrorPage(c, "404 Bad request", "Bad request", err.Error())
+			}
 			return
 		}
 		if dbgRq {
