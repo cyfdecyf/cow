@@ -824,7 +824,7 @@ func copyServer2Client(sv *serverConn, c *clientConn, r *Request) (err error) {
 	*/
 
 	total := 0
-	const directThreshold = 4096
+	const directThreshold = 8192
 	readTimeoutSet := false
 	for {
 		// debug.Println("srv->cli")
