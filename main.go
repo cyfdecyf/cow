@@ -47,8 +47,6 @@ func main() {
 
 	initLog()
 	initAuth()
-	initSocksServer()
-	initShadowSocks()
 	initSiteStat()
 	initPAC() // initPAC uses siteStat, so must init after site stat
 
@@ -73,7 +71,7 @@ func main() {
 	}
 
 	go sigHandler()
-	go runSSH()
+	// go runSSH()
 	go runEstimateTimeout()
 
 	done := make(chan byte, 1)

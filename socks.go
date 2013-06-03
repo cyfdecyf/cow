@@ -30,17 +30,19 @@ var socksMsgVerMethodSelection = []byte{
 	0,   // no authorization required
 }
 
-func initSocksServer() {
-	if config.SocksParent != "" {
-		debug.Println("has socks server:", config.SocksParent)
-	}
+type socksParent struct {
+	server string
 }
 
-func createctSocksConnection(url *URL) (cn conn, err error) {
-	c, err := net.Dial("tcp", config.SocksParent)
+func newSocksParent(server string) socksParent {
+	return socksParent{server}
+}
+
+func (sp socksParent) connect(url *URL) (cn conn, err error) {
+	c, err := net.Dial("tcp", sp.server)
 	if err != nil {
 		errl.Printf("can't connect to socks server %s for %s: %v\n",
-			config.SocksParent, url.HostPort, err)
+			sp.server, url.HostPort, err)
 		return
 	}
 	hasErr := false
@@ -136,5 +138,5 @@ func createctSocksConnection(url *URL) (cn conn, err error) {
 
 	debug.Println("connected to:", url.HostPort, "via socks server")
 	// Now the socket can be used to pass data.
-	return conn{c, ctSocksConn}, nil
+	return conn{ctSocksConn, c, sp}, nil
 }

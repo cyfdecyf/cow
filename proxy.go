@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"github.com/cyfdecyf/bufio"
@@ -92,8 +93,9 @@ const (
 )
 
 type conn struct {
-	net.Conn
 	connType
+	net.Conn
+	creator proxyConnector
 }
 
 var zeroConn conn
@@ -555,7 +557,7 @@ func createctDirectConnection(url *URL, siteInfo *VisitCnt) (conn, error) {
 		return zeroConn, err
 	}
 	debug.Println("connected to", url.HostPort)
-	return conn{c, ctDirectConn}, nil
+	return conn{ctDirectConn, c, nil}, nil
 }
 
 func isErrTimeout(err error) bool {
@@ -569,35 +571,69 @@ func maybeBlocked(err error) bool {
 	return isErrTimeout(err) || isErrConnReset(err)
 }
 
-func createHttpProxyConnection(url *URL) (cn conn, err error) {
-	c, err := net.Dial("tcp", config.HttpParent)
-	if err != nil {
-		errl.Printf("can't connect to http parent proxy for %s: %v\n", url.HostPort, err)
-		return zeroConn, err
-	}
-	debug.Println("connected to:", url.HostPort, "via http parent proxy")
-	return conn{c, ctHttpProxyConn}, nil
+type httpParent struct {
+	server     string
+	authHeader []byte
 }
 
-type proxyConnectionFunc func(*URL) (conn, error)
+func newHttpParent(server string) *httpParent {
+	return &httpParent{server: server}
+}
+
+func (hp *httpParent) initAuth(userPasswd string) {
+	b64 := base64.StdEncoding.EncodeToString([]byte(userPasswd))
+	hp.authHeader = []byte(headerProxyAuthorization + ": Basic " + b64 + CRLF)
+}
+
+func (hp *httpParent) connect(url *URL) (cn conn, err error) {
+	c, err := net.Dial("tcp", hp.server)
+	if err != nil {
+		errl.Printf("can't connect to http parent proxy %s for %s: %v\n", hp.server, url.HostPort, err)
+		return zeroConn, err
+	}
+	debug.Println("connected to:", url.HostPort, "via http parent proxy:", hp.server)
+	return conn{ctHttpProxyConn, c, hp}, nil
+}
+
+type proxyConnector interface {
+	connect(*URL) (conn, error)
+}
 
 type ParentProxy struct {
-	connect proxyConnectionFunc
+	proxyConnector
 	failCnt int
 }
 
 var parentProxy []ParentProxy
 
-func callParentProxyCreateFunc(i int, url *URL) (srvconn conn, err error) {
+func printParentProxy() {
+	debug.Println("avaiable parent proxies:")
+	for _, pp := range parentProxy {
+		switch pc := pp.proxyConnector.(type) {
+		case *shadowsocksParent:
+			fmt.Println("\tshadowsocks: ", pc.server)
+		case *httpParent:
+			fmt.Println("\thttp parent: ", pc.server)
+		case socksParent:
+			fmt.Println("\tsocks parent: ", pc.server)
+		}
+	}
+}
+
+func addParentProxy(pc proxyConnector) {
+	parentProxy = append(parentProxy, ParentProxy{pc, 0})
+}
+
+func (pp *ParentProxy) connect(url *URL) (srvconn conn, err error) {
 	const maxFailCnt = 30
-	srvconn, err = parentProxy[i].connect(url)
+	srvconn, err = pp.proxyConnector.connect(url)
 	if err != nil {
-		if parentProxy[i].failCnt < maxFailCnt && !networkBad() {
-			parentProxy[i].failCnt++
+		if pp.failCnt < maxFailCnt && !networkBad() {
+			pp.failCnt++
 		}
 		return
 	}
-	parentProxy[i].failCnt = 0
+	pp.failCnt = 0
 	return
 }
 
@@ -613,19 +649,19 @@ func createParentProxyConnection(url *URL) (srvconn conn, err error) {
 
 	for i := 0; i < nproxy; i++ {
 		proxyId = (proxyId + i) % nproxy
+		pp := &parentProxy[proxyId]
 		// skip failed server, but try it with some probability
-		failcnt := parentProxy[proxyId].failCnt
-		if failcnt > 0 && rand.Intn(failcnt+baseFailCnt) != 0 {
+		if pp.failCnt > 0 && rand.Intn(pp.failCnt+baseFailCnt) != 0 {
 			skipped = append(skipped, proxyId)
 			continue
 		}
-		if srvconn, err = callParentProxyCreateFunc(proxyId, url); err == nil {
+		if srvconn, err = pp.connect(url); err == nil {
 			return
 		}
 	}
 	// last resort, try skipped one, not likely to succeed
 	for _, skippedId := range skipped {
-		if srvconn, err = callParentProxyCreateFunc(skippedId, url); err == nil {
+		if srvconn, err = parentProxy[skippedId].connect(url); err == nil {
 			return
 		}
 	}
@@ -1037,8 +1073,12 @@ func (sv *serverConn) sendHTTPProxyRequest(r *Request, c *clientConn) (err error
 			"sending proxy request line to http parent")
 	}
 	// Add authorization header for parent http proxy
-	if config.httpAuthHeader != nil {
-		if _, err = sv.Write(config.httpAuthHeader); err != nil {
+	hp, ok := sv.creator.(*httpParent)
+	if !ok {
+		panic("must be http parent connection")
+	}
+	if hp.authHeader != nil {
+		if _, err = sv.Write(hp.authHeader); err != nil {
 			return c.handleServerWriteError(r, sv, err,
 				"sending proxy authorization header to http parent")
 		}
