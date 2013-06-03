@@ -52,7 +52,7 @@ func main() {
 	initSiteStat()
 	initPAC() // initPAC uses siteStat, so must init after site stat
 
-	if len(parentProxyCreator) == 0 {
+	if len(parentProxy) == 0 {
 		info.Println("no parent proxy server, can't handle blocked sites")
 	} else {
 		hasParentProxy = true

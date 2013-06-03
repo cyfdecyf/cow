@@ -215,7 +215,7 @@ func (p configParser) ParseSocksParent(val string) {
 	if !hasPort(config.SocksParent) {
 		Fatal("parent socks server must have port specified")
 	}
-	parentProxyCreator = append(parentProxyCreator, createctSocksConnection)
+	parentProxy = append(parentProxy, ParentProxy{connect: createctSocksConnection})
 }
 
 func (p configParser) ParseSshServer(val string) {
@@ -227,7 +227,7 @@ func (p configParser) ParseHttpParent(val string) {
 	if !hasPort(config.HttpParent) {
 		Fatal("parent http server must have port specified")
 	}
-	parentProxyCreator = append(parentProxyCreator, createHttpProxyConnection)
+	parentProxy = append(parentProxy, ParentProxy{connect: createHttpProxyConnection})
 	config.hasHttpParent = true
 }
 
@@ -274,7 +274,8 @@ func (p configParser) ParseShadowSocks(val string) {
 	if !hasPort(val) {
 		Fatal("shadowsocks server must have port specified")
 	}
-	parentProxyCreator = append(parentProxyCreator, createShadowSocksConnecter(len(config.ShadowSocks)))
+	parentProxy = append(parentProxy, ParentProxy{
+		connect: createShadowSocksConnecter(len(config.ShadowSocks))})
 	config.ShadowSocks = append(config.ShadowSocks, val)
 }
 
@@ -432,10 +433,9 @@ func checkConfig() {
 		// empty string in addrInPac means same as listenAddr
 		config.AddrInPAC = make([]string, len(config.ListenAddr))
 	}
-	if len(parentProxyCreator) <= 1 {
+	if len(parentProxy) <= 1 {
 		config.LoadBalance = loadBalanceBackup
 	}
-	parentProxyFailCnt = make([]int, len(parentProxyCreator))
 }
 
 func mkConfigDir() (err error) {

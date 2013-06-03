@@ -32,7 +32,7 @@ func initShadowSocks() {
 }
 
 // Create shadowsocks connection function which uses the ith shadowsocks server
-func createShadowSocksConnecter(i int) parentProxyConnectionFunc {
+func createShadowSocksConnecter(i int) proxyConnectionFunc {
 	f := func(url *URL) (cn conn, err error) {
 		c, err := ss.Dial(url.HostPort, config.ShadowSocks[i], cipher[i].Copy())
 		if err != nil {

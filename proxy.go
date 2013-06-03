@@ -579,28 +579,32 @@ func createHttpProxyConnection(url *URL) (cn conn, err error) {
 	return conn{c, ctHttpProxyConn}, nil
 }
 
-type parentProxyConnectionFunc func(*URL) (conn, error)
+type proxyConnectionFunc func(*URL) (conn, error)
 
-var parentProxyCreator []parentProxyConnectionFunc
-var parentProxyFailCnt []int // initialized in checkConfig
+type ParentProxy struct {
+	connect proxyConnectionFunc
+	failCnt int
+}
+
+var parentProxy []ParentProxy
 
 func callParentProxyCreateFunc(i int, url *URL) (srvconn conn, err error) {
 	const maxFailCnt = 30
-	srvconn, err = parentProxyCreator[i](url)
+	srvconn, err = parentProxy[i].connect(url)
 	if err != nil {
-		if parentProxyFailCnt[i] < maxFailCnt && !networkBad() {
-			parentProxyFailCnt[i]++
+		if parentProxy[i].failCnt < maxFailCnt && !networkBad() {
+			parentProxy[i].failCnt++
 		}
 		return
 	}
-	parentProxyFailCnt[i] = 0
+	parentProxy[i].failCnt = 0
 	return
 }
 
 func createParentProxyConnection(url *URL) (srvconn conn, err error) {
 	const baseFailCnt = 9
 	var skipped []int
-	nproxy := len(parentProxyCreator)
+	nproxy := len(parentProxy)
 
 	proxyId := 0
 	if config.LoadBalance == loadBalanceHash {
@@ -610,7 +614,7 @@ func createParentProxyConnection(url *URL) (srvconn conn, err error) {
 	for i := 0; i < nproxy; i++ {
 		proxyId = (proxyId + i) % nproxy
 		// skip failed server, but try it with some probability
-		failcnt := parentProxyFailCnt[proxyId]
+		failcnt := parentProxy[proxyId].failCnt
 		if failcnt > 0 && rand.Intn(failcnt+baseFailCnt) != 0 {
 			skipped = append(skipped, proxyId)
 			continue
@@ -625,7 +629,7 @@ func createParentProxyConnection(url *URL) (srvconn conn, err error) {
 			return
 		}
 	}
-	if len(parentProxyCreator) != 0 {
+	if len(parentProxy) != 0 {
 		return
 	}
 	return zeroConn, errNoParentProxy
