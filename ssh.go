@@ -3,11 +3,12 @@ package main
 import (
 	"net"
 	"os/exec"
+	"strings"
 	"time"
 )
 
-func SshRunning() bool {
-	c, err := net.Dial("tcp", config.SocksParent)
+func SshRunning(socksServer string) bool {
+	c, err := net.Dial("tcp", socksServer)
 	if err != nil {
 		return false
 	}
@@ -15,42 +16,38 @@ func SshRunning() bool {
 	return true
 }
 
-func runSSH() {
-	if config.SshServer == "" {
-		return
-	}
-	if config.SocksParent == "" {
-		errl.Println("Missing option: ssh server given without socks address")
-		return
-	}
-
-	_, port := splitHostPort(config.SocksParent)
-	sshServer, sshPort := splitHostPort(config.SshServer)
-	if sshPort == "" {
-		sshPort = "22"
-	}
+func runOneSSH(server string) {
+	// config parsing canonicalize sshServer config value
+	arr := strings.SplitN(server, ":", 3)
+	sshServer, localPort, sshPort := arr[0], arr[1], arr[2]
 	alreadyRunPrinted := false
 
+	socksServer := "127.0.0.1:" + localPort
 	for {
-		if SshRunning() {
+		if SshRunning(socksServer) {
 			if !alreadyRunPrinted {
-				debug.Println("ssh socks server maybe already running, as cow can connect to",
-					config.SocksParent)
+				debug.Println("ssh socks server", socksServer, "maybe already running")
 				alreadyRunPrinted = true
 			}
-			// check server liveness in 1 minute
-			time.Sleep(60 * time.Second)
+			time.Sleep(30 * time.Second)
 			continue
 		}
 
 		// -n redirects stdin from /dev/null
 		// -N do not execute remote command
-		cmd := exec.Command("ssh", "-n", "-N", "-D", port, "-p", sshPort, sshServer)
+		debug.Println("connecting to ssh server", sshServer+":"+sshPort)
+		cmd := exec.Command("ssh", "-n", "-N", "-D", localPort, "-p", sshPort, sshServer)
 		if err := cmd.Run(); err != nil {
 			debug.Println("ssh:", err)
 		}
-		// debug.Println("ssh exited, reconnect")
+		debug.Println("ssh", sshServer+":"+sshPort, "exited, reconnect")
 		time.Sleep(5 * time.Second)
 		alreadyRunPrinted = false
+	}
+}
+
+func runSSH() {
+	for _, server := range config.SshServer {
+		go runOneSSH(server)
 	}
 }

@@ -32,7 +32,7 @@ type Config struct {
 	AlwaysProxy bool
 	LoadBalance LoadBalanceMode
 
-	SshServer string // TODO support multiple ssh server options
+	SshServer []string
 
 	// http parent proxy
 	hasHttpParent bool
@@ -207,7 +207,19 @@ func (p configParser) ParseSocksParent(val string) {
 }
 
 func (p configParser) ParseSshServer(val string) {
-	config.SshServer = val
+	arr := strings.Split(val, ":")
+	if len(arr) == 2 {
+		val += ":22"
+	} else if len(arr) == 3 {
+		if arr[2] == "" {
+			val += "22"
+		}
+	} else {
+		Fatal("sshServer should be in the form of: user@server:local_socks_port[:server_ssh_port]")
+	}
+	// add created socks server
+	p.ParseSocksParent("127.0.0.1:" + arr[1])
+	config.SshServer = append(config.SshServer, val)
 }
 
 var http struct {

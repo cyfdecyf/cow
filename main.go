@@ -74,7 +74,7 @@ func main() {
 	}
 
 	go sigHandler()
-	// go runSSH()
+	go runSSH()
 	go runEstimateTimeout()
 
 	done := make(chan byte, 1)

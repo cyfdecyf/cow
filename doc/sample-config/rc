@@ -24,16 +24,20 @@ listen = 127.0.0.1:7777
 # SOCKS5 代理
 #############################
 
-# SOCKS5 代理地址
+# SOCKS5 代理地址，可重复指定多个
 #socksParent = 127.0.0.1:1080
 
 # 下面的选项可以让 COW 执行 ssh 命令创建本地 socks 代理，并在 ssh 断开后重连
-# 注意这一功能需要配置好 ssh public key authentication
+# COW 会自动使用通过 ssh 命令创建的 socks 代理，请不要针对该代理再次指定 socksParent
+# 可重复指定多个
+#
+# 注意这一功能必须使用 ssh public key authentication
 #
 # 若指定该选项，COW 将执行以下命令：
-#     ssh -n -N -D <socksParent 选项中的端口> -p <sshServer 选项中的端口> <sshServer>
-# sshServer 端口默认为 22。如果要指定其他 ssh 选项，请修改 ~/.ssh/config
-#sshServer = user@server[:port]
+#     ssh -n -N -D <local_socks_port> -p <server_ssh_port> <user@server>
+# server_ssh_port 端口不指定则默认为 22
+# 如果要指定其他 ssh 选项，请修改 ~/.ssh/config
+#sshServer = user@server:local_socks_port[:server_ssh_port]
 
 #############################
 # shadowsocks 代理
@@ -53,6 +57,8 @@ listen = 127.0.0.1:7777
 #############################
 # HTTP 代理
 #############################
+
+# 类似 shadowsocks，按顺序重复来指定多个二级 HTTP 代理
 
 # 可使用 goagent 等 HTTP 代理作为二级代理翻墙
 #httpParent = 127.0.0.1:8087
