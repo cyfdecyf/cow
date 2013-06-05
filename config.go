@@ -278,9 +278,6 @@ var shadow struct {
 }
 
 func (p configParser) ParseShadowSocks(val string) {
-	if !hasPort(val) {
-		Fatal("shadowsocks server must have port specified")
-	}
 	if shadow.serverCnt-shadow.passwdCnt > 1 {
 		Fatal("must specify shadowPasswd for every shadowSocks server")
 	}
@@ -292,6 +289,13 @@ func (p configParser) ParseShadowSocks(val string) {
 			shadow.methodCnt = shadow.serverCnt
 		}
 		shadow.parent.initCipher(shadow.passwd, shadow.method)
+	}
+	if val == "" { // the final call
+		shadow.parent = nil
+		return
+	}
+	if !hasPort(val) {
+		Fatal("shadowsocks server must have port specified")
 	}
 	shadow.parent = newShadowsocksParent(val)
 	addParentProxy(shadow.parent)
@@ -325,7 +329,7 @@ func checkShadowsocks() {
 	// parse the last shadowSocks option again to initialize the last
 	// shadowsocks server
 	parser := configParser{}
-	parser.ParseShadowSocks("dummyshadowsocks:1234")
+	parser.ParseShadowSocks("")
 }
 
 // Put actual authentication related config parsing in auth.go, so config.go

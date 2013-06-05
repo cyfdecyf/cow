@@ -54,6 +54,9 @@ func main() {
 		info.Println("no parent proxy server, can't handle blocked sites")
 	} else {
 		hasParentProxy = true
+		if debug {
+			printParentProxy()
+		}
 	}
 
 	/*
