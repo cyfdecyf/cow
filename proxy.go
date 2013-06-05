@@ -2,13 +2,11 @@ package main
 
 import (
 	"bytes"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"github.com/cyfdecyf/bufio"
 	"github.com/cyfdecyf/leakybuf"
 	"io"
-	"math/rand"
 	"net"
 	"reflect"
 	"strings"
@@ -545,7 +543,7 @@ func (c *clientConn) removeServerConn(sv *serverConn) {
 	delete(c.serverConn, sv.url.HostPort)
 }
 
-func createctDirectConnection(url *URL, siteInfo *VisitCnt) (conn, error) {
+func connectDirect(url *URL, siteInfo *VisitCnt) (conn, error) {
 	to := dialTimeout
 	if siteInfo.OnceBlocked() && to >= defaultDialTimeout {
 		to = minDialTimeout
@@ -571,110 +569,10 @@ func maybeBlocked(err error) bool {
 	return isErrTimeout(err) || isErrConnReset(err)
 }
 
-type httpParent struct {
-	server     string
-	authHeader []byte
-}
-
-func newHttpParent(server string) *httpParent {
-	return &httpParent{server: server}
-}
-
-func (hp *httpParent) initAuth(userPasswd string) {
-	b64 := base64.StdEncoding.EncodeToString([]byte(userPasswd))
-	hp.authHeader = []byte(headerProxyAuthorization + ": Basic " + b64 + CRLF)
-}
-
-func (hp *httpParent) connect(url *URL) (cn conn, err error) {
-	c, err := net.Dial("tcp", hp.server)
-	if err != nil {
-		errl.Printf("can't connect to http parent proxy %s for %s: %v\n", hp.server, url.HostPort, err)
-		return zeroConn, err
-	}
-	debug.Println("connected to:", url.HostPort, "via http parent proxy:", hp.server)
-	return conn{ctHttpProxyConn, c, hp}, nil
-}
-
-type proxyConnector interface {
-	connect(*URL) (conn, error)
-}
-
-type ParentProxy struct {
-	proxyConnector
-	failCnt int
-}
-
-var parentProxy []ParentProxy
-
-func printParentProxy() {
-	debug.Println("avaiable parent proxies:")
-	for _, pp := range parentProxy {
-		switch pc := pp.proxyConnector.(type) {
-		case *shadowsocksParent:
-			fmt.Println("\tshadowsocks: ", pc.server)
-		case *httpParent:
-			fmt.Println("\thttp parent: ", pc.server)
-		case socksParent:
-			fmt.Println("\tsocks parent: ", pc.server)
-		}
-	}
-}
-
-func addParentProxy(pc proxyConnector) {
-	parentProxy = append(parentProxy, ParentProxy{pc, 0})
-}
-
-func (pp *ParentProxy) connect(url *URL) (srvconn conn, err error) {
-	const maxFailCnt = 30
-	srvconn, err = pp.proxyConnector.connect(url)
-	if err != nil {
-		if pp.failCnt < maxFailCnt && !networkBad() {
-			pp.failCnt++
-		}
-		return
-	}
-	pp.failCnt = 0
-	return
-}
-
-func createParentProxyConnection(url *URL) (srvconn conn, err error) {
-	const baseFailCnt = 9
-	var skipped []int
-	nproxy := len(parentProxy)
-
-	proxyId := 0
-	if config.LoadBalance == loadBalanceHash {
-		proxyId = int(stringHash(url.Host) % uint64(nproxy))
-	}
-
-	for i := 0; i < nproxy; i++ {
-		proxyId = (proxyId + i) % nproxy
-		pp := &parentProxy[proxyId]
-		// skip failed server, but try it with some probability
-		if pp.failCnt > 0 && rand.Intn(pp.failCnt+baseFailCnt) != 0 {
-			skipped = append(skipped, proxyId)
-			continue
-		}
-		if srvconn, err = pp.connect(url); err == nil {
-			return
-		}
-	}
-	// last resort, try skipped one, not likely to succeed
-	for _, skippedId := range skipped {
-		if srvconn, err = parentProxy[skippedId].connect(url); err == nil {
-			return
-		}
-	}
-	if len(parentProxy) != 0 {
-		return
-	}
-	return zeroConn, errNoParentProxy
-}
-
-func (c *clientConn) createConnection(r *Request, siteInfo *VisitCnt) (srvconn conn, err error) {
+func (c *clientConn) connect(r *Request, siteInfo *VisitCnt) (srvconn conn, err error) {
 	var errMsg string
 	if config.AlwaysProxy {
-		if srvconn, err = createParentProxyConnection(r.URL); err == nil {
+		if srvconn, err = connectByParentProxy(r.URL); err == nil {
 			return
 		}
 		errMsg = genErrMsg(r, nil, "Parent proxy connection failed, always using parent proxy.")
@@ -682,7 +580,7 @@ func (c *clientConn) createConnection(r *Request, siteInfo *VisitCnt) (srvconn c
 	}
 	if siteInfo.AsBlocked() && hasParentProxy {
 		// In case of connection error to socks server, fallback to direct connection
-		if srvconn, err = createParentProxyConnection(r.URL); err == nil {
+		if srvconn, err = connectByParentProxy(r.URL); err == nil {
 			return
 		}
 		if siteInfo.AlwaysBlocked() {
@@ -693,13 +591,13 @@ func (c *clientConn) createConnection(r *Request, siteInfo *VisitCnt) (srvconn c
 			errMsg = genErrMsg(r, nil, "Parent proxy connection failed, temporarily blocked site.")
 			goto fail
 		}
-		if srvconn, err = createctDirectConnection(r.URL, siteInfo); err == nil {
+		if srvconn, err = connectDirect(r.URL, siteInfo); err == nil {
 			return
 		}
 		errMsg = genErrMsg(r, nil, "Parent proxy and direct connection failed, maybe blocked site.")
 	} else {
 		// In case of error on direction connection, try parent server
-		if srvconn, err = createctDirectConnection(r.URL, siteInfo); err == nil {
+		if srvconn, err = connectDirect(r.URL, siteInfo); err == nil {
 			return
 		}
 		if !hasParentProxy {
@@ -716,7 +614,7 @@ func (c *clientConn) createConnection(r *Request, siteInfo *VisitCnt) (srvconn c
 		if maybeBlocked(err) || isDNSError(err) {
 			// Try to create connection by parent proxy
 			var socksErr error
-			if srvconn, socksErr = createParentProxyConnection(r.URL); socksErr == nil {
+			if srvconn, socksErr = connectByParentProxy(r.URL); socksErr == nil {
 				c.handleBlockedRequest(r, err)
 				debug.Println("direct connection failed, use parent proxy for", r)
 				return srvconn, nil
@@ -735,7 +633,7 @@ fail:
 
 func (c *clientConn) createServerConn(r *Request) (*serverConn, error) {
 	siteInfo := siteStat.GetVisitCnt(r.URL)
-	srvconn, err := c.createConnection(r, siteInfo)
+	srvconn, err := c.connect(r, siteInfo)
 	if err != nil {
 		return nil, err
 	}
