@@ -194,10 +194,6 @@ func (url *URL) String() string {
 	return url.HostPort + url.Path
 }
 
-func (url *URL) HostIsIP() bool {
-	return hostIsIP(url.Host)
-}
-
 // For port, return empty string if no port specified.
 // This also works for IPv6 address.
 func splitHostPort(s string) (host, port string) {
