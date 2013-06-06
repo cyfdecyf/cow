@@ -332,6 +332,9 @@ func TestHost2Domain(t *testing.T) {
 		{"apple.com.cn", "apple.com.cn"},
 		{"simplehost", ""},
 		{"192.168.1.1", ""},
+		{"10.2.1.1", ""},
+		{"123.45.67.89", "123.45.67.89"},
+		{"172.65.43.21", "172.65.43.21"},
 	}
 
 	for _, td := range testData {
@@ -343,23 +346,38 @@ func TestHost2Domain(t *testing.T) {
 }
 
 func TestHostIsIP(t *testing.T) {
-	if !hostIsIP("192.168.1.1") {
-		t.Error("192.168.1.1 is ip")
+	var testData = []struct {
+		host  string
+		isIP  bool
+		isPri bool
+	}{
+		{"192.168.1.1", true, true},
+		{"10.2.3.4", true, true},
+		{"172.16.5.3", true, true},
+		{"172.20.5.3", true, true},
+		{"172.31.5.3", true, true},
+		{"172.15.1.1", true, false},
+		{"123.45.67.89", true, false},
+		{"foo.com", false, false},
+		{"www.foo.com", false, false},
+		{"www.bar.foo.com", false, false},
 	}
 
-	if hostIsIP("256.3.5.3") {
-		t.Error("256.3.5.3 is not ip")
-	}
-
-	if hostIsIP("192.168.1.1.1") {
-		t.Error("192.168.1.1.1 is not ip")
-	}
-
-	if hostIsIP("www.google.com") {
-		t.Error("www.google.com is not ip")
-	}
-
-	if hostIsIP("foo.www.google.com") {
-		t.Error("foo.www.google.com is not ip")
+	for _, td := range testData {
+		isIP, isPri := hostIsIP(td.host)
+		if isIP != td.isIP {
+			if td.isIP {
+				t.Error(td.host, "is IP address")
+			} else {
+				t.Error(td.host, "is NOT IP address")
+			}
+		}
+		if isPri != td.isPri {
+			if td.isPri {
+				t.Error(td.host, "is private IP address")
+			} else {
+				t.Error(td.host, "is NOT private IP address")
+			}
+		}
 	}
 }

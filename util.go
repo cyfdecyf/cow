@@ -388,22 +388,32 @@ func md5sum(ss ...string) string {
 	return fmt.Sprintf("%x", h.Sum(nil))
 }
 
-// only handles IPv4 address now
-func hostIsIP(host string) bool {
-	parts := strings.Split(host, ".")
-	if len(parts) != 4 {
-		return false
+// hostIsIP determines whether a host address is an IP address and whether
+// it is private. Currenly only handles IPv4 addresses.
+func hostIsIP(host string) (isIP, isPrivate bool) {
+	part := strings.Split(host, ".")
+	if len(part) != 4 {
+		return false, false
 	}
-	for _, i := range parts {
+	for _, i := range part {
 		if len(i) == 0 || len(i) > 3 {
-			return false
+			return false, false
 		}
 		n, err := strconv.Atoi(i)
 		if err != nil || n < 0 || n > 255 {
-			return false
+			return false, false
 		}
 	}
-	return true
+	if part[0] == "10" || (part[0] == "192" && part[1] == "168") {
+		return true, true
+	}
+	if part[0] == "172" {
+		n, _ := strconv.Atoi(part[1])
+		if 16 <= n && n <= 31 {
+			return true, true
+		}
+	}
+	return true, false
 }
 
 // NetNbitIPv4Mask returns a IPMask with highest n bit set.
@@ -441,11 +451,15 @@ func trimLastDot(s string) string {
 }
 
 // host2Domain returns the domain of a host. It will recognize domains like
-// google.com.hk. Returns empty string for simple host.
+// google.com.hk. Returns empty string for simple host and internal IP.
 func host2Domain(host string) (domain string) {
 	host, _ = splitHostPort(host)
-	if hostIsIP(host) {
+	isIP, isPrivate := hostIsIP(host)
+	if isPrivate {
 		return ""
+	}
+	if isIP {
+		return host
 	}
 	host = trimLastDot(host)
 	lastDot := strings.LastIndex(host, ".")

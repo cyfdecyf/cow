@@ -230,7 +230,7 @@ func (ss *SiteStat) TempBlocked(url *URL) {
 var alwaysDirectVisitCnt = newVisitCnt(userCnt, 0)
 
 func (ss *SiteStat) GetVisitCnt(url *URL) (vcnt *VisitCnt) {
-	if url.Domain == "" { // simple host or ip
+	if url.Domain == "" { // simple host or private ip
 		return alwaysDirectVisitCnt
 	}
 	if vcnt = ss.get(url.Host); vcnt != nil {
