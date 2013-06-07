@@ -192,11 +192,6 @@ func (p configParser) ParseAddrInPAC(val string) {
 	}
 }
 
-func (p configParser) ParseSocks(val string) {
-	fmt.Println("socks option is going to be renamed to socksParent in the future, please change it")
-	p.ParseSocksParent(val)
-}
-
 // error checking is done in check config
 
 func (p configParser) ParseSocksParent(val string) {
@@ -247,21 +242,6 @@ func (p configParser) ParseHttpUserPasswd(val string) {
 	}
 	http.parent.initAuth(val)
 	http.passwdCnt++
-}
-
-func (p configParser) ParseUpdateBlocked(val string) {
-	// config.UpdateBlocked = parseBool(val, "updateBlocked")
-	fmt.Println("updateBlocked option will be removed in future, please remove it")
-}
-
-func (p configParser) ParseUpdateDirect(val string) {
-	// config.UpdateDirect = parseBool(val, "updateDirect")
-	fmt.Println("updateDirect option will be removed in future, please remove it")
-}
-
-func (p configParser) ParseAutoRetry(val string) {
-	// config.AutoRetry = parseBool(val, "autoRetry")
-	fmt.Println("autoRetry option will be removed in future, please remove it")
 }
 
 func (p configParser) ParseAlwaysProxy(val string) {
