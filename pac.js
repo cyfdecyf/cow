@@ -38,7 +38,7 @@ function hostIsIP(host) {
 			return [false, false];
 		}
 	}
-	if (part[0] == '10' || (part[0] == '192' && part[1] == '168')) {
+	if (part[0] == '127' || part[0] == '10' || (part[0] == '192' && part[1] == '168')) {
 		return [true, true];
 	}
 	if (part[0] == '172') {
@@ -95,6 +95,8 @@ function FindProxyForURL(url, host) {
 var testData, td, i;
 
 testData = [
+	{ ip: '127.0.0.1', isIP: true, isPrivate: true },
+	{ ip: '127.2.1.1', isIP: true, isPrivate: true },
 	{ ip: '192.168.1.1', isIP: true, isPrivate: true },
 	{ ip: '172.16.1.1', isIP: true, isPrivate: true },
 	{ ip: '172.20.1.1', isIP: true, isPrivate: true },
