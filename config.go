@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/base64"
 	"flag"
 	"fmt"
 	"github.com/cyfdecyf/bufio"
@@ -15,7 +14,7 @@ import (
 )
 
 const (
-	version           = "0.6.3"
+	version           = "0.7"
 	defaultListenAddr = "127.0.0.1:7777"
 )
 
@@ -33,20 +32,10 @@ type Config struct {
 	AlwaysProxy bool
 	LoadBalance LoadBalanceMode
 
-	// socks parent proxy
-	SocksParent string
-	SshServer   string
+	SshServer []string
 
 	// http parent proxy
-	HttpParent     string
-	hasHttpParent  bool
-	HttpUserPasswd string
-	httpAuthHeader []byte // basic authentication header constructed from HttpUserPasswd
-
-	// shadowsocks proxy
-	ShadowSocks  []string
-	ShadowPasswd []string
-	ShadowMethod []string // shadowsocks encryption method
+	hasHttpParent bool
 
 	// authenticate client
 	UserPasswd    string
@@ -203,56 +192,56 @@ func (p configParser) ParseAddrInPAC(val string) {
 	}
 }
 
-func (p configParser) ParseSocks(val string) {
-	fmt.Println("socks option is going to be renamed to socksParent in the future, please change it")
-	p.ParseSocksParent(val)
-}
-
 // error checking is done in check config
 
 func (p configParser) ParseSocksParent(val string) {
-	config.SocksParent = val
-	if !hasPort(config.SocksParent) {
+	if !hasPort(val) {
 		Fatal("parent socks server must have port specified")
 	}
-	parentProxyCreator = append(parentProxyCreator, createctSocksConnection)
+	addParentProxy(newSocksParent(val))
 }
 
 func (p configParser) ParseSshServer(val string) {
-	config.SshServer = val
+	arr := strings.Split(val, ":")
+	if len(arr) == 2 {
+		val += ":22"
+	} else if len(arr) == 3 {
+		if arr[2] == "" {
+			val += "22"
+		}
+	} else {
+		Fatal("sshServer should be in the form of: user@server:local_socks_port[:server_ssh_port]")
+	}
+	// add created socks server
+	p.ParseSocksParent("127.0.0.1:" + arr[1])
+	config.SshServer = append(config.SshServer, val)
+}
+
+var http struct {
+	parent    *httpParent
+	serverCnt int
+	passwdCnt int
 }
 
 func (p configParser) ParseHttpParent(val string) {
-	config.HttpParent = val
-	if !hasPort(config.HttpParent) {
+	if !hasPort(val) {
 		Fatal("parent http server must have port specified")
 	}
-	parentProxyCreator = append(parentProxyCreator, createHttpProxyConnection)
 	config.hasHttpParent = true
+	http.parent = newHttpParent(val)
+	addParentProxy(http.parent)
+	http.serverCnt++
 }
 
 func (p configParser) ParseHttpUserPasswd(val string) {
-	config.HttpUserPasswd = val
-	if !isUserPasswdValid(config.HttpUserPasswd) {
+	if !isUserPasswdValid(val) {
 		Fatal("httpUserPassword syntax wrong, should be in the form of user:passwd")
 	}
-	userPwd64 := base64.StdEncoding.EncodeToString([]byte(val))
-	config.httpAuthHeader = []byte(headerProxyAuthorization + ": Basic " + userPwd64 + CRLF)
-}
-
-func (p configParser) ParseUpdateBlocked(val string) {
-	// config.UpdateBlocked = parseBool(val, "updateBlocked")
-	fmt.Println("updateBlocked option will be removed in future, please remove it")
-}
-
-func (p configParser) ParseUpdateDirect(val string) {
-	// config.UpdateDirect = parseBool(val, "updateDirect")
-	fmt.Println("updateDirect option will be removed in future, please remove it")
-}
-
-func (p configParser) ParseAutoRetry(val string) {
-	// config.AutoRetry = parseBool(val, "autoRetry")
-	fmt.Println("autoRetry option will be removed in future, please remove it")
+	if http.passwdCnt >= http.serverCnt {
+		Fatal("must specify httpParent before corresponding httpUserPasswd")
+	}
+	http.parent.initAuth(val)
+	http.passwdCnt++
 }
 
 func (p configParser) ParseAlwaysProxy(val string) {
@@ -270,33 +259,69 @@ func (p configParser) ParseLoadBalance(val string) {
 	}
 }
 
+var shadow struct {
+	parent *shadowsocksParent
+	passwd string
+	method string
+
+	serverCnt int
+	passwdCnt int
+	methodCnt int
+}
+
 func (p configParser) ParseShadowSocks(val string) {
+	if shadow.serverCnt-shadow.passwdCnt > 1 {
+		Fatal("must specify shadowPasswd for every shadowSocks server")
+	}
+	// create new shadowsocks parent if both server and password are given
+	// previously
+	if shadow.parent != nil && shadow.serverCnt == shadow.passwdCnt {
+		if shadow.methodCnt < shadow.serverCnt {
+			shadow.method = ""
+			shadow.methodCnt = shadow.serverCnt
+		}
+		shadow.parent.initCipher(shadow.passwd, shadow.method)
+	}
+	if val == "" { // the final call
+		shadow.parent = nil
+		return
+	}
 	if !hasPort(val) {
 		Fatal("shadowsocks server must have port specified")
 	}
-	parentProxyCreator = append(parentProxyCreator, createShadowSocksConnecter(len(config.ShadowSocks)))
-	config.ShadowSocks = append(config.ShadowSocks, val)
+	shadow.parent = newShadowsocksParent(val)
+	addParentProxy(shadow.parent)
+	shadow.serverCnt++
 }
 
 func (p configParser) ParseShadowPasswd(val string) {
-	if len(config.ShadowPasswd)+1 > len(config.ShadowSocks) {
+	if shadow.passwdCnt >= shadow.serverCnt {
 		Fatal("must specify shadowSocks before corresponding shadowPasswd")
 	}
-	if len(config.ShadowPasswd)+1 < len(config.ShadowSocks) {
+	if shadow.passwdCnt+1 != shadow.serverCnt {
 		Fatal("must specify shadowPasswd for every shadowSocks")
 	}
-	config.ShadowPasswd = append(config.ShadowPasswd, val)
+	shadow.passwd = val
+	shadow.passwdCnt++
 }
 
 func (p configParser) ParseShadowMethod(val string) {
-	if len(config.ShadowMethod)+1 > len(config.ShadowSocks) {
+	if shadow.methodCnt >= shadow.serverCnt {
 		Fatal("must specify shadowSocks before corresponding shadowMethod")
 	}
-	for len(config.ShadowMethod)+1 < len(config.ShadowSocks) {
-		// use empty string for unspecified encryption method
-		config.ShadowMethod = append(config.ShadowMethod, "")
+	// shadowMethod is optional
+	shadow.method = val
+	shadow.methodCnt++
+}
+
+func checkShadowsocks() {
+	if shadow.serverCnt != shadow.passwdCnt {
+		Fatal("number of shadowsocks server and password does not match")
 	}
-	config.ShadowMethod = append(config.ShadowMethod, val)
+	// parse the last shadowSocks option again to initialize the last
+	// shadowsocks server
+	parser := configParser{}
+	parser.ParseShadowSocks("")
 }
 
 // Put actual authentication related config parsing in auth.go, so config.go
@@ -412,14 +437,9 @@ func updateConfig(nc *Config) {
 	}
 }
 
-// Must call checkConfig before using config. It also has config initialization code.
+// Must call checkConfig before using config.
 func checkConfig() {
-	if len(config.ShadowSocks) != len(config.ShadowPasswd) {
-		Fatal("number of shadowsocks server and password does not match")
-	}
-	for len(config.ShadowMethod) < len(config.ShadowSocks) {
-		config.ShadowMethod = append(config.ShadowMethod, "") // default shadowMethod
-	}
+	checkShadowsocks()
 	// listenAddr must be handled first, as addrInPAC dependends on this.
 	if config.ListenAddr == nil {
 		config.ListenAddr = []string{defaultListenAddr}
@@ -432,10 +452,9 @@ func checkConfig() {
 		// empty string in addrInPac means same as listenAddr
 		config.AddrInPAC = make([]string, len(config.ListenAddr))
 	}
-	if len(parentProxyCreator) <= 1 {
+	if len(parentProxy) <= 1 {
 		config.LoadBalance = loadBalanceBackup
 	}
-	parentProxyFailCnt = make([]int, len(parentProxyCreator))
 }
 
 func mkConfigDir() (err error) {

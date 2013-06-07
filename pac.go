@@ -33,28 +33,47 @@ var topLevel = {
 {{.TopLevel}}
 };
 
-// only handles IPv4 address now
+// hostIsIP determines whether a host address is an IP address and whether
+// it is private. Currenly only handles IPv4 addresses.
 function hostIsIP(host) {
-	var parts = host.split('.');
-	if (parts.length != 4) {
-		return false;
+	var part = host.split('.');
+	if (part.length != 4) {
+		return [false, false];
 	}
+	var n;
 	for (var i = 3; i >= 0; i--) {
-		if (parts[i].length === 0 || parts[i].length > 3) {
-			return false;
+		if (part[i].length === 0 || part[i].length > 3) {
+			return [false, false];
 		}
-		var n = Number(parts[i]);
+		n = Number(part[i]);
 		if (isNaN(n) || n < 0 || n > 255) {
-			return false;
+			return [false, false];
 		}
 	}
-	return true;
+	if (part[0] == '10' || (part[0] == '192' && part[1] == '168')) {
+		return [true, true];
+	}
+	if (part[0] == '172') {
+		n = Number(part[1]);
+		if (16 <= n && n <= 31) {
+			return [true, true];
+		}
+	}
+	return [true, false];
 }
 
 function host2Domain(host) {
-	if (hostIsIP(host)) {
-		return ""; // IP address has no domain
+	var arr, isIP, isPrivate;
+	arr = hostIsIP(host);
+	isIP = arr[0];
+	isPrivate = arr[1];
+	if (isPrivate) {
+		return "";
 	}
+	if (isIP) {
+		return host;
+	}
+
 	var lastDot = host.lastIndexOf('.');
 	if (lastDot === -1) {
 		return ""; // simple host name has no domain
@@ -76,7 +95,11 @@ function host2Domain(host) {
 }
 
 function FindProxyForURL(url, host) {
-	return (directAcc[host] || directAcc[host2Domain(host)]) ? direct : httpProxy;
+	var domain = host2Domain(host);
+	if (host.length == domain.length) {
+		return directAcc[host] ? direct : httpProxy;
+	}
+	return (directAcc[host] || directAcc[domain]) ? direct : httpProxy;
 }
 `
 	var err error

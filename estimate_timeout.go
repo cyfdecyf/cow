@@ -32,7 +32,7 @@ var estimateReq = []byte("GET / HTTP/1.1\r\n" +
 // how much time is spent on connect and fetch. This avoids incorrectly
 // considering non-blocked sites as blocked when network connection is bad.
 func estimateTimeout() {
-	debug.Println("estimating timeout")
+	// debug.Println("estimating timeout")
 	buf := connectBuf.Get()
 	defer connectBuf.Put(buf)
 	var est time.Duration
@@ -47,7 +47,7 @@ func estimateTimeout() {
 	defer c.Close()
 
 	est = time.Now().Sub(start) * 5
-	debug.Println("estimated dialTimeout:", est)
+	// debug.Println("estimated dialTimeout:", est)
 	if est > maxTimeout {
 		est = maxTimeout
 	}
@@ -75,7 +75,7 @@ func estimateTimeout() {
 		goto onErr
 	}
 	est = time.Now().Sub(start) * 10
-	debug.Println("estimated read timeout:", est)
+	// debug.Println("estimated read timeout:", est)
 	if est > maxTimeout {
 		est = maxTimeout
 	}

@@ -12,5 +12,5 @@ version=$1
 
 sed -i -e "s,\(\tversion \+= \)\".*\"$,\1\"$version\"," config.go
 sed -i -e "s/version=.*$/version=$version/" install-cow.sh
-sed -i -e "s/当前版本：.*\$/当前版本：$version/" README.md
+sed -i -e "s/当前版本：[^ ]\+ \(.*\)\$/当前版本：$version \1/" README.md
 

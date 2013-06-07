@@ -7,7 +7,6 @@ import (
 	"github.com/cyfdecyf/bufio"
 	"github.com/cyfdecyf/leakybuf"
 	"io"
-	"math/rand"
 	"net"
 	"reflect"
 	"strings"
@@ -92,8 +91,9 @@ const (
 )
 
 type conn struct {
-	net.Conn
 	connType
+	net.Conn
+	creator proxyConnector
 }
 
 var zeroConn conn
@@ -291,7 +291,9 @@ func (c *clientConn) serve() {
 		}
 		cnt++
 		if err = c.getRequest(&r); err != nil {
-			sendErrorPage(c, "404 Bad request", "Bad request", err.Error())
+			if !isErrTimeout(err) {
+				sendErrorPage(c, "404 Bad request", "Bad request", err.Error())
+			}
 			return
 		}
 		if dbgRq {
@@ -541,7 +543,7 @@ func (c *clientConn) removeServerConn(sv *serverConn) {
 	delete(c.serverConn, sv.url.HostPort)
 }
 
-func createctDirectConnection(url *URL, siteInfo *VisitCnt) (conn, error) {
+func connectDirect(url *URL, siteInfo *VisitCnt) (conn, error) {
 	to := dialTimeout
 	if siteInfo.OnceBlocked() && to >= defaultDialTimeout {
 		to = minDialTimeout
@@ -553,7 +555,7 @@ func createctDirectConnection(url *URL, siteInfo *VisitCnt) (conn, error) {
 		return zeroConn, err
 	}
 	debug.Println("connected to", url.HostPort)
-	return conn{c, ctDirectConn}, nil
+	return conn{ctDirectConn, c, nil}, nil
 }
 
 func isErrTimeout(err error) bool {
@@ -567,72 +569,10 @@ func maybeBlocked(err error) bool {
 	return isErrTimeout(err) || isErrConnReset(err)
 }
 
-func createHttpProxyConnection(url *URL) (cn conn, err error) {
-	c, err := net.Dial("tcp", config.HttpParent)
-	if err != nil {
-		errl.Printf("can't connect to http parent proxy for %s: %v\n", url.HostPort, err)
-		return zeroConn, err
-	}
-	debug.Println("connected to:", url.HostPort, "via http parent proxy")
-	return conn{c, ctHttpProxyConn}, nil
-}
-
-type parentProxyConnectionFunc func(*URL) (conn, error)
-
-var parentProxyCreator []parentProxyConnectionFunc
-var parentProxyFailCnt []int // initialized in checkConfig
-
-func callParentProxyCreateFunc(i int, url *URL) (srvconn conn, err error) {
-	const maxFailCnt = 30
-	srvconn, err = parentProxyCreator[i](url)
-	if err != nil {
-		if parentProxyFailCnt[i] < maxFailCnt && !networkBad() {
-			parentProxyFailCnt[i]++
-		}
-		return
-	}
-	parentProxyFailCnt[i] = 0
-	return
-}
-
-func createParentProxyConnection(url *URL) (srvconn conn, err error) {
-	const baseFailCnt = 9
-	var skipped []int
-	nproxy := len(parentProxyCreator)
-
-	proxyId := 0
-	if config.LoadBalance == loadBalanceHash {
-		proxyId = int(stringHash(url.Host) % uint64(nproxy))
-	}
-
-	for i := 0; i < nproxy; i++ {
-		proxyId = (proxyId + i) % nproxy
-		// skip failed server, but try it with some probability
-		failcnt := parentProxyFailCnt[proxyId]
-		if failcnt > 0 && rand.Intn(failcnt+baseFailCnt) != 0 {
-			skipped = append(skipped, proxyId)
-			continue
-		}
-		if srvconn, err = callParentProxyCreateFunc(proxyId, url); err == nil {
-			return
-		}
-	}
-	// last resort, try skipped one, not likely to succeed
-	for _, skippedId := range skipped {
-		if srvconn, err = callParentProxyCreateFunc(skippedId, url); err == nil {
-			return
-		}
-	}
-	if len(parentProxyCreator) != 0 {
-		return
-	}
-	return zeroConn, errNoParentProxy
-}
-
-func (c *clientConn) createConnection(r *Request, siteInfo *VisitCnt) (srvconn conn, err error) {
+func (c *clientConn) connect(r *Request, siteInfo *VisitCnt) (srvconn conn, err error) {
 	var errMsg string
 	if config.AlwaysProxy {
-		if srvconn, err = createParentProxyConnection(r.URL); err == nil {
+		if srvconn, err = connectByParentProxy(r.URL); err == nil {
 			return
 		}
 		errMsg = genErrMsg(r, nil, "Parent proxy connection failed, always using parent proxy.")
@@ -640,7 +580,7 @@ func (c *clientConn) createConnection(r *Request, siteInfo *VisitCnt) (srvconn c
 	}
 	if siteInfo.AsBlocked() && hasParentProxy {
 		// In case of connection error to socks server, fallback to direct connection
-		if srvconn, err = createParentProxyConnection(r.URL); err == nil {
+		if srvconn, err = connectByParentProxy(r.URL); err == nil {
 			return
 		}
 		if siteInfo.AlwaysBlocked() {
@@ -651,13 +591,13 @@ func (c *clientConn) createConnection(r *Request, siteInfo *VisitCnt) (srvconn c
 			errMsg = genErrMsg(r, nil, "Parent proxy connection failed, temporarily blocked site.")
 			goto fail
 		}
-		if srvconn, err = createctDirectConnection(r.URL, siteInfo); err == nil {
+		if srvconn, err = connectDirect(r.URL, siteInfo); err == nil {
 			return
 		}
 		errMsg = genErrMsg(r, nil, "Parent proxy and direct connection failed, maybe blocked site.")
 	} else {
 		// In case of error on direction connection, try parent server
-		if srvconn, err = createctDirectConnection(r.URL, siteInfo); err == nil {
+		if srvconn, err = connectDirect(r.URL, siteInfo); err == nil {
 			return
 		}
 		if !hasParentProxy {
@@ -674,7 +614,7 @@ func (c *clientConn) createConnection(r *Request, siteInfo *VisitCnt) (srvconn c
 		if maybeBlocked(err) || isDNSError(err) {
 			// Try to create connection by parent proxy
 			var socksErr error
-			if srvconn, socksErr = createParentProxyConnection(r.URL); socksErr == nil {
+			if srvconn, socksErr = connectByParentProxy(r.URL); socksErr == nil {
 				c.handleBlockedRequest(r, err)
 				debug.Println("direct connection failed, use parent proxy for", r)
 				return srvconn, nil
@@ -693,7 +633,7 @@ fail:
 
 func (c *clientConn) createServerConn(r *Request) (*serverConn, error) {
 	siteInfo := siteStat.GetVisitCnt(r.URL)
-	srvconn, err := c.createConnection(r, siteInfo)
+	srvconn, err := c.connect(r, siteInfo)
 	if err != nil {
 		return nil, err
 	}
@@ -818,7 +758,7 @@ func copyServer2Client(sv *serverConn, c *clientConn, r *Request) (err error) {
 	*/
 
 	total := 0
-	const directThreshold = 4096
+	const directThreshold = 8192
 	readTimeoutSet := false
 	for {
 		// debug.Println("srv->cli")
@@ -1031,8 +971,12 @@ func (sv *serverConn) sendHTTPProxyRequest(r *Request, c *clientConn) (err error
 			"sending proxy request line to http parent")
 	}
 	// Add authorization header for parent http proxy
-	if config.httpAuthHeader != nil {
-		if _, err = sv.Write(config.httpAuthHeader); err != nil {
+	hp, ok := sv.creator.(*httpParent)
+	if !ok {
+		panic("must be http parent connection")
+	}
+	if hp.authHeader != nil {
+		if _, err = sv.Write(hp.authHeader); err != nil {
 			return c.handleServerWriteError(r, sv, err,
 				"sending proxy authorization header to http parent")
 		}
