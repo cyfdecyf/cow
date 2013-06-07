@@ -404,7 +404,7 @@ func hostIsIP(host string) (isIP, isPrivate bool) {
 			return false, false
 		}
 	}
-	if part[0] == "10" || (part[0] == "192" && part[1] == "168") {
+	if part[0] == "127" || part[0] == "10" || (part[0] == "192" && part[1] == "168") {
 		return true, true
 	}
 	if part[0] == "172" {

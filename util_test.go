@@ -351,6 +351,8 @@ func TestHostIsIP(t *testing.T) {
 		isIP  bool
 		isPri bool
 	}{
+		{"127.0.0.1", true, true},
+		{"127.2.1.1", true, true},
 		{"192.168.1.1", true, true},
 		{"10.2.3.4", true, true},
 		{"172.16.5.3", true, true},
