@@ -17,13 +17,14 @@ func connectByParentProxy(url *URL) (srvconn conn, err error) {
 	var skipped []int
 	nproxy := len(parentProxy)
 
-	proxyId := 0
+	firstId := 0
 	if config.LoadBalance == loadBalanceHash {
-		proxyId = int(stringHash(url.Host) % uint64(nproxy))
+		firstId = int(stringHash(url.Host) % uint64(nproxy))
+		debug.Println("use proxy ", firstId)
 	}
 
 	for i := 0; i < nproxy; i++ {
-		proxyId = (proxyId + i) % nproxy
+		proxyId := (firstId + i) % nproxy
 		pp := &parentProxy[proxyId]
 		// skip failed server, but try it with some probability
 		if pp.failCnt > 0 && rand.Intn(pp.failCnt+baseFailCnt) != 0 {
