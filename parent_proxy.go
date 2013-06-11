@@ -201,7 +201,7 @@ func (sp socksParent) connect(url *URL) (cn conn, err error) {
 
 	// version/method selection
 	repBuf := make([]byte, 2)
-	_, err = c.Read(repBuf)
+	_, err = io.ReadFull(c, repBuf)
 	if err != nil {
 		errl.Printf("read ver/method selection error %v\n", err)
 		hasErr = true
