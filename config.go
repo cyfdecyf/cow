@@ -38,9 +38,10 @@ type Config struct {
 	hasHttpParent bool
 
 	// authenticate client
-	UserPasswd    string
-	AllowedClient string
-	AuthTimeout   time.Duration
+	UserPasswd     string
+	UserPasswdFile string // file that contains user:passwd:[port] pairs
+	AllowedClient  string
+	AuthTimeout    time.Duration
 
 	// advanced options
 	DialTimeout time.Duration
@@ -337,6 +338,17 @@ func (p configParser) ParseUserPasswd(val string) {
 	if !isUserPasswdValid(config.UserPasswd) {
 		Fatal("userPassword syntax wrong, should be in the form of user:passwd")
 	}
+}
+
+func (p configParser) ParseUserPasswdFile(val string) {
+	exist, err := isFileExists(val)
+	if err != nil {
+		Fatal("userPasswdFile error:", err)
+	}
+	if !exist {
+		Fatal("userPasswdFile", val, "does not exist")
+	}
+	config.UserPasswdFile = val
 }
 
 func (p configParser) ParseAllowedClient(val string) {

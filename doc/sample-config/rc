@@ -77,6 +77,11 @@ listen = 127.0.0.1:7777
 # COW 总是先验证 IP 是否在 allowedClient 中，若不在其中再通过用户名密码认证
 #userPasswd = username:password
 
+# 如需指定多个用户名密码，可在下面选项指定的文件中列出，文件中每行内容如下
+#   username:password[:port]
+# port 为可选项，若指定，则该用户只能从指定端口连接 COW
+#userPasswdFile = /path/to/file
+
 # 认证失效时间
 # 语法：2h3m4s 表示 2 小时 3 分钟 4 秒
 #authTimeout = 2h
