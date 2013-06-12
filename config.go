@@ -83,6 +83,9 @@ func init() {
 	config.ReadTimeout = defaultReadTimeout
 }
 
+// Whether command line options specifies listen addr
+var cmdHasListenAddr bool
+
 func parseCmdLineConfig() *Config {
 	var c Config
 	var listenAddr string
@@ -95,6 +98,7 @@ func parseCmdLineConfig() *Config {
 
 	flag.Parse()
 	if listenAddr != "" {
+		cmdHasListenAddr = true
 		configParser{}.ParseListen(listenAddr)
 	}
 	return &c
@@ -151,13 +155,14 @@ func (p configParser) ParseLogFile(val string) {
 }
 
 func (p configParser) ParseListen(val string) {
-	// Command line options has already specified listenAddr
-	if config.ListenAddr != nil {
+	if cmdHasListenAddr {
 		return
 	}
 	arr := strings.Split(val, ",")
-	config.ListenAddr = make([]string, len(arr))
-	for i, s := range arr {
+	if config.ListenAddr == nil {
+		config.ListenAddr = make([]string, 0, len(arr))
+	}
+	for _, s := range arr {
 		s = strings.TrimSpace(s)
 		host, port := splitHostPort(s)
 		if port == "" {
@@ -169,7 +174,7 @@ func (p configParser) ParseListen(val string) {
 					"%s represents all ip addresses on this host.\n", s)
 			}
 		}
-		config.ListenAddr[i] = s
+		config.ListenAddr = append(config.ListenAddr, s)
 	}
 }
 
