@@ -272,13 +272,15 @@ func checkProxyAuthorization(r *Request) error {
 	}
 	au.initHA1(user)
 	if authHeader["qop"] != "auth" {
-		errl.Println("auth: qop wrong:", authHeader["qop"])
-		return errBadRequest
+		msg := "auth: qop wrong: " + authHeader["qop"]
+		errl.Println(msg)
+		return errors.New(msg)
 	}
 	response, ok := authHeader["response"]
 	if !ok {
-		errl.Println("auth: no request-digest")
-		return errBadRequest
+		msg := "auth: no request-digest"
+		errl.Println(msg)
+		return errors.New(msg)
 	}
 
 	digest := calcRequestDigest(authHeader, au.ha1, r.Method)
@@ -296,7 +298,7 @@ func authUserPasswd(conn *clientConn, r *Request) (err error) {
 		if err == nil {
 			return
 		} else if err != errAuthRequired {
-			sendErrorPage(conn, errCodeBadReq, "Bad authorization request", "")
+			sendErrorPage(conn, errCodeBadReq, "Bad authorization request", err.Error())
 			return
 		}
 	}
