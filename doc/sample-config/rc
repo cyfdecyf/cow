@@ -80,6 +80,7 @@ listen = 127.0.0.1:7777
 # 如需指定多个用户名密码，可在下面选项指定的文件中列出，文件中每行内容如下
 #   username:password[:port]
 # port 为可选项，若指定，则该用户只能从指定端口连接 COW
+# 注意：如有重复用户，COW 会报错退出
 #userPasswdFile = /path/to/file
 
 # 认证失效时间
