@@ -98,8 +98,8 @@ func parseCmdLineConfig() *Config {
 
 	flag.Parse()
 	if listenAddr != "" {
-		cmdHasListenAddr = true
 		configParser{}.ParseListen(listenAddr)
+		cmdHasListenAddr = true // must come after ParseListen
 	}
 	return &c
 }
