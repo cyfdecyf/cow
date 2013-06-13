@@ -34,7 +34,6 @@ func (n notification) hasNotified() bool {
 	default:
 		return false
 	}
-	return false
 }
 
 // ReadLine read till '\n' is found or encounter error. The returned line does

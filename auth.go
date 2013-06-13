@@ -97,13 +97,13 @@ func parseAllowedClient(val string) {
 		}
 		ip := net.ParseIP(ipAndMask[0])
 		if ip == nil {
-			Fatal("allowedClient syntax error %s: ip address not valid\n", s)
+			Fatalf("allowedClient syntax error %s: ip address not valid\n", s)
 		}
 		var mask net.IPMask
 		if len(ipAndMask) == 2 {
 			nbit, err := strconv.Atoi(ipAndMask[1])
 			if err != nil {
-				Fatal("allowedClient syntax error %s: %v\n", s, err)
+				Fatalf("allowedClient syntax error %s: %v\n", s, err)
 			}
 			if nbit > 32 {
 				Fatal("allowedClient error: mask number should <= 32")

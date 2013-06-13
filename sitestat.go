@@ -421,5 +421,4 @@ func loadSiteList(fpath string) (lst []string, err error) {
 		}
 		lst = append(lst, strings.TrimSpace(site))
 	}
-	return
 }

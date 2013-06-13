@@ -795,7 +795,6 @@ func copyServer2Client(sv *serverConn, c *clientConn, r *Request) (err error) {
 			sv.updateVisit()
 		}
 	}
-	return
 }
 
 type serverWriter struct {
@@ -913,7 +912,6 @@ func copyClient2Server(c *clientConn, sv *serverConn, r *Request, srvStopped not
 		}
 		// debug.Printf("cli(%s)->srv(%s) sent %d bytes data\n", c.RemoteAddr(), r.URL.HostPort, n)
 	}
-	return
 }
 
 var connEstablished = []byte("HTTP/1.1 200 Tunnel established\r\n\r\n")
@@ -1099,7 +1097,6 @@ func sendBodyChunked(r *bufio.Reader, w io.Writer, rdSize int) (err error) {
 			return
 		}
 	}
-	return
 }
 
 const CRLF = "\r\n"
@@ -1139,7 +1136,6 @@ func sendBodySplitIntoChunk(r *bufio.Reader, w io.Writer) (err error) {
 			return
 		}
 	}
-	return
 }
 
 // Send message body. If req is not nil, read from client, send to server. If
