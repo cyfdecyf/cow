@@ -125,6 +125,9 @@ func addUserPasswd(val string) {
 	if err != nil {
 		Fatal(err)
 	}
+	if _, ok := auth.user[user]; ok {
+		Fatal("duplicate user:", user)
+	}
 	auth.user[user] = au
 }
 
@@ -134,7 +137,7 @@ func loadUserPasswdFile(file string) {
 	}
 	f, err := os.Open(file)
 	if err != nil {
-		Fatal("Error opening user passwd fle:", err)
+		Fatal("error opening user passwd fle:", err)
 	}
 
 	r := bufio.NewReader(f)
@@ -169,7 +172,7 @@ func initAuth() {
 		"Content-Length: " + fmt.Sprintf("%d", len(authRawBodyTmpl)) + "\r\n\r\n" + authRawBodyTmpl
 	var err error
 	if auth.template, err = template.New("auth").Parse(rawTemplate); err != nil {
-		Fatal("Internal error generating auth template:", err)
+		Fatal("internal error generating auth template:", err)
 	}
 }
 
