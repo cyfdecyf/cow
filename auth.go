@@ -1,10 +1,10 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
 	"errors"
 	"fmt"
+	"github.com/cyfdecyf/bufio"
 	"net"
 	"os"
 	"strconv"
