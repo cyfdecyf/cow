@@ -420,17 +420,18 @@ func (c *clientConn) handleServerWriteError(r *Request, sv *serverConn, err erro
 }
 
 func (c *clientConn) handleClientReadError(r *Request, err error, msg string) error {
+	if !debug {
+		return err
+	}
 	if err == io.EOF {
 		debug.Printf("%s client closed connection", msg)
-	} else if debug {
-		if isErrConnReset(err) {
-			debug.Printf("%s connection reset", msg)
-		} else if isErrTimeout(err) {
-			debug.Printf("%s client read timeout, maybe has closed\n", msg)
-		} else {
-			// may reach here when header is larger than buffer size
-			debug.Printf("handleClientReadError: %s %v %v\n", msg, err, r)
-		}
+	} else if isErrConnReset(err) {
+		debug.Printf("%s connection reset", msg)
+	} else if isErrTimeout(err) {
+		debug.Printf("%s client read timeout, maybe has closed\n", msg)
+	} else {
+		// may reach here when header is larger than buffer size or got malformed HTTP request
+		debug.Printf("handleClientReadError: %s %v %v\n", msg, err, r)
 	}
 	return err
 }
