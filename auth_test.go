@@ -11,12 +11,12 @@ func TestParseUserPasswd(t *testing.T) {
 		user string
 		au   *authUser
 	}{
-		{"foo:bar", "foo", &authUser{"bar", 0, ""}},
+		{"foo:bar", "foo", &authUser{"bar", "", 0}},
 		{"foo:bar:-1", "", nil},
-		{"hello:world:", "hello", &authUser{"world", 0, ""}},
+		{"hello:world:", "hello", &authUser{"world", "", 0}},
 		{"hello:world:0", "", nil},
-		{"hello:world:1024", "hello", &authUser{"world", 1024, ""}},
-		{"hello:world:65535", "hello", &authUser{"world", 65535, ""}},
+		{"hello:world:1024", "hello", &authUser{"world", "", 1024}},
+		{"hello:world:65535", "hello", &authUser{"world", "", 65535}},
 	}
 
 	for _, td := range testData {
