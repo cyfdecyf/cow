@@ -5,6 +5,40 @@ import (
 	"testing"
 )
 
+func TestParseUserPasswd(t *testing.T) {
+	testData := []struct {
+		val  string
+		user string
+		au   *authUser
+	}{
+		{"foo:bar", "foo", &authUser{"bar", 0, ""}},
+		{"foo:bar:-1", "", nil},
+		{"hello:world:", "hello", &authUser{"world", 0, ""}},
+		{"hello:world:0", "", nil},
+		{"hello:world:1024", "hello", &authUser{"world", 1024, ""}},
+		{"hello:world:65535", "hello", &authUser{"world", 65535, ""}},
+	}
+
+	for _, td := range testData {
+		user, au, err := parseUserPasswd(td.val)
+		if td.au == nil {
+			if err == nil {
+				t.Error(td.val, "should return error")
+			}
+			continue
+		}
+		if td.user != user {
+			t.Error(td.val, "user should be:", td.user, "got:", user)
+		}
+		if td.au.passwd != au.passwd {
+			t.Error(td.val, "passwd should be:", td.au.passwd, "got:", au.passwd)
+		}
+		if td.au.port != au.port {
+			t.Error(td.val, "port should be:", td.au.port, "got:", au.port)
+		}
+	}
+}
+
 func TestCalcDigest(t *testing.T) {
 	a1 := md5sum("cyf" + ":" + authRealm + ":" + "wlx")
 	auth := map[string]string{
