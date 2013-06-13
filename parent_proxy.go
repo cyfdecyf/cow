@@ -20,7 +20,7 @@ func connectByParentProxy(url *URL) (srvconn conn, err error) {
 	firstId := 0
 	if config.LoadBalance == loadBalanceHash {
 		firstId = int(stringHash(url.Host) % uint64(nproxy))
-		debug.Println("use proxy ", firstId)
+		debug.Println("use proxy", firstId)
 	}
 
 	for i := 0; i < nproxy; i++ {
