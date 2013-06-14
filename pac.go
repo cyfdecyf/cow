@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"sync"
 	"text/template"
 	"time"
 )
@@ -13,6 +14,24 @@ var pac struct {
 	template       *template.Template
 	topLevelDomain string
 	directList     string
+	// Assignments and reads to directList are in different goroutines. Go
+	// does not guarantee atomic assignment, so we should protect these racing
+	// access.
+	dLRWMutex sync.RWMutex
+}
+
+func getDirectList() string {
+	pac.dLRWMutex.RLock()
+	dl := pac.directList
+	pac.dLRWMutex.RUnlock()
+	return dl
+}
+
+func updateDirectList() {
+	dl := strings.Join(siteStat.GetDirectList(), "\",\n\"")
+	pac.dLRWMutex.Lock()
+	pac.directList = dl
+	pac.dLRWMutex.Unlock()
 }
 
 func init() {
@@ -129,7 +148,9 @@ func genPAC(c *clientConn) []byte {
 		proxyAddr = net.JoinHostPort(host, c.proxy.port)
 	}
 
-	if pac.directList == "" {
+	dl := getDirectList()
+
+	if dl == "" {
 		// Empty direct domain list
 		buf.Write(pacHeader)
 		pacproxy := fmt.Sprintf("function FindProxyForURL(url, host) { return 'PROXY %s; DIRECT'; };",
@@ -144,7 +165,7 @@ func genPAC(c *clientConn) []byte {
 		TopLevel      string
 	}{
 		proxyAddr,
-		pac.directList,
+		dl,
 		pac.topLevelDomain,
 	}
 
@@ -157,11 +178,13 @@ func genPAC(c *clientConn) []byte {
 }
 
 func initPAC() {
-	pac.directList = strings.Join(siteStat.GetDirectList(), "\",\n\"")
+	// we can't control goroutine scheduling, this is to make sure when
+	// initPAC is done, direct list is updated
+	updateDirectList()
 	go func() {
 		for {
-			time.Sleep(10 * time.Minute)
-			pac.directList = strings.Join(siteStat.GetDirectList(), "\",\n\"")
+			time.Sleep(5 * time.Minute)
+			updateDirectList()
 		}
 	}()
 }
