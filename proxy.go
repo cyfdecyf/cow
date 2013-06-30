@@ -285,17 +285,10 @@ func (c *clientConn) serve() {
 
 	// Refer to implementation.md for the design choices on parsing the request
 	// and response.
-	cnt := 0
 	for {
 		if c.bufRd == nil || c.buf == nil {
-			errl.Printf("%s client read buffer nil, served %d requests",
-				c.RemoteAddr(), cnt)
-			if r.URL != nil {
-				errl.Println("previous request:", &r)
-			}
 			panic("client read buffer nil")
 		}
-		cnt++
 		// clean up idle server connection before waiting for client request
 		if c.shouldCleanServerConn() {
 			c.cleanServerConn()
