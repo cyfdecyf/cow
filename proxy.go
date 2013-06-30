@@ -29,14 +29,18 @@ const httpBufSize = 8192
 // holding post data.
 var httpBuf = leakybuf.NewLeakyBuf(512, httpBufSize)
 
-// Close client connection if no new request received in some time. Keep it
-// small to avoid keeping too many client connections (which associates with
-// server connections) and causing too much open file error. (On OS X, the
-// default soft limit of open file descriptor is 256, which is really
-// conservative.) On the other hand, making this too small may cause reading
-// normal client request timeout.
-const clientConnTimeout = 10 * time.Second
+// Close client connection if no new request received in some time. To prevent
+// keeping too many idle (keep-alive) server connections, COW timeout read for
+// the initial request line after clientConnTimeout, and closes client
+// connection after clientMaxTimeoutCnt timeout.
+// (On OS X, the default soft limit of open file descriptor is 256, which is
+// very conservative and easy to cause problem if we are not careful.)
+const clientConnTimeout = 5 * time.Second
+const clientMaxTimeoutCnt = 2
 const keepAliveHeader = "Keep-Alive: timeout=10\r\n"
+
+// Remove idle server connection every cleanServerInterval second.
+const cleanServerInterval = 5 * time.Second
 
 // If client closed connection for HTTP CONNECT method in less then 1 second,
 // consider it as an ssl error. This is only effective for Chrome which will
@@ -115,6 +119,8 @@ type clientConn struct {
 	bufRd      *bufio.Reader
 	buf        []byte                 // buffer for the buffered reader
 	serverConn map[string]*serverConn // request serverConn, host:port as key
+	timeoutCnt int                    // number of timeouts reading requests
+	cleanedOn  time.Time              // time of last idle server clean up
 	proxy      *Proxy
 }
 
@@ -124,6 +130,7 @@ var (
 	errShouldClose   = errors.New("Error can only be handled by close connection")
 	errInternal      = errors.New("Internal error")
 	errNoParentProxy = errors.New("No parent proxy")
+	errClientTimeout = errors.New("Read client request timeout")
 
 	errChunkedEncode   = errors.New("Invalid chunked encoding")
 	errMalformHeader   = errors.New("Malformed HTTP header")
@@ -208,8 +215,7 @@ func isSelfURL(url string) bool {
 
 func (c *clientConn) getRequest(r *Request) (err error) {
 	if err = parseRequest(c, r); err != nil {
-		c.handleClientReadError(r, err, "parse client request")
-		return err
+		return c.handleClientReadError(r, err, "parse client request")
 	}
 	return nil
 }
@@ -290,8 +296,15 @@ func (c *clientConn) serve() {
 			panic("client read buffer nil")
 		}
 		cnt++
+		// clean up idle server connection before waiting for client request
+		if c.shouldCleanServerConn() {
+			c.cleanServerConn()
+		}
 		if err = c.getRequest(&r); err != nil {
-			if !isErrTimeout(err) {
+			if err == errClientTimeout {
+				continue
+			}
+			if err != errShouldClose {
 				sendErrorPage(c, "404 Bad request", "Bad request", err.Error())
 			}
 			return
@@ -420,15 +433,25 @@ func (c *clientConn) handleServerWriteError(r *Request, sv *serverConn, err erro
 }
 
 func (c *clientConn) handleClientReadError(r *Request, err error, msg string) error {
+	if err == errClientTimeout {
+		c.timeoutCnt++
+		if c.timeoutCnt >= clientMaxTimeoutCnt {
+			debug.Printf("%s client maybe has closed\n", msg)
+			return errShouldClose
+		}
+		debug.Printf("%s client read timeout\n", msg)
+		c.cleanServerConn()
+		return err
+	}
+
 	if !debug {
 		return err
 	}
+
 	if err == io.EOF {
 		debug.Printf("%s client closed connection", msg)
 	} else if isErrConnReset(err) {
 		debug.Printf("%s connection reset", msg)
-	} else if isErrTimeout(err) {
-		debug.Printf("%s client read timeout, maybe has closed\n", msg)
 	} else {
 		// may reach here when header is larger than buffer size or got malformed HTTP request
 		debug.Printf("handleClientReadError: %s %v %v\n", msg, err, r)
@@ -524,6 +547,25 @@ func (c *clientConn) readResponse(sv *serverConn, r *Request, rp *Response) (err
 		c.removeServerConn(sv)
 	}
 	return
+}
+
+func (c *clientConn) shouldCleanServerConn() bool {
+	return len(c.serverConn) > 0 &&
+		time.Now().Sub(c.cleanedOn) > cleanServerInterval
+}
+
+// Remove all maybe closed server connection
+func (c *clientConn) cleanServerConn() {
+	if debug {
+		debug.Printf("%s client clean up idle server connection", c.RemoteAddr())
+	}
+	now := time.Now()
+	c.cleanedOn = now
+	for _, sv := range c.serverConn {
+		if now.After(sv.willCloseOn) {
+			c.removeServerConn(sv)
+		}
+	}
 }
 
 func (c *clientConn) getServerConn(r *Request) (sv *serverConn, err error) {
@@ -933,7 +975,7 @@ func (sv *serverConn) doConnect(r *Request, c *clientConn) (err error) {
 		// debug.Printf("send connection confirmation to %s->%s\n", c.RemoteAddr(), r.URL.HostPort)
 		if _, err = c.Write(connEstablished); err != nil {
 			if debug {
-				debug.Printf("%v Error sending 200 Connecion established: %v\n", c.RemoteAddr(), err)
+				debug.Printf("%s error sending 200 Connecion established: %v\n", c.RemoteAddr(), err)
 			}
 			return err
 		}

@@ -425,6 +425,9 @@ func parseRequest(c *clientConn, r *Request) (err error) {
 	setConnReadTimeout(c, clientConnTimeout, "parseRequest")
 	// parse request line
 	if s, err = reader.ReadSlice('\n'); err != nil {
+		if isErrTimeout(err) {
+			return errClientTimeout
+		}
 		return err
 	}
 	unsetConnReadTimeout(c, "parseRequest")
