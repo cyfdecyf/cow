@@ -1,4 +1,4 @@
-# 代理服务器监听地址，用逗号分隔多个地址
+# 代理服务器监听地址，用逗号分隔多个地址，或者重复多次来指定多个地址
 # 0.0.0.0 表示监听本机所有 IP 地址
 # PAC url 为 http://<listen>/pac，其中的代理服务器地址会根据 client 访问 ip 正确生成
 # 如果使用端口映射来将 COW 的服务提供到外网，请参考高级选项中的 addrInPAC 选项
@@ -76,6 +76,12 @@ listen = 127.0.0.1:7777
 # 要求客户端通过用户名密码认证
 # COW 总是先验证 IP 是否在 allowedClient 中，若不在其中再通过用户名密码认证
 #userPasswd = username:password
+
+# 如需指定多个用户名密码，可在下面选项指定的文件中列出，文件中每行内容如下
+#   username:password[:port]
+# port 为可选项，若指定，则该用户只能从指定端口连接 COW
+# 注意：如有重复用户，COW 会报错退出
+#userPasswdFile = /path/to/file
 
 # 认证失效时间
 # 语法：2h3m4s 表示 2 小时 3 分钟 4 秒

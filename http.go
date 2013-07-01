@@ -416,7 +416,6 @@ func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, url *URL) 
 		raw.Write(s)
 		// debug.Printf("len %d %s", len(s), s)
 	}
-	return
 }
 
 // Parse the request line and header, does not touch body
@@ -426,6 +425,9 @@ func parseRequest(c *clientConn, r *Request) (err error) {
 	setConnReadTimeout(c, clientConnTimeout, "parseRequest")
 	// parse request line
 	if s, err = reader.ReadSlice('\n'); err != nil {
+		if isErrTimeout(err) {
+			return errClientTimeout
+		}
 		return err
 	}
 	unsetConnReadTimeout(c, "parseRequest")

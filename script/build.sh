@@ -24,7 +24,7 @@ build() {
     if [[ $1 == "windows" ]]; then
         mv cow.exe script
         pushd script
-        cp ../doc/sample-config/rc sample-rc.txt
+        sed -e 's/$/\r/' ../doc/sample-config/rc > sample-rc.txt
         zip $name.zip cow.exe cow-taskbar.exe sample-rc.txt
         rm -f cow.exe sample-rc.txt
         mv $name.zip ../bin/

@@ -2,8 +2,11 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
+	"github.com/cyfdecyf/bufio"
 	"net"
+	"os"
 	"strconv"
 	"strings"
 	"text/template"
@@ -29,25 +32,61 @@ type netAddr struct {
 	mask net.IPMask
 }
 
+type authUser struct {
+	// user name is the key to auth.user, no need to store here
+	passwd string
+	ha1    string // used in request digest, initialized ondemand
+	port   uint16 // 0 means any port
+}
+
 var auth struct {
 	required bool
 
-	user   string
-	passwd string
-	ha1    string // used in request digest
+	user map[string]*authUser
 
 	allowedClient []netAddr
 
-	authed *TimeoutSet // cache authentication based on client ip
+	authed *TimeoutSet // cache authenticated users based on ip
 
 	template *template.Template
+}
+
+func (au *authUser) initHA1(user string) {
+	if au.ha1 == "" {
+		au.ha1 = md5sum(user + ":" + authRealm + ":" + au.passwd)
+	}
+}
+
+func parseUserPasswd(userPasswd string) (user string, au *authUser, err error) {
+	arr := strings.Split(userPasswd, ":")
+	n := len(arr)
+	if n == 1 || n > 3 {
+		err = errors.New("user password: " + userPasswd +
+			" syntax wrong, should be username:password[:port]")
+		return
+	}
+	user, passwd := arr[0], arr[1]
+	if user == "" || passwd == "" {
+		err = errors.New("user password " + userPasswd +
+			" should not contain empty user name or password")
+		return "", nil, err
+	}
+	var port int
+	if n == 3 && arr[2] != "" {
+		port, err = strconv.Atoi(arr[2])
+		if err != nil || port <= 0 || port > 0xffff {
+			err = errors.New("user password: " + userPasswd + " invalid port")
+			return "", nil, err
+		}
+	}
+	au = &authUser{passwd, "", uint16(port)}
+	return user, au, nil
 }
 
 func parseAllowedClient(val string) {
 	if val == "" {
 		return
 	}
-	auth.required = true
 	arr := strings.Split(val, ",")
 	auth.allowedClient = make([]netAddr, len(arr))
 	for i, v := range arr {
@@ -58,13 +97,13 @@ func parseAllowedClient(val string) {
 		}
 		ip := net.ParseIP(ipAndMask[0])
 		if ip == nil {
-			Fatal("allowedClient syntax error %s: ip address not valid\n", s)
+			Fatalf("allowedClient syntax error %s: ip address not valid\n", s)
 		}
 		var mask net.IPMask
 		if len(ipAndMask) == 2 {
 			nbit, err := strconv.Atoi(ipAndMask[1])
 			if err != nil {
-				Fatal("allowedClient syntax error %s: %v\n", s, err)
+				Fatalf("allowedClient syntax error %s: %v\n", s, err)
 			}
 			if nbit > 32 {
 				Fatal("allowedClient error: mask number should <= 32")
@@ -77,30 +116,55 @@ func parseAllowedClient(val string) {
 	}
 }
 
-func parseUserPasswd(val string) {
+func addUserPasswd(val string) {
 	if val == "" {
 		return
 	}
-	auth.required = true
-	// password format checking is done in checkConfig in config.go
-	arr := strings.SplitN(val, ":", 2)
-	auth.user, auth.passwd = arr[0], arr[1]
+	user, au, err := parseUserPasswd(val)
+	debug.Println("user:", user, "port:", au.port)
+	if err != nil {
+		Fatal(err)
+	}
+	if _, ok := auth.user[user]; ok {
+		Fatal("duplicate user:", user)
+	}
+	auth.user[user] = au
+}
+
+func loadUserPasswdFile(file string) {
+	if file == "" {
+		return
+	}
+	f, err := os.Open(file)
+	if err != nil {
+		Fatal("error opening user passwd fle:", err)
+	}
+
+	r := bufio.NewReader(f)
+	s := bufio.NewScanner(r)
+	for s.Scan() {
+		addUserPasswd(s.Text())
+	}
+	f.Close()
 }
 
 func initAuth() {
-	parseUserPasswd(config.UserPasswd)
-	parseAllowedClient(config.AllowedClient)
-
-	if !auth.required {
+	if config.UserPasswd != "" ||
+		config.UserPasswdFile != "" ||
+		config.AllowedClient != "" {
+		auth.required = true
+	} else {
 		return
 	}
+
+	auth.user = make(map[string]*authUser)
+
+	addUserPasswd(config.UserPasswd)
+	loadUserPasswdFile(config.UserPasswdFile)
+	parseAllowedClient(config.AllowedClient)
 
 	auth.authed = NewTimeoutSet(time.Duration(config.AuthTimeout) * time.Hour)
 
-	if auth.user == "" {
-		return
-	}
-	auth.ha1 = md5sum(auth.user + ":" + authRealm + ":" + auth.passwd)
 	rawTemplate := "HTTP/1.1 407 Proxy Authentication Required\r\n" +
 		"Proxy-Authenticate: Digest realm=\"" + authRealm + "\", nonce=\"{{.Nonce}}\", qop=\"auth\"\r\n" +
 		"Content-Type: text/html\r\n" +
@@ -108,7 +172,7 @@ func initAuth() {
 		"Content-Length: " + fmt.Sprintf("%d", len(authRawBodyTmpl)) + "\r\n\r\n" + authRawBodyTmpl
 	var err error
 	if auth.template, err = template.New("auth").Parse(rawTemplate); err != nil {
-		Fatal("Internal error generating auth template:", err)
+		Fatal("internal error generating auth template:", err)
 	}
 }
 
@@ -123,11 +187,14 @@ func Authenticate(conn *clientConn, r *Request) (err error) {
 	if authIP(clientIP) { // IP is allowed
 		return
 	}
-	// No user specified
-	if auth.user == "" {
-		sendErrorPage(conn, "403 Forbidden", "Access forbidden", "You are not allowed to use the proxy.")
-		return errShouldClose
-	}
+	/*
+		// No user specified
+		if auth.user == "" {
+			sendErrorPage(conn, "403 Forbidden", "Access forbidden",
+				"You are not allowed to use the proxy.")
+			return errShouldClose
+		}
+	*/
 	err = authUserPasswd(conn, r)
 	if err == nil {
 		auth.authed.add(clientIP)
@@ -175,7 +242,7 @@ func calcRequestDigest(kv map[string]string, ha1, method string) string {
 	return md5sum(buf.String())
 }
 
-func checkProxyAuthorization(r *Request) error {
+func checkProxyAuthorization(conn *clientConn, r *Request) error {
 	debug.Println("authorization:", r.ProxyAuthorization)
 	arr := strings.SplitN(r.ProxyAuthorization, " ", 2)
 	if len(arr) != 2 {
@@ -200,21 +267,39 @@ func checkProxyAuthorization(r *Request) error {
 	if time.Now().Sub(time.Unix(nonceTime, 0)) > time.Minute {
 		return errAuthRequired
 	}
-	if authHeader["username"] != auth.user {
-		errl.Println("auth: username mismatch:", authHeader["username"])
+
+	user := authHeader["username"]
+	au, ok := auth.user[user]
+	if !ok {
+		errl.Println("auth: no such user:", authHeader["username"])
 		return errAuthRequired
 	}
-	if authHeader["qop"] != "auth" {
-		errl.Println("auth: qop wrong:", authHeader["qop"])
-		return errBadRequest
-	}
-	response, ok := authHeader["response"]
-	if !ok {
-		errl.Println("auth: no request-digest")
-		return errBadRequest
+
+	if au.port != 0 {
+		// check port
+		_, portStr := splitHostPort(conn.LocalAddr().String())
+		port, _ := strconv.Atoi(portStr)
+		if uint16(port) != au.port {
+			errl.Println("auth: user", user, "port not match")
+			return errAuthRequired
+		}
 	}
 
-	digest := calcRequestDigest(authHeader, auth.ha1, r.Method)
+	if authHeader["qop"] != "auth" {
+		msg := "auth: qop wrong: " + authHeader["qop"]
+		errl.Println(msg)
+		return errors.New(msg)
+	}
+
+	response, ok := authHeader["response"]
+	if !ok {
+		msg := "auth: no request-digest"
+		errl.Println(msg)
+		return errors.New(msg)
+	}
+
+	au.initHA1(user)
+	digest := calcRequestDigest(authHeader, au.ha1, r.Method)
 	if response == digest {
 		return nil
 	}
@@ -225,13 +310,14 @@ func checkProxyAuthorization(r *Request) error {
 func authUserPasswd(conn *clientConn, r *Request) (err error) {
 	if r.ProxyAuthorization != "" {
 		// client has sent authorization header
-		err = checkProxyAuthorization(r)
+		err = checkProxyAuthorization(conn, r)
 		if err == nil {
 			return
 		} else if err != errAuthRequired {
-			sendErrorPage(conn, errCodeBadReq, "Bad authorization request", "")
+			sendErrorPage(conn, errCodeBadReq, "Bad authorization request", err.Error())
 			return
 		}
+		// auth required to through the following
 	}
 
 	nonce := genNonce()

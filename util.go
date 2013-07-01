@@ -34,7 +34,6 @@ func (n notification) hasNotified() bool {
 	default:
 		return false
 	}
-	return false
 }
 
 // ReadLine read till '\n' is found or encounter error. The returned line does
@@ -437,10 +436,11 @@ func NewNbitIPv4Mask(n int) net.IPMask {
 var topLevelDomain = map[string]bool{
 	"ac":  true,
 	"co":  true,
-	"org": true,
 	"com": true,
-	"net": true,
 	"edu": true,
+	"gov": true,
+	"net": true,
+	"org": true,
 }
 
 func trimLastDot(s string) string {

@@ -25,6 +25,7 @@ var directDomainList = []string{
 
 	"360buy.com",
 	"360buyimg.com",
+	"jd.com",
 
 	"51buy.com",
 	"icson.com",

@@ -20,7 +20,7 @@ func connectByParentProxy(url *URL) (srvconn conn, err error) {
 	firstId := 0
 	if config.LoadBalance == loadBalanceHash {
 		firstId = int(stringHash(url.Host) % uint64(nproxy))
-		debug.Println("use proxy ", firstId)
+		debug.Println("use proxy", firstId)
 	}
 
 	for i := 0; i < nproxy; i++ {
@@ -201,7 +201,7 @@ func (sp socksParent) connect(url *URL) (cn conn, err error) {
 
 	// version/method selection
 	repBuf := make([]byte, 2)
-	_, err = c.Read(repBuf)
+	_, err = io.ReadFull(c, repBuf)
 	if err != nil {
 		errl.Printf("read ver/method selection error %v\n", err)
 		hasErr = true
