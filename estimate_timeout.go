@@ -53,10 +53,10 @@ func estimateTimeout() {
 	}
 	if est > config.DialTimeout {
 		dialTimeout = est
-		info.Println("new dial timeout:", dialTimeout)
+		debug.Println("new dial timeout:", dialTimeout)
 	} else if dialTimeout != config.DialTimeout {
 		dialTimeout = config.DialTimeout
-		info.Println("new dial timeout:", dialTimeout)
+		debug.Println("new dial timeout:", dialTimeout)
 	}
 
 	start = time.Now()
@@ -81,10 +81,10 @@ func estimateTimeout() {
 	}
 	if est > time.Duration(config.ReadTimeout) {
 		readTimeout = est
-		info.Println("new read timeout:", readTimeout)
+		debug.Println("new read timeout:", readTimeout)
 	} else if readTimeout != config.ReadTimeout {
 		readTimeout = config.ReadTimeout
-		info.Println("new read timeout:", readTimeout)
+		debug.Println("new read timeout:", readTimeout)
 	}
 	return
 onErr:
