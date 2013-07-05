@@ -18,6 +18,7 @@ type Header struct {
 	ProxyAuthorization  string
 	Chunking            bool
 	ConnectionKeepAlive bool
+	ExpectContinue      bool
 }
 
 type rqState byte
@@ -124,6 +125,15 @@ func (r *Request) rawBody() []byte {
 func (r *Request) proxyRequestLine() []byte {
 	return r.raw.Bytes()[0:r.reqLnStart]
 }
+
+const (
+	statusCodeContinue = 100
+)
+
+const (
+	statusBadReq       = "400 Bad Request"
+	statusExpectFailed = "417 Expectation Failed"
+)
 
 type Response struct {
 	Status int
@@ -289,6 +299,7 @@ const (
 	headerTrailer            = "trailer"
 	headerTransferEncoding   = "transfer-encoding"
 	headerUpgrade            = "upgrade"
+	headerExpect             = "expect"
 
 	fullHeaderConnection       = "Connection: keep-alive\r\n"
 	fullHeaderTransferEncoding = "Transfer-Encoding: chunked\r\n"
@@ -302,6 +313,7 @@ var headerParser = map[string]HeaderParserFunc{
 	headerProxyAuthorization: (*Header).parseProxyAuthorization,
 	headerProxyConnection:    (*Header).parseConnection,
 	headerTransferEncoding:   (*Header).parseTransferEncoding,
+	headerExpect:             (*Header).parseExpect,
 }
 
 var hopByHopHeader = map[string]bool{
@@ -356,6 +368,23 @@ func (h *Header) parseTransferEncoding(s []byte, raw *bytes.Buffer) error {
 		errl.Printf("invalid transfer encoding: %s\n", s)
 		return errNotSupported
 	}
+	return nil
+}
+
+// For now, cow does not fully support 100 continue. It will return 417
+// expectation failed when receiving expect header. This makes implementation
+// simpler.
+// TODO If we see lots of expect 100-continue usage, provide full support.
+
+func (h *Header) parseExpect(s []byte, raw *bytes.Buffer) error {
+	ASCIIToLowerInplace(s)
+	errl.Printf("Expect header: %s\n", s) // put here to see if expect header is widely used
+	h.ExpectContinue = true
+	/*
+		if bytes.Contains(s, []byte("100-continue")) {
+			h.ExpectContinue = true
+		}
+	*/
 	return nil
 }
 
@@ -563,6 +592,13 @@ func parseResponse(sv *serverConn, r *Request, rp *Response) (err error) {
 		errl.Printf("Reading response header: %v %v\n", err, r)
 		return err
 	}
+
+	if rp.Status == statusCodeContinue && !r.ExpectContinue {
+		// not expecting 100 continue, just ignore it and read final response
+		errl.Println("Ignore server 100 response for", r)
+		return parseResponse(sv, r, rp)
+	}
+
 	// Connection close, no content length specification
 	// Use chunked encoding to pass content back to client
 	if !rp.ConnectionKeepAlive && !rp.Chunking && rp.ContLen == -1 {

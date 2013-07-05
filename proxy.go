@@ -332,6 +332,16 @@ func (c *clientConn) serve() {
 			authed = true
 		}
 
+		if r.ExpectContinue {
+			sendErrorPage(c, statusExpectFailed, "Expect header not supported",
+				"Please contact COW's developer if you see this.")
+			// Client may have sent request body at this point. Simply close
+			// connection so we don't need to handle this case.
+			// NOTE: sendErrorPage tells client the connection will keep alive, but
+			// actually it will close here.
+			return
+		}
+
 	retry:
 		r.tryOnce()
 		if bool(debug) && r.isRetry() {
@@ -384,12 +394,6 @@ func genErrMsg(r *Request, sv *serverConn, what string) string {
 	return fmt.Sprintf("<p>HTTP Request <strong>%v</strong></p> <p>%s</p> <p>Using %s connection.</p>",
 		r, what, ctName[sv.connType])
 }
-
-const (
-	errCodeReset   = "502 connection reset"
-	errCodeTimeout = "504 time out reading response"
-	errCodeBadReq  = "400 bad request"
-)
 
 func (c *clientConn) handleBlockedRequest(r *Request, err error) error {
 	siteStat.TempBlocked(r.URL)
@@ -1059,7 +1063,7 @@ func (sv *serverConn) doRequest(c *clientConn, r *Request, rp *Response) (err er
 			if err == io.EOF && isErrOpRead(err) {
 				errl.Println("EOF reading request body from client", r)
 			} else if isErrOpWrite(err) {
-				err = c.handleServerWriteError(r, sv, err, "Sending request body")
+				err = c.handleServerWriteError(r, sv, err, "sending request body")
 			} else {
 				errl.Println("reading request body:", err)
 			}
