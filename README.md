@@ -106,9 +106,10 @@ COW 默认配置下检测到被墙后，过两分钟再次尝试直连也是为�
 贡献代码：
 
 @tevino: http parent proxy basic authentication
+@xupefei: 提供 cow-hide.exe 以在 windows 上在后台执行 cow.exe
 
-Bug report:
+Bug reporter (github user name):
 
-@glacjay, @fantasticfears, @hieixu, @Blaskyy, @lucifer9, @zellux, @JayXon, @graminc
+@glacjay, @trawor, @Blaskyy, @lucifer9, @zellux, @xream, @hieixu, @fantasticfears, @perrywky, @JayXon, @graminc, @WingGao, @polong
 
 @glacjay 对 0.3 版本的 COW 提出了让它更加自动化的建议，使我重新考虑 COW 的设计目标并且改进成 0.5 版本中的工作方式。
