@@ -234,7 +234,7 @@ end:
 	return errPageSent
 }
 
-func (c *clientConn) shouldHandleRetry(r *Request, sv *serverConn, re error) bool {
+func (c *clientConn) shouldRetry(r *Request, sv *serverConn, re error) bool {
 	if !isErrRetry(re) {
 		return false
 	}
@@ -250,8 +250,9 @@ func (c *clientConn) shouldHandleRetry(r *Request, sv *serverConn, re error) boo
 				"Refresh to retry may work."))
 		return false
 	} else if r.raw == nil {
-		errl.Println("Please report an issue: Non partial request with buffer released:", r)
-		panic("Please report an issue: Non partial request with buffer released")
+		msg := "Please report issue to the developer: Non partial request with buffer released"
+		errl.Println(msg, r)
+		panic(msg)
 	}
 	if r.tooManyRetry() {
 		if sv.maybeFake() {
@@ -361,7 +362,7 @@ func (c *clientConn) serve() {
 		if r.isConnect {
 			err = sv.doConnect(&r, c)
 			sv.Close()
-			if c.shouldHandleRetry(&r, sv, err) {
+			if c.shouldRetry(&r, sv, err) {
 				// connection for CONNECT is not reused, no need to remove
 				goto retry
 			}
@@ -371,10 +372,9 @@ func (c *clientConn) serve() {
 
 		if err = sv.doRequest(c, &r, &rp); err != nil {
 			c.removeServerConn(sv)
-			if c.shouldHandleRetry(&r, sv, err) {
+			if c.shouldRetry(&r, sv, err) {
 				goto retry
-			}
-			if err == errPageSent {
+			} else if err == errPageSent {
 				continue
 			}
 			return
