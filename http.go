@@ -371,9 +371,9 @@ func (h *Header) parseTransferEncoding(s []byte, raw *bytes.Buffer) error {
 	return nil
 }
 
-// For now, cow does not fully support 100 continue. It will return 417
-// expectation failed when receiving expect header. This makes implementation
-// simpler.
+// For now, cow does not fully support 100-continue. It will return "417
+// expectation failed" if a request contains expect header. This is one of the
+// strategies supported by polipo, which is easiest to implement in cow.
 // TODO If we see lots of expect 100-continue usage, provide full support.
 
 func (h *Header) parseExpect(s []byte, raw *bytes.Buffer) error {
@@ -594,7 +594,7 @@ func parseResponse(sv *serverConn, r *Request, rp *Response) (err error) {
 	}
 
 	if rp.Status == statusCodeContinue && !r.ExpectContinue {
-		// not expecting 100 continue, just ignore it and read final response
+		// not expecting 100-continue, just ignore it and read final response
 		errl.Println("Ignore server 100 response for", r)
 		return parseResponse(sv, r, rp)
 	}
