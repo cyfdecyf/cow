@@ -240,10 +240,10 @@ func (ss *SiteStat) GetVisitCnt(url *URL) (vcnt *VisitCnt) {
 		return
 	}
 	if len(url.Domain) != len(url.Host) {
-		if vcnt = ss.get(url.Domain); vcnt != nil && vcnt.userSpecified() {
+		if dmcnt := ss.get(url.Domain); dmcnt != nil && dmcnt.userSpecified() {
 			// if the domain is not specified by user, should create a new host
 			// visitCnt
-			return vcnt
+			return dmcnt
 		}
 	}
 	return ss.create(url.Host)
@@ -255,32 +255,32 @@ func (ss *SiteStat) store(file string) (err error) {
 	}
 
 	now := time.Now()
-	var s *SiteStat
+	var savedSS *SiteStat
 	if ss.Update == Date(zeroTime) {
 		ss.Update = Date(time.Now())
 	}
 	if now.Sub(time.Time(ss.Update)) > siteStaleThreshold {
 		// Not updated for a long time, don't drop any record
-		s = ss
+		savedSS = ss
 		// Changing update time too fast will also drop useful record
-		s.Update = Date(time.Time(ss.Update).Add(siteStaleThreshold / 2))
-		if time.Time(s.Update).After(now) {
-			s.Update = Date(now)
+		savedSS.Update = Date(time.Time(ss.Update).Add(siteStaleThreshold / 2))
+		if time.Time(savedSS.Update).After(now) {
+			savedSS.Update = Date(now)
 		}
 	} else {
-		s = newSiteStat()
-		s.Update = Date(now)
+		savedSS = newSiteStat()
+		savedSS.Update = Date(now)
 		ss.vcLock.RLock()
 		for site, vcnt := range ss.Vcnt {
 			if vcnt.shouldNotSave() {
 				continue
 			}
-			s.Vcnt[site] = vcnt
+			savedSS.Vcnt[site] = vcnt
 		}
 		ss.vcLock.RUnlock()
 	}
 
-	b, err := json.MarshalIndent(s, "", "\t")
+	b, err := json.MarshalIndent(savedSS, "", "\t")
 	if err != nil {
 		errl.Println("Error marshalling site stat:", err)
 		panic("internal error: error marshalling site")
