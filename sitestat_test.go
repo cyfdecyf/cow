@@ -208,7 +208,7 @@ func TestSiteStatGetVisitCnt(t *testing.T) {
 	if !vc.userSpecified() {
 		t.Error("should be user specified")
 	}
-	if !vc.shouldDrop() {
+	if !vc.shouldNotSave() {
 		t.Error("user specified should be dropped")
 	}
 	si = ss.GetVisitCnt(b)

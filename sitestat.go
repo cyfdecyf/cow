@@ -76,11 +76,14 @@ func (vc *VisitCnt) userSpecified() bool {
 
 const siteStaleThreshold = 10 * 24 * time.Hour
 
-// shouldDrop returns true if the a VisitCnt is not visited for a long time
+func (vc *VisitCnt) isStale() bool {
+	return time.Now().Sub(time.Time(vc.Recent)) > siteStaleThreshold
+}
+
+// shouldNotSave returns true if the a VisitCnt is not visited for a long time
 // (several days) or is specified by user.
-func (vc *VisitCnt) shouldDrop() bool {
-	return vc.userSpecified() || time.Now().Sub(time.Time(vc.Recent)) > siteStaleThreshold ||
-		(vc.Blocked == 0 && vc.Direct == 0)
+func (vc *VisitCnt) shouldNotSave() bool {
+	return vc.userSpecified() || vc.isStale() || (vc.Blocked == 0 && vc.Direct == 0)
 }
 
 const tmpBlockedTimeout = 2 * time.Minute
@@ -269,9 +272,7 @@ func (ss *SiteStat) store(file string) (err error) {
 		s.Update = Date(now)
 		ss.vcLock.RLock()
 		for site, vcnt := range ss.Vcnt {
-			// user specified sites may change, always filter them out
-			dmcnt := ss.get(host2Domain(site))
-			if (dmcnt != nil && dmcnt.userSpecified()) || vcnt.shouldDrop() {
+			if vcnt.shouldNotSave() {
 				continue
 			}
 			s.Vcnt[site] = vcnt
@@ -318,11 +319,47 @@ func (ss *SiteStat) loadUserList() {
 	}
 }
 
+// Filter sites covered by user specified domains, also filter out stale
+// sites.
+func (ss *SiteStat) filterSites() {
+	// It's not safe to remove element while iterating over a map.
+	var removeSites []string
+
+	// find what to remove first
+	ss.vcLock.RLock()
+	for site, vcnt := range ss.Vcnt {
+		if vcnt.userSpecified() {
+			continue
+		}
+		if vcnt.isStale() {
+			removeSites = append(removeSites, site)
+			continue
+		}
+		var dmcnt *VisitCnt
+		domain := host2Domain(site)
+		if domain != site {
+			dmcnt = ss.get(domain)
+		}
+		if dmcnt != nil && dmcnt.userSpecified() {
+			removeSites = append(removeSites, site)
+		}
+	}
+	ss.vcLock.RUnlock()
+
+	// do remove
+	ss.vcLock.Lock()
+	for _, site := range removeSites {
+		delete(ss.Vcnt, site)
+	}
+	ss.vcLock.Unlock()
+}
+
 func (ss *SiteStat) load(file string) (err error) {
 	defer func() {
 		// load builtin list first, so user list can override builtin
 		ss.loadBuiltinList()
 		ss.loadUserList()
+		ss.filterSites()
 		for host, vcnt := range ss.Vcnt {
 			if vcnt.OnceBlocked() {
 				ss.hasBlockedHost[host2Domain(host)] = true
