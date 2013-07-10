@@ -77,8 +77,13 @@ func ASCIIToUpperInplace(b []byte) {
 
 func ASCIIToUpper(b []byte) []byte {
 	buf := make([]byte, len(b))
-	copy(buf, b)
-	ASCIIToUpperInplace(buf)
+	for i := 0; i < len(b); i++ {
+		if 97 <= b[i] && b[i] <= 122 {
+			buf[i] = b[i] - 32
+		} else {
+			buf[i] = b[i]
+		}
+	}
 	return buf
 }
 
@@ -92,8 +97,13 @@ func ASCIIToLowerInplace(b []byte) {
 
 func ASCIIToLower(b []byte) []byte {
 	buf := make([]byte, len(b))
-	copy(buf, b)
-	ASCIIToLowerInplace(buf)
+	for i := 0; i < len(b); i++ {
+		if 65 <= b[i] && b[i] <= 90 {
+			buf[i] = b[i] + 32
+		} else {
+			buf[i] = b[i]
+		}
+	}
 	return buf
 }
 
