@@ -85,7 +85,9 @@ chmod +x $tmpbin ||
 # Download sample config file if no configuration directory present
 doc_base="https://github.com/cyfdecyf/cow/raw/master/doc"
 config_dir="$HOME/.cow"
+is_update=true
 if [ ! -e $config_dir ]; then
+    is_update=false
     sample_config_base="${doc_base}/sample-config"
     echo "Downloading sample config file to $config_dir"
     mkdir -p $config_dir || exit_on_fail "Can't create $config_dir directory"
@@ -120,6 +122,11 @@ rmdir $tmpdir
 
 # Done
 echo
-echo "Installation finished."
-echo "Please edit $config_dir/rc according to your own settings."
-echo 'After that, execute "cow &" to start cow and run in background.'
+if $is_update; then
+    echo "Update finished."
+else
+    echo "Installation finished."
+    echo "Please edit $config_dir/rc according to your own settings."
+    echo 'After that, execute "cow &" to start cow and run in background.'
+fi
+
