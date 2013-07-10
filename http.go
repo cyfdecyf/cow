@@ -327,9 +327,18 @@ var hopByHopHeader = map[string]bool{
 	headerUpgrade:            true,
 }
 
+// Note: Value bytes passed to header parse function are in the buffer
+// associated with bufio and will be modified. It will also be stored in the
+// raw request buffer, so becareful when modifying the value bytes. (Change
+// case only when the spec says it is case insensitive.)
+//
+// If Header needs to hold raw value, make a copy. For example,
+// parseProxyAuthorization does this.
+
 type HeaderParserFunc func(*Header, []byte, *bytes.Buffer) error
 
 func (h *Header) parseConnection(s []byte, raw *bytes.Buffer) error {
+	ASCIIToLowerInplace(s)
 	h.ConnectionKeepAlive = bytes.Contains(s, []byte("keep-alive"))
 	raw.WriteString(fullHeaderConnection)
 	return nil
@@ -341,6 +350,7 @@ func (h *Header) parseContentLength(s []byte, raw *bytes.Buffer) (err error) {
 }
 
 func (h *Header) parseKeepAlive(s []byte, raw *bytes.Buffer) (err error) {
+	ASCIIToLowerInplace(s)
 	id := bytes.Index(s, []byte("timeout="))
 	if id != -1 {
 		id += len("timeout=")
@@ -359,6 +369,7 @@ func (h *Header) parseProxyAuthorization(s []byte, raw *bytes.Buffer) error {
 }
 
 func (h *Header) parseTransferEncoding(s []byte, raw *bytes.Buffer) error {
+	ASCIIToLowerInplace(s)
 	// For transfer-encoding: identify, it's the same as specifying neither
 	// content-length nor transfer-encoding.
 	h.Chunking = bytes.Contains(s, []byte("chunked"))
@@ -434,7 +445,7 @@ func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, url *URL) 
 			if len(val) == 0 {
 				continue
 			}
-			parseFunc(h, ASCIIToLower(val), raw)
+			parseFunc(h, val, raw)
 		} else {
 			// mark this header as not of interest to proxy
 			lastLine = nil
