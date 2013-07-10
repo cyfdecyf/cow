@@ -314,7 +314,7 @@ func authUserPasswd(conn *clientConn, r *Request) (err error) {
 		if err == nil {
 			return
 		} else if err != errAuthRequired {
-			sendErrorPage(conn, errCodeBadReq, "Bad authorization request", err.Error())
+			sendErrorPage(conn, statusBadReq, "Bad authorization request", err.Error())
 			return
 		}
 		// auth required to through the following

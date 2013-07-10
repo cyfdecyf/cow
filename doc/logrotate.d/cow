@@ -1,0 +1,9 @@
+/var/log/cow {
+  rotate 4
+  weekly
+  compress
+  missingok
+  postrotate
+    /etc/init.d/cow restart
+  endscript
+}

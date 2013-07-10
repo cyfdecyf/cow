@@ -1,21 +1,19 @@
 #!/bin/bash
-# Start/stop cow.
-#
 ### BEGIN INIT INFO
 # Provides:          cow
-# Required-Start:
-# Required-Stop:
-# Should-Start:
-# Should-Stop:
+# Required-Start:    $network
+# Required-Stop:     $network
 # Default-Start:     2 3 4 5
-# Default-Stop:
+# Default-Stop:      0 1 6
 # Short-Description: COW: Climb Over the Wall http proxy
 # Description:       Automatically detect blocked site and use parent proxy.
 ### END INIT INFO
 
+# Put this script under /etc/init.d/, then run "update-rc.d cow defaults".
+
 # Note: this script requires sudo in order to run COW as the specified
 # user. Please change the following variables in order to use this script.
-# COW will search for rc/direct/block/stat file under ~/.cow/ directory.
+# COW will search for rc/direct/block/stat file under user's $HOME/.cow/ directory.
 BIN=/usr/local/bin/cow
 USER=usr
 GROUP=grp

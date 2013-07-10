@@ -234,7 +234,7 @@ end:
 	return errPageSent
 }
 
-func (c *clientConn) shouldHandleRetry(r *Request, sv *serverConn, re error) bool {
+func (c *clientConn) shouldRetry(r *Request, sv *serverConn, re error) bool {
 	if !isErrRetry(re) {
 		return false
 	}
@@ -250,8 +250,9 @@ func (c *clientConn) shouldHandleRetry(r *Request, sv *serverConn, re error) boo
 				"Refresh to retry may work."))
 		return false
 	} else if r.raw == nil {
-		errl.Println("Please report an issue: Non partial request with buffer released:", r)
-		panic("Please report an issue: Non partial request with buffer released")
+		msg := "Please report issue to the developer: Non partial request with buffer released"
+		errl.Println(msg, r)
+		panic(msg)
 	}
 	if r.tooManyRetry() {
 		if sv.maybeFake() {
@@ -332,6 +333,16 @@ func (c *clientConn) serve() {
 			authed = true
 		}
 
+		if r.ExpectContinue {
+			sendErrorPage(c, statusExpectFailed, "Expect header not supported",
+				"Please contact COW's developer if you see this.")
+			// Client may have sent request body at this point. Simply close
+			// connection so we don't need to handle this case.
+			// NOTE: sendErrorPage tells client the connection will keep alive, but
+			// actually it will close here.
+			return
+		}
+
 	retry:
 		r.tryOnce()
 		if bool(debug) && r.isRetry() {
@@ -351,7 +362,7 @@ func (c *clientConn) serve() {
 		if r.isConnect {
 			err = sv.doConnect(&r, c)
 			sv.Close()
-			if c.shouldHandleRetry(&r, sv, err) {
+			if c.shouldRetry(&r, sv, err) {
 				// connection for CONNECT is not reused, no need to remove
 				goto retry
 			}
@@ -361,10 +372,9 @@ func (c *clientConn) serve() {
 
 		if err = sv.doRequest(c, &r, &rp); err != nil {
 			c.removeServerConn(sv)
-			if c.shouldHandleRetry(&r, sv, err) {
+			if c.shouldRetry(&r, sv, err) {
 				goto retry
-			}
-			if err == errPageSent {
+			} else if err == errPageSent {
 				continue
 			}
 			return
@@ -384,12 +394,6 @@ func genErrMsg(r *Request, sv *serverConn, what string) string {
 	return fmt.Sprintf("<p>HTTP Request <strong>%v</strong></p> <p>%s</p> <p>Using %s connection.</p>",
 		r, what, ctName[sv.connType])
 }
-
-const (
-	errCodeReset   = "502 connection reset"
-	errCodeTimeout = "504 time out reading response"
-	errCodeBadReq  = "400 bad request"
-)
 
 func (c *clientConn) handleBlockedRequest(r *Request, err error) error {
 	siteStat.TempBlocked(r.URL)
@@ -1059,7 +1063,7 @@ func (sv *serverConn) doRequest(c *clientConn, r *Request, rp *Response) (err er
 			if err == io.EOF && isErrOpRead(err) {
 				errl.Println("EOF reading request body from client", r)
 			} else if isErrOpWrite(err) {
-				err = c.handleServerWriteError(r, sv, err, "Sending request body")
+				err = c.handleServerWriteError(r, sv, err, "sending request body")
 			} else {
 				errl.Println("reading request body:", err)
 			}

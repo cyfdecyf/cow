@@ -1,34 +1,33 @@
 # COW (Climb Over the Wall) proxy
 
-COW 是一个利用二级代理帮助自动化翻墙的 HTTP 代理服务器。它能自动检测被墙网站，且仅对被墙网站使用二级代理。
+COW 是一个利用二级代理自动化穿越防火墙的 HTTP 代理服务器。它能自动检测被墙网站，仅对这些网站使用二级代理。
 
-当前版本：0.7.2 [CHANGELOG](CHANGELOG)
+当前版本：0.7.3 [CHANGELOG](CHANGELOG)
 [![Build Status](https://travis-ci.org/cyfdecyf/cow.png?branch=master)](https://travis-ci.org/cyfdecyf/cow)
 
-**如果要发 pull request，请在最新的 develop branch 上进行开发。**
-
-**0.7 版本配置文件更新说明**
-
-- 为支持指定多个 socks 代理，sshServer 配置语法有变化，[样例配置](doc/sample-config/rc)有详细说明
-- `socks`, `updateBlocked`, `updateDirect`, `autoRetry` 选项彻底移除，COW 遇到这些选项将**报错退出**
+**欢迎在 develop branch 进行开发并发送 pull request :)**
 
 ## 功能
 
-- 支持 HTTP, SOCKS5 和 [shadowsocks](https://github.com/shadowsocks/shadowsocks-go/) 作为二级代理
+COW 的设计目标是自动化，理想情况下用户无需关心哪些网站被封锁，可直连网站也不会因为使用二级代理而降低访问速度。作为 HTTP 代理，可以提供给移动设备使用；若部署在国内服务器上，可作为 APN 代理。
+
+- 支持 HTTP, SOCKS5 和 [shadowsocks](https://github.com/clowwindy/shadowsocks/wiki/Shadowsocks-%E4%BD%BF%E7%94%A8%E8%AF%B4%E6%98%8E) 作为二级代理
   - 可同时指定多个二级代理，支持简单的负载均衡
 - 自动检测网站是否被墙，仅对被墙网站使用二级代理
-  - 对未知网站，先尝试直接连接，失败后使用二级代理重试请求，2 分钟后再尝试直接
+  - **对未知网站，先尝试直接连接，失败后使用二级代理重试请求，2 分钟后再尝试直接**
   - 内置[常见被墙网站](site_blocked.go)，减少检测被墙所需时间（可手工添加）
-- 自动记录经常访问网站是否被墙
+- 自动记录经常访问网站能否直连
 - 提供 PAC 文件，直连网站绕过 COW
   - 内置[常见可直连网站](site_direct.go)，如国内社交、视频、银行、电商等网站（可手工添加）
 
 # 安装
 
-- **OS X, Linux:** 执行以下命令（也可用于更新，该安装脚本在 OS X 上可将 COW 设置为登录时启动）
+- **OS X, Linux:** 执行以下命令（也可用于更新）
 
         curl -s -L https://github.com/cyfdecyf/cow/raw/master/install-cow.sh | bash
 
+  - 该安装脚本在 OS X 上可将 COW 设置为登录时启动
+  - [Linux 启动脚本](doc/init.d/cow)，如何使用请参考注释（Debian 测试通过，其他 Linux 发行版应该也可使用）
 - **Windows:** 访问[这个网页](http://dl.chenyufei.info/cow/)下载
 - 如需其他平台二进制文件，请从源码安装
 
@@ -47,8 +46,10 @@ bug fix 和新功能在测试后会直接进入 master branch 而不等到发布
 启动 COW：
 
 - Unix 系统在命令行上执行 `cow &`
-  - [Linux 启动脚本](doc/init.d/cow) 在 Debian 上测试过，其他 Linux 发行版应该也可用
-- Windows 上执行 `cow-taskbar.exe` 即可
+- Windows
+  - 双击 `cow-taskbar.exe`，隐藏到托盘执行
+  - 双击 `cow-hide.exe`，隐藏为后台程序执行
+  - 以上两者都会启动 `cow.exe`
 
 PAC url 为 `http://<listen address>/pac`，也可将浏览器的 HTTP/HTTPS 代理设置为 `listen address` 使所有网站都通过 COW 访问。
 
@@ -58,7 +59,7 @@ PAC url 为 `http://<listen address>/pac`，也可将浏览器的 HTTP/HTTPS 代
 
 ## 手动指定被墙和直连网站
 
-**COW 的目标是自动化翻墙，一般情况下无需手工指定被墙和直连网站，该功能只是是为了处理特殊情况和性能优化。**
+**一般情况下无需手工指定被墙和直连网站，该功能只是是为了处理特殊情况和性能优化。**
 
 `~/.cow/blocked` 和 `~/.cow/direct` 可指定被墙和直连网站（`direct` 中的 host 会添加到 PAC）：
 
@@ -106,9 +107,11 @@ COW 默认配置下检测到被墙后，过两分钟再次尝试直连也是为�
 贡献代码：
 
 @tevino: http parent proxy basic authentication
+@xupefei: 提供 cow-hide.exe 以在 windows 上在后台执行 cow.exe
 
-Bug report:
+Bug reporter:
 
-@glacjay, @fantasticfears, @hieixu, @Blaskyy, @lucifer9, @zellux, @JayXon, @graminc
+GitHub users: glacjay, trawor, Blaskyy, lucifer9, zellux, xream, hieixu, fantasticfears, perrywky, JayXon, graminc, WingGao, polong, dallascao
+Twitter users: @shao222
 
-@glacjay 对 0.3 版本的 COW 提出了让它更加自动化的建议，使我重新考虑 COW 的设计目标并且改进成 0.5 版本中的工作方式。
+@glacjay 对 0.3 版本的 COW 提出了让它更加自动化的建议，使我重新考虑 COW 的设计目标并且改进成 0.5 版本之后的工作方式。

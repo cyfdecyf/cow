@@ -1,3 +1,12 @@
+0.7.3 (2013-07-10)
+    * Handle 100-continue: do not forward expect header from client, ignore 100
+      continue response replied by some web servers
+    * For windows: add cow-hide.exe to run cow.exe as background process,
+      (provided by to xupefei)
+    * Filter sites covered by user specified domains on load
+    * Fix incorrectly changing header value to lower case: user name and
+      password can now contain upper case letters
+
 0.7.2 (2013-07-01)
     * Close idle server connections earlier: avoid opening too many sockets
     * Support authenticating multiple users (can limit port for each user)
@@ -46,7 +55,7 @@
 
     * Support parent HTTP proxy (such as goagent)
     * Work more automatically: because of this, updateBlocked, updateDirect,
-    autoRetry options and chou file are removed
+      autoRetry options and chou file are removed
     * Record direct/blocked visit count to make blocked/direct site handling
     more reliable
     * Builtin common blocked/direct site list
@@ -55,7 +64,7 @@
     * Support specifying host in blocked/direct file
     * User configurable timeout
     * Better windows support: connection reset, timeout and DNS error detection
-    tested and works on XP
+      tested and works on XP
     * Support listening multiple addresses
     * Support IP based and user password authentication
     * Various bug fixes
@@ -65,7 +74,7 @@
     * Performance improvement by better buffer usage
     * Allow specifying config file on command line
     * Better windows support: Config and domain list file on windows are put in the same
-    directory as COW's binary. And they all have txt extension for easy editing
+      directory as COW's binary. And they all have txt extension for easy editing
     * Bug fix: convert HTTP/1.0 response to HTTP/1.1
 
 0.3.4 (2012-12-09)
@@ -75,10 +84,10 @@
     * Allow specifying ssh server port in config file
     * Bug fix: crash when handling flush error
     * Bug fix: correctly handle web servers which use closed connection to
-    indicate end of response
+      indicate end of response
 
 0.3.3 (2012-12-05)
 
     * Keep HTTP CONNECT connection open. Avoid problems for Application which
-    uses long connection.
+      uses long connection.
     * Bug fix: crash when printing domain list inconsistency message.

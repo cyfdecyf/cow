@@ -13,12 +13,13 @@ for (var i = 0; i < directList.length; i += 1) {
 }
 
 var topLevel = {
-        "net": true,
-        "org": true,
-        "edu": true,
-        "com": true,
         "ac": true,
-        "co": true
+        "co": true,
+        "com": true,
+        "edu": true,
+        "gov": true,
+        "net": true,
+        "org": true
 };
 
 // hostIsIP determines whether a host address is an IP address and whether

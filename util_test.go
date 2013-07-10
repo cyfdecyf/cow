@@ -53,7 +53,7 @@ func TestASCIIToUpper(t *testing.T) {
 	for _, td := range testData {
 		up := ASCIIToUpper(td.raw)
 		if !bytes.Equal(up, td.upper) {
-			t.Errorf("raw: %s, upper: %s\n", string(up), string(td.upper))
+			t.Errorf("raw: %s, upper: %s\n", td.raw, up)
 		}
 	}
 }
@@ -61,7 +61,7 @@ func TestASCIIToUpper(t *testing.T) {
 func TestASCIIToLower(t *testing.T) {
 	testData := []struct {
 		raw   []byte
-		upper []byte
+		lower []byte
 	}{
 		{[]byte("FOOBAR"), []byte("foobar")},
 		{[]byte("fOoBAr"), []byte("foobar")},
@@ -69,8 +69,8 @@ func TestASCIIToLower(t *testing.T) {
 	}
 	for _, td := range testData {
 		low := ASCIIToLower(td.raw)
-		if !bytes.Equal(low, td.upper) {
-			t.Errorf("raw: %s, upper: %s\n", string(low), string(td.upper))
+		if !bytes.Equal(low, td.lower) {
+			t.Errorf("raw: %s, lower: %s\n", td.raw, low)
 		}
 	}
 }

@@ -18,6 +18,7 @@ type Header struct {
 	ProxyAuthorization  string
 	Chunking            bool
 	ConnectionKeepAlive bool
+	ExpectContinue      bool
 }
 
 type rqState byte
@@ -124,6 +125,15 @@ func (r *Request) rawBody() []byte {
 func (r *Request) proxyRequestLine() []byte {
 	return r.raw.Bytes()[0:r.reqLnStart]
 }
+
+const (
+	statusCodeContinue = 100
+)
+
+const (
+	statusBadReq       = "400 Bad Request"
+	statusExpectFailed = "417 Expectation Failed"
+)
 
 type Response struct {
 	Status int
@@ -289,6 +299,7 @@ const (
 	headerTrailer            = "trailer"
 	headerTransferEncoding   = "transfer-encoding"
 	headerUpgrade            = "upgrade"
+	headerExpect             = "expect"
 
 	fullHeaderConnection       = "Connection: keep-alive\r\n"
 	fullHeaderTransferEncoding = "Transfer-Encoding: chunked\r\n"
@@ -302,6 +313,7 @@ var headerParser = map[string]HeaderParserFunc{
 	headerProxyAuthorization: (*Header).parseProxyAuthorization,
 	headerProxyConnection:    (*Header).parseConnection,
 	headerTransferEncoding:   (*Header).parseTransferEncoding,
+	headerExpect:             (*Header).parseExpect,
 }
 
 var hopByHopHeader = map[string]bool{
@@ -315,9 +327,18 @@ var hopByHopHeader = map[string]bool{
 	headerUpgrade:            true,
 }
 
+// Note: Value bytes passed to header parse function are in the buffer
+// associated with bufio and will be modified. It will also be stored in the
+// raw request buffer, so becareful when modifying the value bytes. (Change
+// case only when the spec says it is case insensitive.)
+//
+// If Header needs to hold raw value, make a copy. For example,
+// parseProxyAuthorization does this.
+
 type HeaderParserFunc func(*Header, []byte, *bytes.Buffer) error
 
 func (h *Header) parseConnection(s []byte, raw *bytes.Buffer) error {
+	ASCIIToLowerInplace(s)
 	h.ConnectionKeepAlive = bytes.Contains(s, []byte("keep-alive"))
 	raw.WriteString(fullHeaderConnection)
 	return nil
@@ -329,6 +350,7 @@ func (h *Header) parseContentLength(s []byte, raw *bytes.Buffer) (err error) {
 }
 
 func (h *Header) parseKeepAlive(s []byte, raw *bytes.Buffer) (err error) {
+	ASCIIToLowerInplace(s)
 	id := bytes.Index(s, []byte("timeout="))
 	if id != -1 {
 		id += len("timeout=")
@@ -347,6 +369,7 @@ func (h *Header) parseProxyAuthorization(s []byte, raw *bytes.Buffer) error {
 }
 
 func (h *Header) parseTransferEncoding(s []byte, raw *bytes.Buffer) error {
+	ASCIIToLowerInplace(s)
 	// For transfer-encoding: identify, it's the same as specifying neither
 	// content-length nor transfer-encoding.
 	h.Chunking = bytes.Contains(s, []byte("chunked"))
@@ -356,6 +379,23 @@ func (h *Header) parseTransferEncoding(s []byte, raw *bytes.Buffer) error {
 		errl.Printf("invalid transfer encoding: %s\n", s)
 		return errNotSupported
 	}
+	return nil
+}
+
+// For now, cow does not fully support 100-continue. It will return "417
+// expectation failed" if a request contains expect header. This is one of the
+// strategies supported by polipo, which is easiest to implement in cow.
+// TODO If we see lots of expect 100-continue usage, provide full support.
+
+func (h *Header) parseExpect(s []byte, raw *bytes.Buffer) error {
+	ASCIIToLowerInplace(s)
+	errl.Printf("Expect header: %s\n", s) // put here to see if expect header is widely used
+	h.ExpectContinue = true
+	/*
+		if bytes.Contains(s, []byte("100-continue")) {
+			h.ExpectContinue = true
+		}
+	*/
 	return nil
 }
 
@@ -405,7 +445,7 @@ func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, url *URL) 
 			if len(val) == 0 {
 				continue
 			}
-			parseFunc(h, ASCIIToLower(val), raw)
+			parseFunc(h, val, raw)
 		} else {
 			// mark this header as not of interest to proxy
 			lastLine = nil
@@ -563,6 +603,13 @@ func parseResponse(sv *serverConn, r *Request, rp *Response) (err error) {
 		errl.Printf("Reading response header: %v %v\n", err, r)
 		return err
 	}
+
+	if rp.Status == statusCodeContinue && !r.ExpectContinue {
+		// not expecting 100-continue, just ignore it and read final response
+		errl.Println("Ignore server 100 response for", r)
+		return parseResponse(sv, r, rp)
+	}
+
 	// Connection close, no content length specification
 	// Use chunked encoding to pass content back to client
 	if !rp.ConnectionKeepAlive && !rp.Chunking && rp.ContLen == -1 {

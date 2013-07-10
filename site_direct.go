@@ -69,7 +69,6 @@ var directDomainList = []string{
 	"t.cn",
 	"weibo.com",
 	"zhihu.com",
-	"v2ex.com",
 	"kaixin001.com",
 	"qq.com",
 

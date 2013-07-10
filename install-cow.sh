@@ -1,6 +1,6 @@
 #!/bin/bash
 
-version=0.7.2
+version=0.7.3
 
 arch=`uname -m`
 case $arch in
@@ -72,7 +72,8 @@ fi
 
 # Download COW binary
 bin=cow-$os$arch-$version
-tmpbin=/tmp/cow
+tmpdir=`mktemp -d /tmp/cow.XXXXXX`
+tmpbin=$tmpdir/cow
 binary_url="http://dl.chenyufei.info/cow/$bin.gz"
 echo "Downloading cow binary $binary_url to $tmpbin.gz"
 curl -L "$binary_url" -o $tmpbin.gz || \
@@ -84,7 +85,9 @@ chmod +x $tmpbin ||
 # Download sample config file if no configuration directory present
 doc_base="https://github.com/cyfdecyf/cow/raw/master/doc"
 config_dir="$HOME/.cow"
+is_update=true
 if [ ! -e $config_dir ]; then
+    is_update=false
     sample_config_base="${doc_base}/sample-config"
     echo "Downloading sample config file to $config_dir"
     mkdir -p $config_dir || exit_on_fail "Can't create $config_dir directory"
@@ -115,9 +118,15 @@ else
     sudo mv $tmpbin $install_dir
 fi
 exit_on_fail "Failed to move $tmpbin to $install_dir"
+rmdir $tmpdir
 
 # Done
 echo
-echo "Installation finished."
-echo "Please edit $config_dir/rc according to your own settings."
-echo 'After that, execute "cow &" to start cow and run in background.'
+if $is_update; then
+    echo "Update finished."
+else
+    echo "Installation finished."
+    echo "Please edit $config_dir/rc according to your own settings."
+    echo 'After that, execute "cow &" to start cow and run in background.'
+fi
+
