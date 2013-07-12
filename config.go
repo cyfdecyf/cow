@@ -388,6 +388,8 @@ func parseConfig(path string) {
 	}
 	defer f.Close()
 
+	IgnoreUTF8BOM(f)
+
 	fr := bufio.NewReader(f)
 
 	parser := reflect.ValueOf(configParser{})
