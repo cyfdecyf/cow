@@ -1,3 +1,8 @@
+0.7.4 (2013-07-15)
+    * Fix adding extra connection header for client request with both
+      "Proxy-Connection" and "Connection" headers
+    * Ignore UTF-8 BOM in config file
+
 0.7.3 (2013-07-10)
     * Handle 100-continue: do not forward expect header from client, ignore 100
       continue response replied by some web servers

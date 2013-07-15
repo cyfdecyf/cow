@@ -623,7 +623,8 @@ func parseResponse(sv *serverConn, r *Request, rp *Response) (err error) {
 	if !rp.ConnectionKeepAlive && !rp.Chunking && rp.ContLen == -1 {
 		rp.raw.WriteString("Transfer-Encoding: chunked\r\n")
 	}
-	// If client request contains keep-alive, always respond with keep-alive
+	// Whether COW should respond with keep-alive depends on client request,
+	// not server response.
 	if r.ConnectionKeepAlive {
 		rp.raw.WriteString(fullHeaderConnectionKeepAlive)
 		rp.raw.WriteString(fullKeepAliveHeader)
