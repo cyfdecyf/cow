@@ -284,8 +284,8 @@ func ParseRequestURIBytes(rawurl []byte) (*URL, error) {
 
 // headers of interest to a proxy
 // Define them as constant and use editor's completion to avoid typos.
-// Note RFC2616 only says about "Connection", no "Proxy-Connection", but firefox
-// send this header.
+// Note RFC2616 only says about "Connection", no "Proxy-Connection", but
+// Firefox and Safari send this header along with "Connection" header.
 // See more at http://homepage.ntlworld.com/jonathan.deboynepollard/FGA/web-proxy-connection-header.html
 const (
 	headerConnection         = "connection"
@@ -301,8 +301,9 @@ const (
 	headerUpgrade            = "upgrade"
 	headerExpect             = "expect"
 
-	fullHeaderConnection       = "Connection: keep-alive\r\n"
-	fullHeaderTransferEncoding = "Transfer-Encoding: chunked\r\n"
+	fullHeaderConnectionKeepAlive = "Connection: keep-alive\r\n"
+	fullHeaderConnectionClose     = "Connection: close\r\n"
+	fullHeaderTransferEncoding    = "Transfer-Encoding: chunked\r\n"
 )
 
 // Using Go's method expression
@@ -337,10 +338,15 @@ var hopByHopHeader = map[string]bool{
 
 type HeaderParserFunc func(*Header, []byte, *bytes.Buffer) error
 
+// Used by both "Connection" and "Proxy-Connection" header. COW always adds
+// connection header at the end of a request/response (in parseRequest and
+// parseResponse), no matter whether the original one has this header or not.
+// This will change the order of headers, but should be OK as RFC2616 4.2 says
+// header order is not significant. (Though general-header first is "good-
+// practice".)
 func (h *Header) parseConnection(s []byte, raw *bytes.Buffer) error {
 	ASCIIToLowerInplace(s)
 	h.ConnectionKeepAlive = bytes.Contains(s, []byte("keep-alive"))
-	raw.WriteString(fullHeaderConnection)
 	return nil
 }
 
@@ -515,9 +521,10 @@ func parseRequest(c *clientConn, r *Request) (err error) {
 		errl.Printf("Parsing request header: %v\n", err)
 		return err
 	}
-	if !r.ConnectionKeepAlive {
-		// Always add one connection header for request
-		r.raw.WriteString(fullHeaderConnection)
+	if r.ConnectionKeepAlive {
+		r.raw.WriteString(fullHeaderConnectionKeepAlive)
+	} else {
+		r.raw.WriteString(fullHeaderConnectionClose)
 	}
 	// The spec says proxy must add Via header. polipo disables this by
 	// default, and I don't want to let others know the user is using COW, so
@@ -615,10 +622,13 @@ func parseResponse(sv *serverConn, r *Request, rp *Response) (err error) {
 	if !rp.ConnectionKeepAlive && !rp.Chunking && rp.ContLen == -1 {
 		rp.raw.WriteString("Transfer-Encoding: chunked\r\n")
 	}
-	if !rp.ConnectionKeepAlive {
-		rp.raw.WriteString("Connection: keep-alive\r\n")
+	// If client request contains keep-alive, always respond with keep-alive
+	if r.ConnectionKeepAlive {
+		rp.raw.WriteString(fullHeaderConnectionKeepAlive)
+		rp.raw.WriteString(fullKeepAliveHeader)
+	} else {
+		rp.raw.WriteString(fullHeaderConnectionClose)
 	}
-	rp.raw.WriteString(keepAliveHeader)
 	rp.raw.WriteString(CRLF)
 
 	return nil
