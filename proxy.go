@@ -37,7 +37,7 @@ var httpBuf = leakybuf.NewLeakyBuf(512, httpBufSize)
 // very conservative and easy to cause problem if we are not careful.)
 const clientConnTimeout = 5 * time.Second
 const clientMaxTimeoutCnt = 2
-const keepAliveHeader = "Keep-Alive: timeout=10\r\n"
+const fullKeepAliveHeader = "Keep-Alive: timeout=10\r\n"
 
 // Remove idle server connection every cleanServerInterval second.
 const cleanServerInterval = 5 * time.Second

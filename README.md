@@ -2,7 +2,7 @@
 
 COW 是一个利用二级代理自动化穿越防火墙的 HTTP 代理服务器。它能自动检测被墙网站，仅对这些网站使用二级代理。
 
-当前版本：0.7.3 [CHANGELOG](CHANGELOG)
+当前版本：0.7.4 [CHANGELOG](CHANGELOG)
 [![Build Status](https://travis-ci.org/cyfdecyf/cow.png?branch=master)](https://travis-ci.org/cyfdecyf/cow)
 
 **欢迎在 develop branch 进行开发并发送 pull request :)**
@@ -112,6 +112,7 @@ COW 默认配置下检测到被墙后，过两分钟再次尝试直连也是为�
 Bug reporter:
 
 GitHub users: glacjay, trawor, Blaskyy, lucifer9, zellux, xream, hieixu, fantasticfears, perrywky, JayXon, graminc, WingGao, polong, dallascao
+
 Twitter users: @shao222
 
 @glacjay 对 0.3 版本的 COW 提出了让它更加自动化的建议，使我重新考虑 COW 的设计目标并且改进成 0.5 版本之后的工作方式。

@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	version           = "0.7.3"
+	version           = "0.7.4"
 	defaultListenAddr = "127.0.0.1:7777"
 )
 
@@ -387,6 +387,8 @@ func parseConfig(path string) {
 		return
 	}
 	defer f.Close()
+
+	IgnoreUTF8BOM(f)
 
 	fr := bufio.NewReader(f)
 
