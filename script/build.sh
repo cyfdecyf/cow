@@ -20,7 +20,7 @@ build() {
 
     name=cow-$3-$version
     echo "building $name"
-    GOOS=$1 GOARCH=$2 go build -a || exit 1
+    GOOS=$1 GOARCH=$2 go build || exit 1
     if [[ $1 == "windows" ]]; then
         mv cow.exe script
         pushd script
