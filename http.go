@@ -49,7 +49,8 @@ type Request struct {
 	tryCnt    byte
 }
 
-var zeroRequest = Request{}
+// Assume keep-alive request by default.
+var zeroRequest = Request{Header: Header{ConnectionKeepAlive: true}}
 
 func (r *Request) reset() {
 	b := r.rawByte
@@ -346,7 +347,7 @@ type HeaderParserFunc func(*Header, []byte, *bytes.Buffer) error
 // practice".)
 func (h *Header) parseConnection(s []byte, raw *bytes.Buffer) error {
 	ASCIIToLowerInplace(s)
-	h.ConnectionKeepAlive = bytes.Contains(s, []byte("keep-alive"))
+	h.ConnectionKeepAlive = !bytes.Contains(s, []byte("close"))
 	return nil
 }
 
