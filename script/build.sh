@@ -38,6 +38,7 @@ build() {
 build darwin amd64 mac64
 build linux amd64 linux64
 build linux 386 linux32
+build linux arm linux-armv6
 build windows amd64 win64
 build windows 386 win32
 
