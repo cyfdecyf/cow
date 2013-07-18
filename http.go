@@ -220,7 +220,11 @@ func splitHostPort(s string) (host, port string) {
 		c := s[i]
 		switch {
 		case c == ':':
-			return s[:i], s[i+1:]
+			if s[0] == '[' {
+				return s[1:i-1], s[i+1:]
+			} else {
+				return s[:i], s[i+1:]
+			}
 		case !IsDigit(c):
 			return s, ""
 		}
