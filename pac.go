@@ -144,7 +144,13 @@ func genPAC(c *clientConn) []byte {
 
 	proxyAddr := c.proxy.addrInPAC
 	if proxyAddr == "" {
-		host, _ := splitHostPort(c.LocalAddr().String())
+		host, _, err := net.SplitHostPort(c.LocalAddr().String())
+		// This is the only check to split host port on tcp addr's string
+		// representation in COW. Keep it so we will notice if there's any
+		// problem in the future.
+		if err != nil {
+			panic("split host port on local address error")
+		}
 		proxyAddr = net.JoinHostPort(host, c.proxy.port)
 	}
 

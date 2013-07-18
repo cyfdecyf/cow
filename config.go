@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/cyfdecyf/bufio"
 	"io"
+	"net"
 	"os"
 	"path"
 	"reflect"
@@ -133,12 +134,9 @@ func parseDuration(val, msg string) (d time.Duration) {
 	return
 }
 
-func hasPort(val string) bool {
-	_, port := splitHostPort(val)
-	if port == "" {
-		return false
-	}
-	return true
+func checkServerAddr(addr string) error {
+	_, _, err := net.SplitHostPort(addr)
+	return err
 }
 
 func isUserPasswdValid(val string) bool {
@@ -165,9 +163,9 @@ func (p configParser) ParseListen(val string) {
 	}
 	for _, s := range arr {
 		s = strings.TrimSpace(s)
-		host, port := splitHostPort(s)
-		if port == "" {
-			Fatalf("listen address %s has no port\n", s)
+		host, _, err := net.SplitHostPort(s)
+		if err != nil {
+			Fatal("listen address", err)
 		}
 		if host == "" || host == "0.0.0.0" {
 			if len(arr) > 1 {
@@ -187,9 +185,9 @@ func (p configParser) ParseAddrInPAC(val string) {
 			continue
 		}
 		s = strings.TrimSpace(s)
-		host, port := splitHostPort(s)
-		if port == "" {
-			Fatalf("proxy address in PAC %s has no port\n", s)
+		host, _, err := net.SplitHostPort(s)
+		if err != nil {
+			Fatal("proxy address in PAC", err)
 		}
 		if host == "0.0.0.0" {
 			Fatal("can't use 0.0.0.0 as proxy address in PAC")
@@ -201,8 +199,8 @@ func (p configParser) ParseAddrInPAC(val string) {
 // error checking is done in check config
 
 func (p configParser) ParseSocksParent(val string) {
-	if !hasPort(val) {
-		Fatal("parent socks server must have port specified")
+	if err := checkServerAddr(val); err != nil {
+		Fatal("parent socks server", err)
 	}
 	addParentProxy(newSocksParent(val))
 }
@@ -230,8 +228,8 @@ var http struct {
 }
 
 func (p configParser) ParseHttpParent(val string) {
-	if !hasPort(val) {
-		Fatal("parent http server must have port specified")
+	if err := checkServerAddr(val); err != nil {
+		Fatal("parent http server", err)
 	}
 	config.hasHttpParent = true
 	http.parent = newHttpParent(val)
@@ -292,8 +290,8 @@ func (p configParser) ParseShadowSocks(val string) {
 		shadow.parent = nil
 		return
 	}
-	if !hasPort(val) {
-		Fatal("shadowsocks server must have port specified")
+	if err := checkServerAddr(val); err != nil {
+		Fatal("shadowsocks server", err)
 	}
 	shadow.parent = newShadowsocksParent(val)
 	addParentProxy(shadow.parent)

@@ -179,7 +179,7 @@ func initAuth() {
 // Return err = nil if authentication succeed. nonce would be not empty if
 // authentication is needed, and should be passed back on subsequent call.
 func Authenticate(conn *clientConn, r *Request) (err error) {
-	clientIP, _ := splitHostPort(conn.RemoteAddr().String())
+	clientIP, _, _ := net.SplitHostPort(conn.RemoteAddr().String())
 	if auth.authed.has(clientIP) {
 		debug.Printf("%s has already authed\n", clientIP)
 		return
@@ -277,7 +277,7 @@ func checkProxyAuthorization(conn *clientConn, r *Request) error {
 
 	if au.port != 0 {
 		// check port
-		_, portStr := splitHostPort(conn.LocalAddr().String())
+		_, portStr, _ := net.SplitHostPort(conn.LocalAddr().String())
 		port, _ := strconv.Atoi(portStr)
 		if uint16(port) != au.port {
 			errl.Println("auth: user", user, "port not match")

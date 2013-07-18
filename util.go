@@ -464,7 +464,6 @@ func trimLastDot(s string) string {
 // host2Domain returns the domain of a host. It will recognize domains like
 // google.com.hk. Returns empty string for simple host and internal IP.
 func host2Domain(host string) (domain string) {
-	host, _ = splitHostPort(host)
 	isIP, isPrivate := hostIsIP(host)
 	if isPrivate {
 		return ""

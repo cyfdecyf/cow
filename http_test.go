@@ -8,26 +8,6 @@ import (
 	"time"
 )
 
-func TestSplitHostPort(t *testing.T) {
-	var testData = []struct {
-		hostPort   string
-		hostNoPort string
-		port       string
-	}{
-		{"google.com", "google.com", ""},
-		{"google.com:80", "google.com", "80"},
-		{"google.com80", "google.com80", ""},
-		{":7777", "", "7777"},
-	}
-
-	for _, td := range testData {
-		h, p := splitHostPort(td.hostPort)
-		if h != td.hostNoPort || p != td.port {
-			t.Errorf("%s returns %v:%v", td.hostPort, td.hostNoPort, td.port)
-		}
-	}
-}
-
 func TestParseRequestURI(t *testing.T) {
 	var testData = []struct {
 		rawurl string
