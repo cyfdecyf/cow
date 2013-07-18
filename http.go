@@ -593,7 +593,7 @@ func parseResponse(sv *serverConn, r *Request, rp *Response) (err error) {
 
 	proto := f[0]
 	if !bytes.Equal(proto[0:7], []byte("HTTP/1.")) {
-		errl.Printf("Invalid response status line: %s\n", string(f[0]))
+		errl.Printf("Invalid response status line: %s request %v\n", string(f[0]), r)
 		return errMalformResponse
 	}
 	if proto[7] == '1' {
