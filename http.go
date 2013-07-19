@@ -205,29 +205,6 @@ func (url *URL) String() string {
 	return url.HostPort + url.Path
 }
 
-// For port, return empty string if no port specified.
-// This also works for IPv6 address.
-func splitHostPort(s string) (host, port string) {
-	if len(s) == 0 {
-		return "", ""
-	}
-	// Common case should has no port, check the last char first
-	if !IsDigit(s[len(s)-1]) {
-		return s, ""
-	}
-	// Scan back, make sure we find ':'
-	for i := len(s) - 2; i >= 0; i-- {
-		c := s[i]
-		switch {
-		case c == ':':
-			return s[:i], s[i+1:]
-		case !IsDigit(c):
-			return s, ""
-		}
-	}
-	return s, ""
-}
-
 // net.ParseRequestURI will unescape encoded path, but the proxy doesn't need
 // that. Assumes the input rawurl is valid. Even if rawurl is not valid, net.Dial
 // will check the correctness of the host.
@@ -269,8 +246,9 @@ func ParseRequestURIBytes(rawurl []byte) (*URL, error) {
 	// Must add port in host so it can be used as key to find the correct
 	// server connection.
 	// e.g. google.com:80 and google.com:443 should use different connections.
-	host, port = splitHostPort(hostport)
-	if port == "" {
+	host, port, err := net.SplitHostPort(hostport)
+	if err != nil { // missing port
+		host = hostport
 		if len(scheme) == 4 {
 			hostport = net.JoinHostPort(host, "80")
 			port = "80"
@@ -593,7 +571,7 @@ func parseResponse(sv *serverConn, r *Request, rp *Response) (err error) {
 
 	proto := f[0]
 	if !bytes.Equal(proto[0:7], []byte("HTTP/1.")) {
-		errl.Printf("Invalid response status line: %s\n", string(f[0]))
+		errl.Printf("Invalid response status line: %s request %v\n", string(f[0]), r)
 		return errMalformResponse
 	}
 	if proto[7] == '1' {

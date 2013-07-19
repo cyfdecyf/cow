@@ -140,7 +140,8 @@ func (sp *shadowsocksParent) initCipher(passwd, method string) {
 func (sp *shadowsocksParent) connect(url *URL) (conn, error) {
 	c, err := ss.Dial(url.HostPort, sp.server, sp.cipher.Copy())
 	if err != nil {
-		errl.Printf("can't create shadowsocks connection for: %s %v\n", url.HostPort, err)
+		errl.Printf("create shadowsocks connection to %s through server %s failed %v\n",
+			url.HostPort, sp.server, err)
 		return zeroConn, err
 	}
 	debug.Println("connected to:", url.HostPort, "via shadowsocks:", sp.server)
