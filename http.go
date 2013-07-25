@@ -497,7 +497,7 @@ func parseRequest(c *clientConn, r *Request) (err error) {
 
 	// Read request header
 	if err = r.parseHeader(reader, r.raw, r.URL); err != nil {
-		errl.Printf("Parsing request header: %v\n", err)
+		errl.Printf("Parsing request header: %v %v\n", err, r)
 		return err
 	}
 	if r.ConnectionKeepAlive {

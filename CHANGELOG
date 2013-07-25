@@ -1,3 +1,7 @@
+0.7.5 (2013-07-25)
+    * Fix crash on IPv6 client authentication
+    * Provide ARMv6 binary
+
 0.7.4 (2013-07-15)
     * Fix adding extra connection header for client request with both
       "Proxy-Connection" and "Connection" headers
