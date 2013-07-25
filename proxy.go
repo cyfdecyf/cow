@@ -651,22 +651,22 @@ func (c *clientConn) connect(r *Request, siteInfo *VisitCnt) (srvconn conn, err 
 			errMsg = genErrMsg(r, nil, "Direct connection failed, always direct site.")
 			goto fail
 		}
+		// net.Dial does two things: DNS lookup and TCP connection.
+		// GFW may cause failure here: make it time out or reset connection.
 		// debug.Printf("type of err %v\n", reflect.TypeOf(err))
-		// GFW may cause dns lookup fail (net.DNSError),
-		// may also cause connection time out or reset (net.OpError)
-		if maybeBlocked(err) || isDNSError(err) {
-			// Try to create connection by parent proxy
-			var socksErr error
-			if srvconn, socksErr = connectByParentProxy(r.URL); socksErr == nil {
-				c.handleBlockedRequest(r, err)
-				debug.Println("direct connection failed, use parent proxy for", r)
-				return srvconn, nil
-			}
-			errMsg = genErrMsg(r, nil, "Direct and parent proxy connection failed, maybe blocked site.")
-		} else {
-			errl.Printf("direct connection for %s failed, unhandled error: %v\n", r, err)
-			errMsg = genErrMsg(r, nil, "Direct connection failed, unhandled error.")
+
+		// RST during TCP handshake is valid and would return as connection
+		// refused error. My observation is that GFW does not use RST to stop
+		// TCP handshake.
+		// To simplify things and avoid error in my observation, always try
+		// parent proxy in case of Dial error.
+		var socksErr error
+		if srvconn, socksErr = connectByParentProxy(r.URL); socksErr == nil {
+			c.handleBlockedRequest(r, err)
+			debug.Println("direct connection failed, use parent proxy for", r)
+			return srvconn, nil
 		}
+		errMsg = genErrMsg(r, nil, "Direct and parent proxy connection failed, maybe blocked site.")
 	}
 
 fail:
