@@ -742,14 +742,14 @@ func (sv *serverConn) maybeFake() bool {
 }
 
 func setConnReadTimeout(cn net.Conn, d time.Duration, msg string) {
-	if cn.SetReadDeadline(time.Now().Add(d)) != nil {
-		errl.Println("Set readtimeout:", msg)
+	if err := cn.SetReadDeadline(time.Now().Add(d)); err != nil {
+		errl.Println("Set readtimeout:", msg, err)
 	}
 }
 
 func unsetConnReadTimeout(cn net.Conn, msg string) {
-	if cn.SetReadDeadline(zeroTime) != nil {
-		errl.Println("Unset readtimeout:", msg)
+	if err := cn.SetReadDeadline(zeroTime); err != nil {
+		errl.Println("Unset readtimeout:", msg, err)
 	}
 }
 
