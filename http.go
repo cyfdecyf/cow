@@ -146,7 +146,7 @@ type Response struct {
 	rawByte []byte
 }
 
-var zeroResponse = Response{}
+var zeroResponse = Response{Header: Header{ConnectionKeepAlive: true}}
 
 func (rp *Response) reset() {
 	b := rp.rawByte
