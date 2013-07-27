@@ -439,11 +439,6 @@ func (c *clientConn) handleServerWriteError(r *Request, sv *serverConn, err erro
 	return RetryError{err}
 }
 
-func (c *clientConn) handleClientWriteError(r *Request, err error, msg string) error {
-	// debug.Printf("handleClientWriteError: %s %v %v\n", msg, err, r)
-	return err
-}
-
 func (c *clientConn) readResponse(sv *serverConn, r *Request, rp *Response) (err error) {
 	sv.initBuf()
 	defer func() {
@@ -476,7 +471,7 @@ func (c *clientConn) readResponse(sv *serverConn, r *Request, rp *Response) (err
 	r.releaseBuf()
 
 	if _, err = c.Write(rp.rawResponse()); err != nil {
-		return c.handleClientWriteError(r, err, "Write response header back to client")
+		return err
 	}
 	if dbgRep {
 		if verbose {
@@ -503,7 +498,7 @@ func (c *clientConn) readResponse(sv *serverConn, r *Request, rp *Response) (err
 			} else if isErrOpRead(err) {
 				return c.handleServerReadError(r, sv, err, "Read response body from server.")
 			} else if isErrOpWrite(err) {
-				return c.handleClientWriteError(r, err, "Write response body to client.")
+				return err
 			}
 			errl.Println("sendBody unknown network op error", reflect.TypeOf(err), r)
 			return errShouldClose
