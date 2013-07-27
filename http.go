@@ -449,7 +449,7 @@ func parseRequest(c *clientConn, r *Request) (err error) {
 	var s []byte
 	reader := c.bufRd
 	// make actual timeout a little longer than keep-alive value sent to client
-	setConnReadTimeout(c,
+	setConnReadTimeout(c.Conn,
 		clientConnTimeout+time.Duration(c.timeoutCnt)*time.Second, "parseRequest")
 	// parse request line
 	if s, err = reader.ReadSlice('\n'); err != nil {
@@ -458,7 +458,7 @@ func parseRequest(c *clientConn, r *Request) (err error) {
 		}
 		return err
 	}
-	unsetConnReadTimeout(c, "parseRequest")
+	unsetConnReadTimeout(c.Conn, "parseRequest")
 	// debug.Printf("Request line %s", s)
 
 	r.reset()
