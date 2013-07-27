@@ -703,7 +703,7 @@ func newServerConn(c conn, url *URL, siteInfo *VisitCnt) *serverConn {
 	return sv
 }
 
-func (sv *serverConn) directConnection() bool {
+func (sv *serverConn) isDirect() bool {
 	return sv.connType == ctDirectConn
 }
 
@@ -712,7 +712,7 @@ func (sv *serverConn) updateVisit() {
 		return
 	}
 	sv.visited = true
-	if sv.directConnection() {
+	if sv.isDirect() {
 		sv.siteInfo.DirectVisit()
 	} else {
 		sv.siteInfo.BlockedVisit()
@@ -738,7 +738,7 @@ func (sv *serverConn) Close() error {
 }
 
 func (sv *serverConn) maybeFake() bool {
-	return sv.state == svConnected && sv.directConnection() && !sv.siteInfo.AlwaysDirect()
+	return sv.state == svConnected && sv.isDirect() && !sv.siteInfo.AlwaysDirect()
 }
 
 func setConnReadTimeout(cn net.Conn, d time.Duration, msg string) {
