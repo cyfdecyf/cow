@@ -216,13 +216,6 @@ func isSelfURL(url string) bool {
 	return url == ""
 }
 
-func (c *clientConn) getRequest(r *Request) (err error) {
-	if err = parseRequest(c, r); err != nil {
-		return c.handleClientReadError(r, err, "parse client request")
-	}
-	return nil
-}
-
 func (c *clientConn) serveSelfURL(r *Request) (err error) {
 	if r.Method != "GET" {
 		goto end
@@ -297,15 +290,29 @@ func (c *clientConn) serve() {
 		if c.shouldCleanServerConn() {
 			c.cleanServerConn()
 		}
-		if err = c.getRequest(&r); err != nil {
-			if err == errClientTimeout {
+
+		if err = parseRequest(c, &r); err != nil {
+			if debug {
+				debug.Printf("client: %s parse request %v\n", c.RemoteAddr(), err)
+			}
+			if err == io.EOF || isErrConnReset(err) {
+				return
+			}
+			if err != errClientTimeout {
+				sendErrorPage(c, "404 Bad request", "Bad request", err.Error())
+				return
+			}
+			c.timeoutCnt++
+			if c.timeoutCnt < clientMaxTimeoutCnt {
+				c.cleanServerConn()
 				continue
 			}
-			if err != errShouldClose {
-				sendErrorPage(c, "404 Bad request", "Bad request", err.Error())
-			}
+			sendErrorPage(c, statusRequestTimeout, statusRequestTimeout,
+				"Your browser didn't send a complete request in time.")
 			return
 		}
+		// next getRequest should start with timeout count 0
+		c.timeoutCnt = 0
 		if dbgRq {
 			if verbose {
 				dbgRq.Printf("request from client %s: %s\n%s", c.RemoteAddr(), &r, r.Verbose())
@@ -430,33 +437,6 @@ func (c *clientConn) handleServerWriteError(r *Request, sv *serverConn, err erro
 		siteStat.TempBlocked(r.URL)
 	}
 	return RetryError{err}
-}
-
-func (c *clientConn) handleClientReadError(r *Request, err error, msg string) error {
-	if err == errClientTimeout {
-		c.timeoutCnt++
-		if c.timeoutCnt >= clientMaxTimeoutCnt {
-			debug.Printf("%s client maybe has closed\n", msg)
-			return errShouldClose
-		}
-		debug.Printf("%s client read timeout\n", msg)
-		c.cleanServerConn()
-		return err
-	}
-
-	if !debug {
-		return err
-	}
-
-	if err == io.EOF {
-		debug.Printf("%s client closed connection", msg)
-	} else if isErrConnReset(err) {
-		debug.Printf("%s connection reset", msg)
-	} else {
-		// may reach here when header is larger than buffer size or got malformed HTTP request
-		debug.Printf("handleClientReadError: %s %v %v\n", msg, err, r)
-	}
-	return err
 }
 
 func (c *clientConn) handleClientWriteError(r *Request, err error, msg string) error {

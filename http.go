@@ -12,6 +12,16 @@ import (
 	"time"
 )
 
+const (
+	statusCodeContinue = 100
+)
+
+const (
+	statusBadReq         = "400 Bad Request"
+	statusExpectFailed   = "417 Expectation Failed"
+	statusRequestTimeout = "408 Request Time-out"
+)
+
 type Header struct {
 	ContLen             int64
 	KeepAlive           time.Duration
@@ -126,15 +136,6 @@ func (r *Request) rawBody() []byte {
 func (r *Request) proxyRequestLine() []byte {
 	return r.raw.Bytes()[0:r.reqLnStart]
 }
-
-const (
-	statusCodeContinue = 100
-)
-
-const (
-	statusBadReq       = "400 Bad Request"
-	statusExpectFailed = "417 Expectation Failed"
-)
 
 type Response struct {
 	Status int
@@ -447,7 +448,9 @@ func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, url *URL) 
 func parseRequest(c *clientConn, r *Request) (err error) {
 	var s []byte
 	reader := c.bufRd
-	setConnReadTimeout(c, clientConnTimeout, "parseRequest")
+	// make actual timeout a little longer than keep-alive value sent to client
+	setConnReadTimeout(c,
+		clientConnTimeout+time.Duration(c.timeoutCnt)*time.Second, "parseRequest")
 	// parse request line
 	if s, err = reader.ReadSlice('\n'); err != nil {
 		if isErrTimeout(err) {
