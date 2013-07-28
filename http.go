@@ -18,8 +18,9 @@ const (
 
 const (
 	statusBadReq         = "400 Bad Request"
+	statusForbidden      = "403 Forbidden"
 	statusExpectFailed   = "417 Expectation Failed"
-	statusRequestTimeout = "408 Request Time-out"
+	statusRequestTimeout = "408 Request Timeout"
 )
 
 type Header struct {

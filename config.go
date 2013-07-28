@@ -26,6 +26,17 @@ const (
 	loadBalanceHash
 )
 
+// allow the same tunnel ports as polipo
+var defaultTunnelAllowedPort = []string{
+	"22", "80", "443", // ssh, http, https
+	"873",                      // rsync
+	"143", "220", "585", "993", // imap, imap3, imap4-ssl, imaps
+	"109", "110", "473", "995", // pop2, pop3, hybrid-pop, pop3s
+	"5222", "5269", // jabber-client, jabber-server
+	"2401", // cvspserver
+	"9418", // git
+}
+
 type Config struct {
 	RcFile      string // config file
 	ListenAddr  []string
@@ -33,10 +44,9 @@ type Config struct {
 	AlwaysProxy bool
 	LoadBalance LoadBalanceMode
 
-	SshServer []string
+	TunnelAllowedPort map[string]bool // allowed ports to create tunnel
 
-	// http parent proxy
-	hasHttpParent bool
+	SshServer []string
 
 	// authenticate client
 	UserPasswd     string
@@ -54,6 +64,8 @@ type Config struct {
 
 	// not configurable in config file
 	PrintVer bool
+
+	hasHttpParent bool // not config option
 }
 
 var config Config
@@ -83,6 +95,11 @@ func init() {
 	config.AuthTimeout = 2 * time.Hour
 	config.DialTimeout = defaultDialTimeout
 	config.ReadTimeout = defaultReadTimeout
+
+	config.TunnelAllowedPort = make(map[string]bool)
+	for _, port := range defaultTunnelAllowedPort {
+		config.TunnelAllowedPort[port] = true
+	}
 }
 
 // Whether command line options specifies listen addr
@@ -158,9 +175,6 @@ func (p configParser) ParseListen(val string) {
 		return
 	}
 	arr := strings.Split(val, ",")
-	if config.ListenAddr == nil {
-		config.ListenAddr = make([]string, 0, len(arr))
-	}
 	for _, s := range arr {
 		s = strings.TrimSpace(s)
 		host, _, err := net.SplitHostPort(s)
@@ -193,6 +207,17 @@ func (p configParser) ParseAddrInPAC(val string) {
 			Fatal("can't use 0.0.0.0 as proxy address in PAC")
 		}
 		config.AddrInPAC[i] = s
+	}
+}
+
+func (p configParser) ParseTunnelAllowedPort(val string) {
+	arr := strings.Split(val, ",")
+	for _, s := range arr {
+		s = strings.TrimSpace(s)
+		if _, err := strconv.Atoi(s); err != nil {
+			Fatal("tunnel allowed ports", err)
+		}
+		config.TunnelAllowedPort[s] = true
 	}
 }
 
