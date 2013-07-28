@@ -330,6 +330,9 @@ func (c *clientConn) serve() {
 		c.timeoutCnt = 0
 		dbgPrintRq(c, &r)
 
+		// PAC may leak frequently visited sites information. But if cow
+		// requires authentication for PAC, some clients may not be able
+		// handle it. (e.g. Proxy SwitchySharp extension on Chrome.)
 		if isSelfURL(r.URL.HostPort) {
 			if err = c.serveSelfURL(&r); err != nil {
 				return
