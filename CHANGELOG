@@ -1,3 +1,10 @@
+0.7.6 (2013-07-28)
+    * Fix bug for close connection response with no body
+    * Fix response not keep alive by default
+    * Always try parent proxy upon DNS/connection error
+    * Do not take special handling on log with debug option
+    * Add proxy status statistics in debug code
+
 0.7.5 (2013-07-25)
     * Fix crash on IPv6 client authentication
     * Provide ARMv6 binary
