@@ -602,8 +602,20 @@ func parseResponse(sv *serverConn, r *Request, rp *Response) (err error) {
 	// Connection close, no content length specification
 	// Use chunked encoding to pass content back to client
 	if !rp.ConnectionKeepAlive && !rp.Chunking && rp.ContLen == -1 {
-		rp.raw.WriteString("Transfer-Encoding: chunked\r\n")
+		if rp.hasBody(r.Method) {
+			debug.Println("add chunked encoding to close connection response", r, rp)
+			rp.raw.WriteString("Transfer-Encoding: chunked\r\n")
+		} else {
+			debug.Println("add content-length 0 to close connection response", r, rp)
+			rp.raw.WriteString("Content-Length: 0\r\n")
+		}
 	}
+	// Check for invalid response
+	if !rp.hasBody(r.Method) && (rp.Chunking || rp.ContLen != -1) {
+		errl.Printf("response has no body, but with chunked/content-length set\n%s",
+			rp.Verbose())
+	}
+
 	// Whether COW should respond with keep-alive depends on client request,
 	// not server response.
 	if r.ConnectionKeepAlive {
