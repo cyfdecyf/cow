@@ -12,6 +12,16 @@ import (
 	"time"
 )
 
+const (
+	statusCodeContinue = 100
+)
+
+const (
+	statusBadReq         = "400 Bad Request"
+	statusExpectFailed   = "417 Expectation Failed"
+	statusRequestTimeout = "408 Request Time-out"
+)
+
 type Header struct {
 	ContLen             int64
 	KeepAlive           time.Duration
@@ -127,15 +137,6 @@ func (r *Request) proxyRequestLine() []byte {
 	return r.raw.Bytes()[0:r.reqLnStart]
 }
 
-const (
-	statusCodeContinue = 100
-)
-
-const (
-	statusBadReq       = "400 Bad Request"
-	statusExpectFailed = "417 Expectation Failed"
-)
-
 type Response struct {
 	Status int
 	Reason []byte
@@ -146,7 +147,7 @@ type Response struct {
 	rawByte []byte
 }
 
-var zeroResponse = Response{}
+var zeroResponse = Response{Header: Header{ConnectionKeepAlive: true}}
 
 func (rp *Response) reset() {
 	b := rp.rawByte
@@ -447,7 +448,9 @@ func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, url *URL) 
 func parseRequest(c *clientConn, r *Request) (err error) {
 	var s []byte
 	reader := c.bufRd
-	setConnReadTimeout(c, clientConnTimeout, "parseRequest")
+	// make actual timeout a little longer than keep-alive value sent to client
+	setConnReadTimeout(c.Conn,
+		clientConnTimeout+time.Duration(c.timeoutCnt)*time.Second, "parseRequest")
 	// parse request line
 	if s, err = reader.ReadSlice('\n'); err != nil {
 		if isErrTimeout(err) {
@@ -455,7 +458,7 @@ func parseRequest(c *clientConn, r *Request) (err error) {
 		}
 		return err
 	}
-	unsetConnReadTimeout(c, "parseRequest")
+	unsetConnReadTimeout(c.Conn, "parseRequest")
 	// debug.Printf("Request line %s", s)
 
 	r.reset()
@@ -599,8 +602,20 @@ func parseResponse(sv *serverConn, r *Request, rp *Response) (err error) {
 	// Connection close, no content length specification
 	// Use chunked encoding to pass content back to client
 	if !rp.ConnectionKeepAlive && !rp.Chunking && rp.ContLen == -1 {
-		rp.raw.WriteString("Transfer-Encoding: chunked\r\n")
+		if rp.hasBody(r.Method) {
+			debug.Println("add chunked encoding to close connection response", r, rp)
+			rp.raw.WriteString("Transfer-Encoding: chunked\r\n")
+		} else {
+			debug.Println("add content-length 0 to close connection response", r, rp)
+			rp.raw.WriteString("Content-Length: 0\r\n")
+		}
 	}
+	// Check for invalid response
+	if !rp.hasBody(r.Method) && (rp.Chunking || rp.ContLen != -1) {
+		errl.Printf("response has no body, but with chunked/content-length set\n%s",
+			rp.Verbose())
+	}
+
 	// Whether COW should respond with keep-alive depends on client request,
 	// not server response.
 	if r.ConnectionKeepAlive {

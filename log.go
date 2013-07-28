@@ -1,6 +1,6 @@
 package main
 
-// This trick is learnt from a post by Rob Pike
+// This logging trick is learnt from a post by Rob Pike
 // https://groups.google.com/d/msg/golang-nuts/gU7oQGoCkmg/j3nNxuS2O_sJ
 
 import (
@@ -49,11 +49,7 @@ func init() {
 
 func initLog() {
 	logFile = os.Stdout
-	if bool(debug) && !isWindows {
-		// On windows, we don't know if the terminal supports ANSI color, so
-		// does not turn color by default in debug mode
-		colorize = true
-	} else if config.LogFile != "" {
+	if config.LogFile != "" {
 		if f, err := os.OpenFile(expandTilde(config.LogFile),
 			os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600); err != nil {
 			fmt.Printf("Can't open log file, logging to stdout: %v\n", err)

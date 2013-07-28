@@ -4,7 +4,6 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"errors"
-	"fmt"
 	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
 	"io"
 	"math/rand"
@@ -81,11 +80,11 @@ func printParentProxy() {
 	for _, pp := range parentProxy {
 		switch pc := pp.proxyConnector.(type) {
 		case *shadowsocksParent:
-			fmt.Println("\tshadowsocks: ", pc.server)
+			debug.Println("\tshadowsocks: ", pc.server)
 		case *httpParent:
-			fmt.Println("\thttp parent: ", pc.server)
+			debug.Println("\thttp parent: ", pc.server)
 		case socksParent:
-			fmt.Println("\tsocks parent: ", pc.server)
+			debug.Println("\tsocks parent: ", pc.server)
 		}
 	}
 }
