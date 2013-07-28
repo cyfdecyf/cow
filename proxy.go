@@ -29,6 +29,9 @@ const httpBufSize = 8192
 // holding post data.
 var httpBuf = leakybuf.NewLeakyBuf(512, httpBufSize)
 
+// If no keep-alive header in response, use this as the keep-alive value.
+const defaultServerConnTimeout = 15 * time.Second
+
 // Close client connection if no new request received in some time. To prevent
 // keeping too many idle (keep-alive) server connections, COW timeout read for
 // the initial request line after clientConnTimeout, and closes client
@@ -512,9 +515,7 @@ func (c *clientConn) readResponse(sv *serverConn, r *Request, rp *Response) (err
 	*/
 	if rp.ConnectionKeepAlive {
 		if rp.KeepAlive == time.Duration(0) {
-			// Apache 2.2 timeout defaults to 5 seconds.
-			const serverConnTimeout = 5 * time.Second
-			sv.willCloseOn = time.Now().Add(serverConnTimeout)
+			sv.willCloseOn = time.Now().Add(defaultServerConnTimeout)
 		} else {
 			sv.willCloseOn = time.Now().Add(rp.KeepAlive - time.Second)
 		}
