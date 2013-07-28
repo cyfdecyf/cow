@@ -685,15 +685,15 @@ func (c *clientConn) createServerConn(r *Request) (*serverConn, error) {
 		return nil, err
 	}
 	sv := newServerConn(srvconn, r.URL, siteInfo)
+	if debug {
+		debug.Printf("cli(%s) connected to %s %d concurrent connections\n",
+			c.RemoteAddr(), sv.url.HostPort, incSrvConnCnt(sv.url.HostPort))
+	}
 	if r.isConnect {
 		// Don't put connection for CONNECT method for reuse
 		return sv, nil
 	}
 	c.serverConn[sv.url.HostPort] = sv
-	if debug {
-		debug.Printf("cli(%s) connected to %s %d concurrent connections\n",
-			c.RemoteAddr(), sv.url.HostPort, incSrvConnCnt(sv.url.HostPort))
-	}
 	// client will connect to differnet servers in a single proxy connection
 	// debug.Printf("serverConn to for client %v %v\n", c.RemoteAddr(), c.serverConn)
 	return sv, nil
