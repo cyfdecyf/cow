@@ -502,6 +502,9 @@ func (c *clientConn) readResponse(sv *serverConn, r *Request, rp *Response) (err
 
 	if rp.hasBody(r.Method) {
 		if err = sendBody(c, sv, nil, rp); err != nil {
+			if debug {
+				debug.Printf("cli(%s) send body %v\n", c.RemoteAddr(), err)
+			}
 			// Non persistent connection will return nil upon successful response reading
 			if err == io.EOF {
 				// For persistent connection, EOF from server is error.
