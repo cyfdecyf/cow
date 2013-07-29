@@ -610,11 +610,6 @@ func parseResponse(sv *serverConn, r *Request, rp *Response) (err error) {
 			rp.raw.WriteString("Content-Length: 0\r\n")
 		}
 	}
-	// Check for invalid response
-	if !rp.hasBody(r.Method) && (rp.Chunking || rp.ContLen != -1) {
-		errl.Printf("response has no body, but with chunked/content-length set\n%s",
-			rp.Verbose())
-	}
 
 	// Whether COW should respond with keep-alive depends on client request,
 	// not server response.
