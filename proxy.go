@@ -367,8 +367,8 @@ func (c *clientConn) serve() {
 		}
 
 		if r.isConnect {
+			// server connection will be closed in doConnect
 			err = sv.doConnect(&r, c)
-			sv.Close()
 			if c.shouldRetry(&r, sv, err) {
 				// connection for CONNECT is not reused, no need to remove
 				goto retry
@@ -961,7 +961,9 @@ func (sv *serverConn) doConnect(r *Request, c *clientConn) (err error) {
 	go func() {
 		// debug.Printf("doConnect: cli(%s)->srv(%s)\n", c.RemoteAddr(), r.URL.HostPort)
 		cli2srvErr = copyClient2Server(c, sv, r, srvStopped, done)
-		sv.Close() // close sv to force read from server in copyServer2Client return
+		// Close sv to force read from server in copyServer2Client return.
+		// Note: there's no other code closing the server connection for CONNECT.
+		sv.Close()
 	}()
 
 	// debug.Printf("doConnect: srv(%s)->cli(%s)\n", r.URL.HostPort, c.RemoteAddr())
