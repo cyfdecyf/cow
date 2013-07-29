@@ -110,7 +110,7 @@ type serverConn struct {
 	conn
 	bufRd       *bufio.Reader
 	buf         []byte // buffer for the buffered reader
-	url         *URL
+	hostPort    string
 	state       serverConnState
 	willCloseOn time.Time
 	siteInfo    *VisitCnt
@@ -548,12 +548,12 @@ func (c *clientConn) readResponse(sv *serverConn, r *Request, rp *Response) (err
 			sv.willCloseOn = time.Now().Add(defaultServerConnTimeout)
 		} else {
 			debug.Printf("cli(%s) server %s keep-alive %v\n",
-				remoteAddr, sv.url.HostPort, rp.KeepAlive)
+				remoteAddr, sv.hostPort, rp.KeepAlive)
 			sv.willCloseOn = time.Now().Add(rp.KeepAlive)
 		}
 	} else {
 		debug.Printf("cli(%s) server %s close connection\n",
-			remoteAddr, sv.url.HostPort)
+			remoteAddr, sv.hostPort)
 		c.removeServerConn(sv)
 	}
 	return
@@ -582,7 +582,7 @@ func (c *clientConn) cleanServerConn() {
 func (c *clientConn) getServerConn(r *Request) (sv *serverConn, err error) {
 	sv, ok := c.serverConn[r.URL.HostPort]
 	if ok && sv.mayBeClosed() {
-		// debug.Printf("Connection to %s maybe closed\n", sv.url.HostPort)
+		// debug.Printf("Connection to %s maybe closed\n", sv.hostPort)
 		c.removeServerConn(sv)
 		ok = false
 	}
@@ -594,7 +594,7 @@ func (c *clientConn) getServerConn(r *Request) (sv *serverConn, err error) {
 
 func (c *clientConn) removeServerConn(sv *serverConn) {
 	sv.Close(c)
-	delete(c.serverConn, sv.url.HostPort)
+	delete(c.serverConn, sv.hostPort)
 }
 
 func connectDirect(url *URL, siteInfo *VisitCnt) (conn, error) {
@@ -693,16 +693,16 @@ func (c *clientConn) createServerConn(r *Request) (*serverConn, error) {
 	if err != nil {
 		return nil, err
 	}
-	sv := newServerConn(srvconn, r.URL, siteInfo)
+	sv := newServerConn(srvconn, r.URL.HostPort, siteInfo)
 	if debug {
 		debug.Printf("cli(%s) connected to %s %d concurrent connections\n",
-			c.RemoteAddr(), sv.url.HostPort, incSrvConnCnt(sv.url.HostPort))
+			c.RemoteAddr(), sv.hostPort, incSrvConnCnt(sv.hostPort))
 	}
 	if r.isConnect {
 		// Don't put connection for CONNECT method for reuse
 		return sv, nil
 	}
-	c.serverConn[sv.url.HostPort] = sv
+	c.serverConn[sv.hostPort] = sv
 	// client will connect to differnet servers in a single proxy connection
 	// debug.Printf("serverConn to for client %v %v\n", c.RemoteAddr(), c.serverConn)
 	return sv, nil
@@ -711,10 +711,10 @@ func (c *clientConn) createServerConn(r *Request) (*serverConn, error) {
 // Should call initBuf before reading http response from server. This allows
 // us not init buf for connect method which does not need to parse http
 // respnose.
-func newServerConn(c conn, url *URL, siteInfo *VisitCnt) *serverConn {
+func newServerConn(c conn, hostPort string, siteInfo *VisitCnt) *serverConn {
 	sv := &serverConn{
 		conn:     c,
-		url:      url,
+		hostPort: hostPort,
 		siteInfo: siteInfo,
 	}
 	return sv
@@ -752,7 +752,7 @@ func (sv *serverConn) Close(c *clientConn) error {
 	}
 	if debug {
 		debug.Printf("cli(%s) close connection to %s remains %d concurrent connections\n",
-			c.RemoteAddr(), sv.url.HostPort, decSrvConnCnt(sv.url.HostPort))
+			c.RemoteAddr(), sv.hostPort, decSrvConnCnt(sv.hostPort))
 	}
 	return sv.Conn.Close()
 }
