@@ -32,14 +32,11 @@ var httpBuf = leakybuf.NewLeakyBuf(512, httpBufSize)
 // If no keep-alive header in response, use this as the keep-alive value.
 const defaultServerConnTimeout = 15 * time.Second
 
-// Close client connection if no new request received in some time. To prevent
-// keeping too many idle (keep-alive) server connections, COW timeout read for
-// the initial request line after clientConnTimeout, and closes client
-// connection after clientMaxTimeoutCnt timeout.
+// Close client connection if no new requests received in some time.
 // (On OS X, the default soft limit of open file descriptor is 256, which is
-// very conservative and easy to cause problem if we are not careful.)
-const clientConnTimeout = 5 * time.Second
-const clientMaxTimeoutCnt = 2
+// very conservative and easy to cause problem if we are not careful to limit
+// open fds.)
+const clientConnTimeout = 10 * time.Second
 const fullKeepAliveHeader = "Keep-Alive: timeout=10\r\n"
 
 // Remove idle server connection every cleanServerInterval second.
@@ -118,13 +115,10 @@ type serverConn struct {
 }
 
 type clientConn struct {
-	net.Conn   // connection to the proxy client
-	bufRd      *bufio.Reader
-	buf        []byte                 // buffer for the buffered reader
-	serverConn map[string]*serverConn // request serverConn, host:port as key
-	timeoutCnt int                    // number of timeouts reading requests
-	cleanedOn  time.Time              // time of last idle server clean up
-	proxy      *Proxy
+	net.Conn // connection to the proxy client
+	bufRd    *bufio.Reader
+	buf      []byte // buffer for the buffered reader
+	proxy    *Proxy
 }
 
 var (
@@ -183,11 +177,10 @@ func (py *Proxy) Serve(done chan byte) {
 func newClientConn(cli net.Conn, proxy *Proxy) *clientConn {
 	buf := httpBuf.Get()
 	c := &clientConn{
-		Conn:       cli,
-		serverConn: map[string]*serverConn{},
-		buf:        buf,
-		bufRd:      bufio.NewReaderFromBuf(cli, buf),
-		proxy:      proxy,
+		Conn:  cli,
+		buf:   buf,
+		bufRd: bufio.NewReaderFromBuf(cli, buf),
+		proxy: proxy,
 	}
 	if debug {
 		debug.Printf("cli(%s) connected, total %d clients\n",
@@ -207,9 +200,6 @@ func (c *clientConn) releaseBuf() {
 
 func (c *clientConn) Close() {
 	c.releaseBuf()
-	for _, sv := range c.serverConn {
-		sv.Close(c)
-	}
 	if debug {
 		debug.Printf("cli(%s) closed, total %d clients\n",
 			c.RemoteAddr(), decCliCnt())
@@ -301,10 +291,6 @@ func (c *clientConn) serve() {
 		if c.bufRd == nil || c.buf == nil {
 			panic("client read buffer nil")
 		}
-		// clean up idle server connection before waiting for client request
-		if c.shouldCleanServerConn() {
-			c.cleanServerConn()
-		}
 
 		if err = parseRequest(c, &r); err != nil {
 			if debug {
@@ -317,17 +303,10 @@ func (c *clientConn) serve() {
 				sendErrorPage(c, "404 Bad request", "Bad request", err.Error())
 				return
 			}
-			c.timeoutCnt++
-			if c.timeoutCnt < clientMaxTimeoutCnt {
-				c.cleanServerConn()
-				continue
-			}
 			sendErrorPage(c, statusRequestTimeout, statusRequestTimeout,
 				"Your browser didn't send a complete request in time.")
 			return
 		}
-		// next getRequest should start with timeout count 0
-		c.timeoutCnt = 0
 		dbgPrintRq(c, &r)
 
 		// PAC may leak frequently visited sites information. But if cow
@@ -389,7 +368,7 @@ func (c *clientConn) serve() {
 
 		if r.isConnect {
 			err = sv.doConnect(&r, c)
-			sv.Close(c)
+			sv.Close()
 			if c.shouldRetry(&r, sv, err) {
 				// connection for CONNECT is not reused, no need to remove
 				goto retry
@@ -399,13 +378,25 @@ func (c *clientConn) serve() {
 		}
 
 		if err = sv.doRequest(c, &r, &rp); err != nil {
-			c.removeServerConn(sv)
+			// For client I/O error, we can actually put server connection to
+			// pool. But let's make thing simple for now.
+			sv.Close()
 			if c.shouldRetry(&r, sv, err) {
 				goto retry
 			} else if err == errPageSent {
 				continue
 			}
 			return
+		}
+		// Put server connection to pool, so other clients maybe use it.
+		if rp.ConnectionKeepAlive {
+			connPool.Put(sv)
+		} else {
+			if debug {
+				debug.Printf("cli(%s) server %s close connection\n",
+					c.RemoteAddr(), sv.hostPort)
+			}
+			sv.Close()
 		}
 
 		if !r.ConnectionKeepAlive {
@@ -539,62 +530,29 @@ func (c *clientConn) readResponse(sv *serverConn, r *Request, rp *Response) (err
 			debug.Printf("[Finished] %v request %s %s\n", c.RemoteAddr(), r.Method, r.URL)
 		}
 	*/
-	var remoteAddr string // avoid evaluating c.RemoteAddr() in the following debug call
-	if debug {
-		remoteAddr = c.RemoteAddr().String()
-	}
 	if rp.ConnectionKeepAlive {
 		if rp.KeepAlive == time.Duration(0) {
 			sv.willCloseOn = time.Now().Add(defaultServerConnTimeout)
 		} else {
-			debug.Printf("cli(%s) server %s keep-alive %v\n",
-				remoteAddr, sv.hostPort, rp.KeepAlive)
+			// debug.Printf("cli(%s) server %s keep-alive %v\n", c.RemoteAddr(), sv.hostPort, rp.KeepAlive)
 			sv.willCloseOn = time.Now().Add(rp.KeepAlive)
 		}
-	} else {
-		debug.Printf("cli(%s) server %s close connection\n",
-			remoteAddr, sv.hostPort)
-		c.removeServerConn(sv)
 	}
 	return
 }
 
-func (c *clientConn) shouldCleanServerConn() bool {
-	return len(c.serverConn) > 0 &&
-		time.Now().Sub(c.cleanedOn) > cleanServerInterval
-}
+func (c *clientConn) getServerConn(r *Request) (*serverConn, error) {
+	// For CONNECT method, always create new connection.
+	if r.isConnect {
+		return c.createServerConn(r)
+	}
 
-// Remove all maybe closed server connection
-func (c *clientConn) cleanServerConn() {
-	now := time.Now()
-	c.cleanedOn = now
-	for _, sv := range c.serverConn {
-		if now.After(sv.willCloseOn) {
-			c.removeServerConn(sv)
-		}
+	sv := connPool.Get(r.URL.HostPort)
+	if sv != nil {
+		return sv, nil
 	}
-	if debug {
-		debug.Printf("cli(%s) close idle connections, remains %d\n",
-			c.RemoteAddr(), len(c.serverConn))
-	}
-}
-
-func (c *clientConn) getServerConn(r *Request) (sv *serverConn, err error) {
-	sv, ok := c.serverConn[r.URL.HostPort]
-	if ok && sv.mayBeClosed() {
-		// debug.Printf("Connection to %s maybe closed\n", sv.hostPort)
-		c.removeServerConn(sv)
-		ok = false
-	}
-	if !ok {
-		sv, err = c.createServerConn(r)
-	}
-	return
-}
-
-func (c *clientConn) removeServerConn(sv *serverConn) {
-	sv.Close(c)
-	delete(c.serverConn, sv.hostPort)
+	debug.Printf("connPool %s: no conn", r.URL.HostPort)
+	return c.createServerConn(r)
 }
 
 func connectDirect(url *URL, siteInfo *VisitCnt) (conn, error) {
@@ -679,7 +637,8 @@ func (c *clientConn) connect(r *Request, siteInfo *VisitCnt) (srvconn conn, err 
 			debug.Println("direct connection failed, use parent proxy for", r)
 			return srvconn, nil
 		}
-		errMsg = genErrMsg(r, nil, "Direct and parent proxy connection failed, maybe blocked site.")
+		errMsg = genErrMsg(r, nil,
+			"Direct and parent proxy connection failed, maybe blocked site.")
 	}
 
 fail:
@@ -698,13 +657,6 @@ func (c *clientConn) createServerConn(r *Request) (*serverConn, error) {
 		debug.Printf("cli(%s) connected to %s %d concurrent connections\n",
 			c.RemoteAddr(), sv.hostPort, incSrvConnCnt(sv.hostPort))
 	}
-	if r.isConnect {
-		// Don't put connection for CONNECT method for reuse
-		return sv, nil
-	}
-	c.serverConn[sv.hostPort] = sv
-	// client will connect to differnet servers in a single proxy connection
-	// debug.Printf("serverConn to for client %v %v\n", c.RemoteAddr(), c.serverConn)
 	return sv, nil
 }
 
@@ -743,7 +695,7 @@ func (sv *serverConn) initBuf() {
 	}
 }
 
-func (sv *serverConn) Close(c *clientConn) error {
+func (sv *serverConn) Close() error {
 	sv.bufRd = nil
 	if sv.buf != nil {
 		// debug.Println("release server buffer")
@@ -751,8 +703,8 @@ func (sv *serverConn) Close(c *clientConn) error {
 		sv.buf = nil
 	}
 	if debug {
-		debug.Printf("cli(%s) close connection to %s remains %d concurrent connections\n",
-			c.RemoteAddr(), sv.hostPort, decSrvConnCnt(sv.hostPort))
+		debug.Printf("close connection to %s remains %d concurrent connections\n",
+			sv.hostPort, decSrvConnCnt(sv.hostPort))
 	}
 	return sv.Conn.Close()
 }
@@ -1009,7 +961,7 @@ func (sv *serverConn) doConnect(r *Request, c *clientConn) (err error) {
 	go func() {
 		// debug.Printf("doConnect: cli(%s)->srv(%s)\n", c.RemoteAddr(), r.URL.HostPort)
 		cli2srvErr = copyClient2Server(c, sv, r, srvStopped, done)
-		sv.Close(c) // close sv to force read from server in copyServer2Client return
+		sv.Close() // close sv to force read from server in copyServer2Client return
 	}()
 
 	// debug.Printf("doConnect: srv(%s)->cli(%s)\n", r.URL.HostPort, c.RemoteAddr())
