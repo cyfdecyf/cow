@@ -1,4 +1,4 @@
-// Shared server connection between different clients.
+// Shared server connections between different clients.
 
 package main
 
@@ -10,8 +10,8 @@ import (
 // Maximum number of connections to a server.
 const maxServerConnCnt = 20
 
-// Store each server's connection in a separate goroutine, so getting
-// different server's connections can be done concurrently.
+// Store each server's connections in separate channels, getting
+// connections for different servers can be done in parallel.
 type ConnPool struct {
 	idleConn map[string]chan *serverConn
 	sync.RWMutex
