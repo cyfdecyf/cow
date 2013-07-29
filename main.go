@@ -49,6 +49,7 @@ func main() {
 	initAuth()
 	initSiteStat()
 	initPAC() // initPAC uses siteStat, so must init after site stat
+	initConnPool()
 
 	initStat()
 
