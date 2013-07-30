@@ -840,7 +840,7 @@ func (sw *serverWriter) Write(p []byte) (int, error) {
 	return sw.sv.Write(p)
 }
 
-func copyClient2Server(c *clientConn, sv *serverConn, r *Request, srvStopped notification, done chan byte) (err error) {
+func copyClient2Server(c *clientConn, sv *serverConn, r *Request, srvStopped notification, done chan struct{}) (err error) {
 	// sv.maybeFake may change during execution in this function.
 	// So need a variable to record the whether timeout is set.
 	deadlineIsSet := false
@@ -849,7 +849,7 @@ func copyClient2Server(c *clientConn, sv *serverConn, r *Request, srvStopped not
 			// maybe need to retry, should unset timeout here because
 			unsetConnReadTimeout(c.Conn, "cli->srv after err")
 		}
-		done <- 1
+		close(done)
 	}()
 
 	var n int
@@ -956,7 +956,7 @@ func (sv *serverConn) doConnect(r *Request, c *clientConn) (err error) {
 	}
 
 	var cli2srvErr error
-	done := make(chan byte, 1)
+	done := make(chan struct{})
 	srvStopped := newNotification()
 	go func() {
 		// debug.Printf("doConnect: cli(%s)->srv(%s)\n", c.RemoteAddr(), r.URL.HostPort)
