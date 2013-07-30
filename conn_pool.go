@@ -96,7 +96,7 @@ func closeStaleServerConn(ch chan *serverConn, hostPort string) {
 	// some memory and open fd.
 DONE:
 	for {
-		time.Sleep(10 * time.Second)
+		time.Sleep(defaultServerConnTimeout)
 	CLEANUP:
 		for {
 			select {
