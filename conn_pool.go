@@ -40,7 +40,6 @@ func (cp *ConnPool) Get(hostPort string) *serverConn {
 				sv.Close()
 				continue
 			}
-			debug.Printf("connPool %s: get conn\n", hostPort)
 			return sv
 		default:
 			return nil
@@ -69,7 +68,6 @@ func (cp *ConnPool) Put(sv *serverConn) {
 
 	select {
 	case ch <- sv:
-		debug.Printf("connPool %s: put one conn", sv.hostPort)
 		return
 	default:
 		// Simply close the connection if can't put into channel immediately.
@@ -102,11 +100,11 @@ DONE:
 			select {
 			case sv := <-ch:
 				if sv.mayBeClosed() {
-					debug.Printf("connPool %s: close one conn\n", hostPort)
+					debug.Printf("connPool channel %s: close one conn\n", hostPort)
 					sv.Close()
 				} else {
 					// Put it back and wait.
-					debug.Printf("connPool %s: put back conn\n", hostPort)
+					debug.Printf("connPool channel %s: put back conn\n", hostPort)
 					ch <- sv
 					break CLEANUP
 				}
@@ -116,7 +114,7 @@ DONE:
 				connPool.Lock()
 				delete(connPool.idleConn, hostPort)
 				connPool.Unlock()
-				debug.Printf("connPool %s: channeld removed\n", hostPort)
+				debug.Printf("connPool channel %s: removed\n", hostPort)
 				break DONE
 			}
 		}
@@ -128,5 +126,5 @@ DONE:
 		sv := <-ch
 		sv.Close()
 	}
-	debug.Printf("connPool %s: cleanup routine finished\n", hostPort)
+	debug.Printf("connPool channel %s: cleanup done\n", hostPort)
 }

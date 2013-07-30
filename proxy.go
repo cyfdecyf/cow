@@ -388,8 +388,11 @@ func (c *clientConn) serve() {
 			}
 			return
 		}
-		// Put server connection to pool, so other clients maybe use it.
+		// Put server connection to pool, so other clients can use it.
 		if rp.ConnectionKeepAlive {
+			if debug {
+				debug.Printf("cli(%s): connPool put %s", c.RemoteAddr(), sv.hostPort)
+			}
 			connPool.Put(sv)
 		} else {
 			if debug {
@@ -549,9 +552,12 @@ func (c *clientConn) getServerConn(r *Request) (*serverConn, error) {
 
 	sv := connPool.Get(r.URL.HostPort)
 	if sv != nil {
+		debug.Printf("cli(%s): connPool get %s\n", c.RemoteAddr(), r.URL.HostPort)
 		return sv, nil
 	}
-	debug.Printf("connPool %s: no conn", r.URL.HostPort)
+	if debug {
+		debug.Printf("cli(%s): connPool no conn %s", c.RemoteAddr(), r.URL.HostPort)
+	}
 	return c.createServerConn(r)
 }
 
@@ -654,7 +660,7 @@ func (c *clientConn) createServerConn(r *Request) (*serverConn, error) {
 	}
 	sv := newServerConn(srvconn, r.URL.HostPort, siteInfo)
 	if debug {
-		debug.Printf("cli(%s) connected to %s %d concurrent connections\n",
+		debug.Printf("cli(%s): connected to %s %d concurrent connections\n",
 			c.RemoteAddr(), sv.hostPort, incSrvConnCnt(sv.hostPort))
 	}
 	return sv, nil
