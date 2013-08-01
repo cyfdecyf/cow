@@ -36,11 +36,8 @@ const defaultServerConnTimeout = 15 * time.Second
 // (On OS X, the default soft limit of open file descriptor is 256, which is
 // very conservative and easy to cause problem if we are not careful to limit
 // open fds.)
-const clientConnTimeout = 10 * time.Second
-const fullKeepAliveHeader = "Keep-Alive: timeout=10\r\n"
-
-// Remove idle server connection every cleanServerInterval second.
-const cleanServerInterval = 5 * time.Second
+const clientConnTimeout = 15 * time.Second
+const fullKeepAliveHeader = "Keep-Alive: timeout=15\r\n"
 
 // If client closed connection for HTTP CONNECT method in less then 1 second,
 // consider it as an ssl error. This is only effective for Chrome which will
