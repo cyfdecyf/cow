@@ -1199,17 +1199,16 @@ func sendBody(c *clientConn, sv *serverConn, req *Request, rp *Response) (err er
 	}
 
 	// chunked encoding has precedence over content length
-	// COW does not sanitize response header, but should correctly handle it
+	// COW does not sanitize response header, but can correctly handle it
 	if chunk {
 		err = sendBodyChunked(bufRd, w, httpBufSize)
 	} else if contLen >= 0 {
+		// It's possible to have content length 0 if server response has no
+		// body.
 		err = sendBodyWithContLen(bufRd, w, contLen)
 	} else {
-		if req != nil {
-			errl.Printf("cli(%s) request with body but no length or chunked header %v\n",
-				c.RemoteAddr(), req)
-			return errBadRequest
-		}
+		// Must be reading server response here, because sendBody is called in
+		// reading response iff chunked or content length > 0.
 		err = sendBodySplitIntoChunk(bufRd, w)
 	}
 	return
