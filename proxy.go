@@ -126,7 +126,6 @@ var (
 	errNoParentProxy = errors.New("No parent proxy")
 	errClientTimeout = errors.New("Read client request timeout")
 
-	errChunkedEncode   = errors.New("Invalid chunked encoding")
 	errMalformHeader   = errors.New("Malformed HTTP header")
 	errMalformResponse = errors.New("Malformed HTTP response")
 	errNotSupported    = errors.New("Not supported")
@@ -263,6 +262,10 @@ func (c *clientConn) shouldRetry(r *Request, sv *serverConn, re error) bool {
 }
 
 func dbgPrintRq(c *clientConn, r *Request) {
+	if r.Trailer {
+		errl.Printf("cli(%s) request  %s has Trailer header\n%s",
+			c.RemoteAddr(), r, r.Verbose())
+	}
 	if dbgRq {
 		if verbose {
 			dbgRq.Printf("cli(%s) request  %s\n%s", c.RemoteAddr(), r, r.Verbose())
@@ -456,6 +459,10 @@ func (c *clientConn) handleServerWriteError(r *Request, sv *serverConn, err erro
 }
 
 func dbgPrintRep(c *clientConn, r *Request, rp *Response) {
+	if rp.Trailer {
+		errl.Printf("cli(%s) response %s has Trailer header\n%s",
+			c.RemoteAddr(), rp, rp.Verbose())
+	}
 	if dbgRep {
 		if verbose {
 			dbgRep.Printf("cli(%s) response %s %s\n%s",
@@ -491,6 +498,7 @@ func (c *clientConn) readResponse(sv *serverConn, r *Request, rp *Response) (err
 	if err = parseResponse(sv, r, rp); err != nil {
 		return c.handleServerReadError(r, sv, err, "parse response")
 	}
+	dbgPrintRep(c, r, rp)
 	// After have received the first reponses from the server, we consider
 	// ther server as real instead of fake one caused by wrong DNS reply. So
 	// don't time out later.
@@ -501,7 +509,6 @@ func (c *clientConn) readResponse(sv *serverConn, r *Request, rp *Response) (err
 	if _, err = c.Write(rp.rawResponse()); err != nil {
 		return err
 	}
-	dbgPrintRep(c, r, rp)
 
 	rp.releaseBuf()
 
@@ -1087,6 +1094,25 @@ func sendBodyWithContLen(r *bufio.Reader, w io.Writer, contLen int) (err error) 
 	return
 }
 
+func skipTrailer(r *bufio.Reader) error {
+	// It's possible to get trailer headers, but the body will always end with
+	// a line with just CRLF.
+	for {
+		s, err := r.ReadSlice('\n')
+		if err != nil {
+			errl.Println("skipping trailer:", err)
+			return err
+		}
+		if len(s) == 2 {
+			return nil
+		}
+		if len(s) == 1 {
+			return errors.New("chunked encoding end with single LF")
+		}
+		errl.Printf("skip trailer: %s", s)
+	}
+}
+
 // Send response body if header specifies chunked encoding. rdSize specifies
 // the size of each read on Reader, it should be set to be the buffer size of
 // the Reader, this parameter is added for testing.
@@ -1109,18 +1135,17 @@ func sendBodyChunked(r *bufio.Reader, w io.Writer, rdSize int) (err error) {
 			errl.Println("chunk size invalid:", err)
 			return
 		}
-		// end of chunked data. As we remove trailer header in request sending
-		// to server, there should be no trailer in response.
-		// TODO: Is it possible for client request body to have trailers in it?
 		if size == 0 {
 			r.Skip(len(s))
-			skipCRLF(r)
+			if err = skipTrailer(r); err != nil {
+				return
+			}
 			if _, err = w.Write([]byte(chunkEnd)); err != nil {
 				debug.Println("sending chunk ending:", err)
 			}
 			return
 		}
-		// RFC 2616 section 19.3 only suggest toleranting single LF for
+		// RFC 2616 19.3 only suggest tolerating single LF for
 		// headers, not for chunked encoding. So assume the server will send
 		// CRLF. If not, the following parse int may find errors.
 		total := len(s) + int(size) + 2 // total data size for this chunk, including ending CRLF

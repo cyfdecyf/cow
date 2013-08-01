@@ -28,6 +28,7 @@ type Header struct {
 	KeepAlive           time.Duration
 	ProxyAuthorization  string
 	Chunking            bool
+	Trailer             bool
 	ConnectionKeepAlive bool
 	ExpectContinue      bool
 }
@@ -295,6 +296,7 @@ var headerParser = map[string]HeaderParserFunc{
 	headerProxyAuthorization: (*Header).parseProxyAuthorization,
 	headerProxyConnection:    (*Header).parseConnection,
 	headerTransferEncoding:   (*Header).parseTransferEncoding,
+	headerTrailer:            (*Header).parseTrailer,
 	headerExpect:             (*Header).parseExpect,
 }
 
@@ -369,7 +371,25 @@ func (h *Header) parseTransferEncoding(s []byte, raw *bytes.Buffer) error {
 	return nil
 }
 
-// For now, cow does not fully support 100-continue. It will return "417
+// RFC 2616 3.6.1 states when trailers are allowed:
+//
+// a) request includes TE header
+// b) server is the original server
+//
+// Even though COW removes TE header, the original server can still respond
+// with Trailer header.
+// As Trailer is general header, it's possible to appear in request. But is
+// there any client does this?
+func (h *Header) parseTrailer(s []byte, raw *bytes.Buffer) error {
+	// use errl to test if this header is common to see
+	errl.Printf("got Trailer header: %s\n", s)
+	if len(s) != 0 {
+		h.Trailer = true
+	}
+	return nil
+}
+
+// For now, COW does not fully support 100-continue. It will return "417
 // expectation failed" if a request contains expect header. This is one of the
 // strategies supported by polipo, which is easiest to implement in cow.
 // TODO If we see lots of expect 100-continue usage, provide full support.
