@@ -187,14 +187,6 @@ func Authenticate(conn *clientConn, r *Request) (err error) {
 	if authIP(clientIP) { // IP is allowed
 		return
 	}
-	/*
-		// No user specified
-		if auth.user == "" {
-			sendErrorPage(conn, "403 Forbidden", "Access forbidden",
-				"You are not allowed to use the proxy.")
-			return errShouldClose
-		}
-	*/
 	err = authUserPasswd(conn, r)
 	if err == nil {
 		auth.authed.add(clientIP)
@@ -243,27 +235,27 @@ func calcRequestDigest(kv map[string]string, ha1, method string) string {
 }
 
 func checkProxyAuthorization(conn *clientConn, r *Request) error {
-	debug.Println("authorization:", r.ProxyAuthorization)
+	if debug {
+		debug.Printf("cli(%s) authorization: %s\n", conn.RemoteAddr(), r.ProxyAuthorization)
+	}
+
 	arr := strings.SplitN(r.ProxyAuthorization, " ", 2)
 	if len(arr) != 2 {
-		errl.Println("auth: malformed ProxyAuthorization header:", r.ProxyAuthorization)
-		return errBadRequest
+		return errors.New("auth: malformed ProxyAuthorization header: " + r.ProxyAuthorization)
 	}
 	if strings.ToLower(strings.TrimSpace(arr[0])) != "digest" {
-		errl.Println("auth: client using unsupported authenticate method:", arr[0])
-		return errBadRequest
+		return errors.New("auth: method " + arr[0] + " unsupported, must use digest")
 	}
 	authHeader := parseKeyValueList(arr[1])
 	if len(authHeader) == 0 {
-		errl.Println("auth: empty authorization list")
-		return errBadRequest
+		return errors.New("auth: empty authorization list")
 	}
 	nonceTime, err := strconv.ParseInt(authHeader["nonce"], 16, 64)
 	if err != nil {
-		return err
+		return fmt.Errorf("auth: nonce %v", err)
 	}
 	// If nonce time too early, reject. iOS will create a new connection to do
-	// authenticate.
+	// authentication.
 	if time.Now().Sub(time.Unix(nonceTime, 0)) > time.Minute {
 		return errAuthRequired
 	}
@@ -271,7 +263,7 @@ func checkProxyAuthorization(conn *clientConn, r *Request) error {
 	user := authHeader["username"]
 	au, ok := auth.user[user]
 	if !ok {
-		errl.Println("auth: no such user:", authHeader["username"])
+		errl.Printf("cli(%s) auth: no such user: %s\n", conn.RemoteAddr(), authHeader["username"])
 		return errAuthRequired
 	}
 
@@ -280,22 +272,18 @@ func checkProxyAuthorization(conn *clientConn, r *Request) error {
 		_, portStr, _ := net.SplitHostPort(conn.LocalAddr().String())
 		port, _ := strconv.Atoi(portStr)
 		if uint16(port) != au.port {
-			errl.Println("auth: user", user, "port not match")
+			errl.Printf("cli(%s) auth: user %s port not match\n", conn.RemoteAddr(), user)
 			return errAuthRequired
 		}
 	}
 
 	if authHeader["qop"] != "auth" {
-		msg := "auth: qop wrong: " + authHeader["qop"]
-		errl.Println(msg)
-		return errors.New(msg)
+		return errors.New("auth: qop wrong: " + authHeader["qop"])
 	}
 
 	response, ok := authHeader["response"]
 	if !ok {
-		msg := "auth: no request-digest"
-		errl.Println(msg)
-		return errors.New(msg)
+		return errors.New("auth: no request-digest response")
 	}
 
 	au.initHA1(user)
@@ -303,7 +291,7 @@ func checkProxyAuthorization(conn *clientConn, r *Request) error {
 	if response == digest {
 		return nil
 	}
-	errl.Println("auth: digest not match, maybe password wrong")
+	errl.Printf("cli(%s) auth: digest not match, maybe password wrong", conn.RemoteAddr())
 	return errAuthRequired
 }
 
@@ -328,15 +316,13 @@ func authUserPasswd(conn *clientConn, r *Request) (err error) {
 	}
 	buf := new(bytes.Buffer)
 	if err := auth.template.Execute(buf, data); err != nil {
-		errl.Println("Error generating auth response:", err)
-		return errInternal
+		return fmt.Errorf("error generating auth response: %v", err)
 	}
 	if bool(debug) && verbose {
 		debug.Printf("authorization response:\n%s", buf.String())
 	}
 	if _, err := conn.Write(buf.Bytes()); err != nil {
-		errl.Println("Sending auth response error:", err)
-		return errShouldClose
+		return fmt.Errorf("send auth response error: %v", err)
 	}
 	return errAuthRequired
 }

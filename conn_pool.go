@@ -92,10 +92,10 @@ func closeStaleServerConn(ch chan *serverConn, hostPort string) {
 	// It's possible that Put add the connection after the final wait, but
 	// that should not happen in practice, and the worst result is just lost
 	// some memory and open fd.
-DONE:
+done:
 	for {
 		time.Sleep(defaultServerConnTimeout)
-	CLEANUP:
+	cleanup:
 		for {
 			select {
 			case sv := <-ch:
@@ -106,7 +106,7 @@ DONE:
 					// Put it back and wait.
 					debug.Printf("connPool channel %s: put back conn\n", hostPort)
 					ch <- sv
-					break CLEANUP
+					break cleanup
 				}
 			default:
 				// no more connection in this channel
@@ -115,7 +115,7 @@ DONE:
 				delete(connPool.idleConn, hostPort)
 				connPool.Unlock()
 				debug.Printf("connPool channel %s: removed\n", hostPort)
-				break DONE
+				break done
 			}
 		}
 	}

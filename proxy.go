@@ -119,18 +119,10 @@ type clientConn struct {
 }
 
 var (
-	errTooManyRetry  = errors.New("Too many retry")
 	errPageSent      = errors.New("Error page has sent")
 	errShouldClose   = errors.New("Error can only be handled by close connection")
-	errInternal      = errors.New("Internal error")
-	errNoParentProxy = errors.New("No parent proxy")
 	errClientTimeout = errors.New("Read client request timeout")
-
-	errMalformHeader   = errors.New("Malformed HTTP header")
-	errMalformResponse = errors.New("Malformed HTTP response")
-	errNotSupported    = errors.New("Not supported")
-	errBadRequest      = errors.New("Bad request")
-	errAuthRequired    = errors.New("Authentication requried")
+	errAuthRequired  = errors.New("Authentication requried")
 )
 
 func NewProxy(addr, addrInPAC string) *Proxy {
@@ -328,6 +320,7 @@ func (c *clientConn) serve() {
 				return
 			}
 			if err = Authenticate(c, &r); err != nil {
+				errl.Printf("cli(%s) %v\n", c.RemoteAddr(), err)
 				if err == errAuthRequired {
 					authCnt++
 					continue

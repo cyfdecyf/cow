@@ -346,7 +346,10 @@ func (h *Header) parseKeepAlive(s []byte, raw *bytes.Buffer) (err error) {
 		end := id
 		for ; end < len(s) && IsDigit(s[end]); end++ {
 		}
-		delta, _ := ParseIntFromBytes(s[id:end], 10)
+		delta, err := ParseIntFromBytes(s[id:end], 10)
+		if err != nil {
+			return err // possible empty bytes
+		}
 		h.KeepAlive = time.Second * time.Duration(delta)
 	}
 	return nil
@@ -365,8 +368,7 @@ func (h *Header) parseTransferEncoding(s []byte, raw *bytes.Buffer) error {
 	if h.Chunking {
 		raw.WriteString(fullHeaderTransferEncoding)
 	} else if !bytes.Contains(s, []byte("identity")) {
-		errl.Printf("invalid transfer encoding: %s\n", s)
-		return errNotSupported
+		return fmt.Errorf("invalid transfer encoding: %s", s)
 	}
 	return nil
 }
@@ -409,8 +411,7 @@ func (h *Header) parseExpect(s []byte, raw *bytes.Buffer) error {
 func splitHeader(s []byte) (name, val []byte, err error) {
 	var f [][]byte
 	if f = bytes.SplitN(s, []byte{':'}, 2); len(f) != 2 {
-		errl.Printf("malformed header: %s\n", s)
-		return nil, nil, errMalformHeader
+		return nil, nil, fmt.Errorf("malformed header: %s", s)
 	}
 	// Do not lower case field value, as it maybe case sensitive
 	return ASCIIToLower(f[0]), f[1], nil
@@ -435,8 +436,7 @@ func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, url *URL) 
 		if (s[0] == ' ' || s[0] == '\t') && lastLine != nil { // multi-line header
 			// I've never seen multi-line header used in headers that's of interest.
 			// Disable multi-line support to avoid copy for now.
-			errl.Printf("Multi-line support disabled: %v %s", url, s)
-			return errNotSupported
+			return fmt.Errorf("multi-line support disabled: %v %s", url, s)
 			// combine previous line with current line
 			// trimmed = bytes.Join([][]byte{lastLine, []byte{' '}, trimmed}, nil)
 		}
@@ -520,7 +520,7 @@ func parseRequest(c *clientConn, r *Request) (err error) {
 
 	// Read request header
 	if err = r.parseHeader(reader, r.raw, r.URL); err != nil {
-		errl.Printf("Parsing request header: %v %v\n", err, r)
+		errl.Printf("parse request header: %v %v\n", err, r)
 		return err
 	}
 	if r.ConnectionKeepAlive {
@@ -577,8 +577,9 @@ func parseResponse(sv *serverConn, r *Request, rp *Response) (err error) {
 	// response status line parsing
 	var f [][]byte
 	if f = FieldsN(s, 3); len(f) < 2 { // status line are separated by SP
-		errl.Printf("Malformed HTTP response status line: %s %v\n", s, r)
-		return errMalformResponse
+		msg := fmt.Sprintf("malformed HTTP response status line: %s %v", s, r)
+		errl.Println(msg)
+		return errors.New(msg)
 	}
 	status, err := ParseIntFromBytes(f[1], 10)
 
@@ -594,8 +595,9 @@ func parseResponse(sv *serverConn, r *Request, rp *Response) (err error) {
 
 	proto := f[0]
 	if !bytes.Equal(proto[0:7], []byte("HTTP/1.")) {
-		errl.Printf("Invalid response status line: %s request %v\n", string(f[0]), r)
-		return errMalformResponse
+		msg := fmt.Sprintf("Invalid response status line: %s request %v", string(f[0]), r)
+		errl.Println(msg)
+		return errors.New(msg)
 	}
 	if proto[7] == '1' {
 		rp.raw.Write(s)
@@ -604,12 +606,11 @@ func parseResponse(sv *serverConn, r *Request, rp *Response) (err error) {
 		// will be converted to chunked encoding
 		rp.raw.WriteString(rp.genStatusLine())
 	} else {
-		errl.Printf("Response protocol not supported: %s\n", f[0])
-		return errNotSupported
+		return fmt.Errorf("response protocol not supported: %s", f[0])
 	}
 
 	if err = rp.parseHeader(reader, rp.raw, r.URL); err != nil {
-		errl.Printf("Reading response header: %v %v\n", err, r)
+		errl.Printf("parse response header: %v %v\n", err, r)
 		return err
 	}
 

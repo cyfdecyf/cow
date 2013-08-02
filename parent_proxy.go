@@ -43,7 +43,7 @@ func connectByParentProxy(url *URL) (srvconn conn, err error) {
 	if len(parentProxy) != 0 {
 		return
 	}
-	return zeroConn, errNoParentProxy
+	return zeroConn, errors.New("no parent proxy")
 }
 
 // proxyConnector is the interface that all parent proxies should support.

@@ -195,11 +195,11 @@ func ParseIntFromBytes(b []byte, base int) (n int64, err error) {
 	// Refer to: http://code.google.com/p/go/issues/detail?id=2632
 	// That's why I created this function.
 	if base != 10 && base != 16 {
-		err = errors.New(fmt.Sprintf("Invalid base: %d\n", base))
+		err = errors.New(fmt.Sprintf("invalid base: %d", base))
 		return
 	}
 	if len(b) == 0 {
-		err = errors.New("Parse int from empty string")
+		err = errors.New("parse int from empty bytes")
 		return
 	}
 
@@ -215,12 +215,12 @@ func ParseIntFromBytes(b []byte, base int) (n int64, err error) {
 		v := digitTbl[d]
 		if v == -1 {
 			n = 0
-			err = errors.New(fmt.Sprintf("Invalid number: %s", b))
+			err = errors.New(fmt.Sprintf("invalid number: %s", b))
 			return
 		}
 		if int(v) >= base {
 			n = 0
-			err = errors.New(fmt.Sprintf("Invalid base %d number: %s", base, b))
+			err = errors.New(fmt.Sprintf("invalid base %d number: %s", base, b))
 			return
 		}
 		n *= int64(base)
