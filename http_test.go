@@ -71,7 +71,7 @@ func TestParseHeader(t *testing.T) {
 			"content-length: 64\r\n",
 			&Header{ContLen: 64, Chunking: false, ConnectionKeepAlive: true}},
 		{"Connection: keep-alive\r\nKeep-Alive: timeout=10\r\nTransfer-Encoding: chunked\r\nTE: trailers\r\n\r\n",
-			"Transfer-Encoding: chunked\r\n",
+			"",
 			&Header{ContLen: -1, Chunking: true, ConnectionKeepAlive: true,
 				KeepAlive: 10 * time.Second}},
 		/*
