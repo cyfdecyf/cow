@@ -428,6 +428,9 @@ func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, url *URL) 
 		// For example, the 404 page for http://plan9.bell-labs.com/magic/man2html/1/2l
 		trimmed := TrimSpace(s)
 		if len(trimmed) == 0 { // end of headers
+			if len(s) > 2 {
+				errl.Printf("end of headers, len: %d, %#s", len(s), s)
+			}
 			return
 		}
 		if (s[0] == ' ' || s[0] == '\t') && lastLine != nil { // multi-line header
@@ -438,6 +441,7 @@ func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, url *URL) 
 			// trimmed = bytes.Join([][]byte{lastLine, []byte{' '}, trimmed}, nil)
 		}
 		if name, val, err = splitHeader(trimmed); err != nil {
+			errl.Printf("invalid raw header:\n%s\n", raw.Bytes())
 			return
 		}
 		// Wait Go to solve/provide the string<->[]byte optimization
@@ -488,7 +492,7 @@ func parseRequest(c *clientConn, r *Request) (err error) {
 	var f [][]byte
 	// Tolerate with multiple spaces and '\t' is achieved by FieldsN.
 	if f = FieldsN(s, 3); len(f) != 3 {
-		return errors.New(fmt.Sprintf("malformed HTTP request: %s", s))
+		return errors.New(fmt.Sprintf("malformed request line: %s", s))
 	}
 	ASCIIToUpperInplace(f[0])
 	r.Method = string(f[0])
@@ -565,7 +569,7 @@ func parseResponse(sv *serverConn, r *Request, rp *Response) (err error) {
 	// response status line parsing
 	var f [][]byte
 	if f = FieldsN(s, 3); len(f) < 2 { // status line are separated by SP
-		return fmt.Errorf("malformed HTTP response status line: %s %v", s, r)
+		return fmt.Errorf("malformed response status line: %s %v", s, r)
 	}
 	status, err := ParseIntFromBytes(f[1], 10)
 
