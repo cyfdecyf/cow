@@ -274,7 +274,6 @@ func (c *clientConn) serve() {
 	var err error
 
 	var authed bool
-	var authCnt int
 
 	defer func() {
 		r.releaseBuf()
@@ -316,17 +315,12 @@ func (c *clientConn) serve() {
 		}
 
 		if auth.required && !authed {
-			if authCnt > 5 {
-				return
-			}
 			if err = Authenticate(c, &r); err != nil {
 				errl.Printf("cli(%s) %v\n", c.RemoteAddr(), err)
-				if err == errAuthRequired {
-					authCnt++
-					continue
-				} else {
-					return
-				}
+				// Request may have body. To make things simple, close
+				// connection so we don't need to skip request body before
+				// reading the next request.
+				return
 			}
 			authed = true
 		}
