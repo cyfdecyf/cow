@@ -560,11 +560,22 @@ func (c *clientConn) getServerConn(r *Request) (*serverConn, error) {
 }
 
 func connectDirect(url *URL, siteInfo *VisitCnt) (conn, error) {
-	to := dialTimeout
-	if siteInfo.OnceBlocked() && to >= defaultDialTimeout {
-		to = minDialTimeout
+	var c net.Conn
+	var err error
+	if siteInfo.AlwaysDirect() {
+		c, err = net.Dial("tcp", url.HostPort)
+	} else {
+		to := dialTimeout
+		if siteInfo.OnceBlocked() && to >= defaultDialTimeout {
+			// If once blocked, decrease timeout to switch to parent proxy faster.
+			to = minDialTimeout
+		} else if siteInfo.AsDirect() {
+			// If usually can be accessed directly, increase timeout to avoid
+			// problems when network condition is bad.
+			to = maxTimeout
+		}
+		c, err = net.DialTimeout("tcp", url.HostPort, to)
 	}
-	c, err := net.DialTimeout("tcp", url.HostPort, to)
 	if err != nil {
 		// Time out is very likely to be caused by GFW
 		debug.Printf("error direct connect to: %s %v\n", url.HostPort, err)
@@ -732,12 +743,12 @@ func unsetConnReadTimeout(cn net.Conn, msg string) {
 	}
 }
 
-// setReadTimeout will only set timeout if the server connection maybe fake.
-// In case it's not fake, this will unset timeout.
 func (sv *serverConn) setReadTimeout(msg string) {
 	to := readTimeout
 	if sv.siteInfo.OnceBlocked() && to > defaultReadTimeout {
 		to = minReadTimeout
+	} else if sv.siteInfo.AsDirect() {
+		to = maxTimeout
 	}
 	setConnReadTimeout(sv.Conn, to, msg)
 }
