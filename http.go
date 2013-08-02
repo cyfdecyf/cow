@@ -536,15 +536,6 @@ func parseRequest(c *clientConn, r *Request) (err error) {
 	return
 }
 
-func skipCRLF(r *bufio.Reader) error {
-	// There maybe servers using single '\n' for line ending
-	if _, err := r.ReadSlice('\n'); err != nil {
-		errl.Println("Error reading CRLF:", err)
-		return err
-	}
-	return nil
-}
-
 // If an http response may have message body
 func (rp *Response) hasBody(method string) bool {
 	if method == "HEAD" || rp.Status == 304 || rp.Status == 204 ||
