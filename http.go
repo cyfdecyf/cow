@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/cyfdecyf/bufio"
-	"io"
 	"net"
 	"strconv"
 	"strings"
@@ -553,12 +552,9 @@ func parseResponse(sv *serverConn, r *Request, rp *Response) (err error) {
 		sv.setReadTimeout("parseResponse")
 	}
 	if s, err = reader.ReadSlice('\n'); err != nil {
-		if err != io.EOF {
-			// err maybe timeout caused by explicity setting deadline
-			debug.Printf("Reading Response status line: %v %v\n", err, r)
-		}
-		// For timeout, the connection will not be used, so no need to unset timeout
-		return err
+		// Server connection with error will not be used any more, so no need
+		// to unset timeout.
+		return fmt.Errorf("read response status line %v", err)
 	}
 	if sv.maybeFake() {
 		sv.unsetReadTimeout("parseResponse")
@@ -568,17 +564,14 @@ func parseResponse(sv *serverConn, r *Request, rp *Response) (err error) {
 	// response status line parsing
 	var f [][]byte
 	if f = FieldsN(s, 3); len(f) < 2 { // status line are separated by SP
-		msg := fmt.Sprintf("malformed HTTP response status line: %s %v", s, r)
-		errl.Println(msg)
-		return errors.New(msg)
+		return fmt.Errorf("malformed HTTP response status line: %s %v", s, r)
 	}
 	status, err := ParseIntFromBytes(f[1], 10)
 
 	rp.reset()
 	rp.Status = int(status)
 	if err != nil {
-		errl.Printf("response status not valid: %s len=%d %v\n", f[1], len(f[1]), err)
-		return
+		return fmt.Errorf("response status not valid: %s len=%d %v", f[1], len(f[1]), err)
 	}
 	if len(f) == 3 {
 		rp.Reason = f[2]
@@ -586,9 +579,7 @@ func parseResponse(sv *serverConn, r *Request, rp *Response) (err error) {
 
 	proto := f[0]
 	if !bytes.Equal(proto[0:7], []byte("HTTP/1.")) {
-		msg := fmt.Sprintf("Invalid response status line: %s request %v", string(f[0]), r)
-		errl.Println(msg)
-		return errors.New(msg)
+		return fmt.Errorf("invalid response status line: %s request %v", string(f[0]), r)
 	}
 	if proto[7] == '1' {
 		rp.raw.Write(s)
@@ -601,8 +592,7 @@ func parseResponse(sv *serverConn, r *Request, rp *Response) (err error) {
 	}
 
 	if err = rp.parseHeader(reader, rp.raw, r.URL); err != nil {
-		errl.Printf("parse response header: %v %v\n", err, r)
-		return err
+		return fmt.Errorf("parse response header: %v %v", err, r)
 	}
 
 	if rp.Status == statusCodeContinue && !r.ExpectContinue {

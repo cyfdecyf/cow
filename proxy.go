@@ -418,7 +418,7 @@ func (c *clientConn) handleBlockedRequest(r *Request, err error) error {
 
 func (c *clientConn) handleServerReadError(r *Request, sv *serverConn, err error, msg string) error {
 	if debug {
-		debug.Printf("cli(%s) server read error %s %v\n", c.RemoteAddr(), msg, err)
+		debug.Printf("cli(%s) server read error %s %v %v\n", c.RemoteAddr(), msg, err, r)
 	}
 	var errMsg string
 	if err == io.EOF {
