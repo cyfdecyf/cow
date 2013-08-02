@@ -122,9 +122,14 @@ done:
 	// Final wait and then close all left connections. In practice, there
 	// should be no other goroutines holding reference to the channel.
 	time.Sleep(2 * time.Second)
-	for len(ch) > 0 {
-		sv := <-ch
-		sv.Close()
+	for {
+		select {
+		case sv := <-ch:
+			debug.Printf("connPool channel %s: close conn after removed\n", hostPort)
+			sv.Close()
+		default:
+			debug.Printf("connPool channel %s: cleanup done\n", hostPort)
+			return
+		}
 	}
-	debug.Printf("connPool channel %s: cleanup done\n", hostPort)
 }
