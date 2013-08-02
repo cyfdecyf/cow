@@ -539,7 +539,7 @@ func parseRequest(c *clientConn, r *Request) (err error) {
 // If an http response may have message body
 func (rp *Response) hasBody(method string) bool {
 	if method == "HEAD" || rp.Status == 304 || rp.Status == 204 ||
-		(100 <= rp.Status && rp.Status < 200) {
+		rp.Status < 200 {
 		return false
 	}
 	return true
