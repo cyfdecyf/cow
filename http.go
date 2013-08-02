@@ -318,7 +318,7 @@ var hopByHopHeader = map[string]bool{
 // If Header needs to hold raw value, make a copy. For example,
 // parseProxyAuthorization does this.
 
-type HeaderParserFunc func(*Header, []byte, *bytes.Buffer) error
+type HeaderParserFunc func(*Header, []byte) error
 
 // Used by both "Connection" and "Proxy-Connection" header. COW always adds
 // connection header at the end of a request/response (in parseRequest and
@@ -326,18 +326,18 @@ type HeaderParserFunc func(*Header, []byte, *bytes.Buffer) error
 // This will change the order of headers, but should be OK as RFC2616 4.2 says
 // header order is not significant. (Though general-header first is "good-
 // practice".)
-func (h *Header) parseConnection(s []byte, raw *bytes.Buffer) error {
+func (h *Header) parseConnection(s []byte) error {
 	ASCIIToLowerInplace(s)
 	h.ConnectionKeepAlive = !bytes.Contains(s, []byte("close"))
 	return nil
 }
 
-func (h *Header) parseContentLength(s []byte, raw *bytes.Buffer) (err error) {
+func (h *Header) parseContentLength(s []byte) (err error) {
 	h.ContLen, err = ParseIntFromBytes(s, 10)
 	return err
 }
 
-func (h *Header) parseKeepAlive(s []byte, raw *bytes.Buffer) (err error) {
+func (h *Header) parseKeepAlive(s []byte) (err error) {
 	ASCIIToLowerInplace(s)
 	id := bytes.Index(s, []byte("timeout="))
 	if id != -1 {
@@ -354,19 +354,17 @@ func (h *Header) parseKeepAlive(s []byte, raw *bytes.Buffer) (err error) {
 	return nil
 }
 
-func (h *Header) parseProxyAuthorization(s []byte, raw *bytes.Buffer) error {
+func (h *Header) parseProxyAuthorization(s []byte) error {
 	h.ProxyAuthorization = string(s)
 	return nil
 }
 
-func (h *Header) parseTransferEncoding(s []byte, raw *bytes.Buffer) error {
+func (h *Header) parseTransferEncoding(s []byte) error {
 	ASCIIToLowerInplace(s)
 	// For transfer-encoding: identify, it's the same as specifying neither
 	// content-length nor transfer-encoding.
 	h.Chunking = bytes.Contains(s, []byte("chunked"))
-	if h.Chunking {
-		raw.WriteString(fullHeaderTransferEncoding)
-	} else if !bytes.Contains(s, []byte("identity")) {
+	if !h.Chunking && !bytes.Contains(s, []byte("identity")) {
 		return fmt.Errorf("invalid transfer encoding: %s", s)
 	}
 	return nil
@@ -381,7 +379,7 @@ func (h *Header) parseTransferEncoding(s []byte, raw *bytes.Buffer) error {
 // with Trailer header.
 // As Trailer is general header, it's possible to appear in request. But is
 // there any client does this?
-func (h *Header) parseTrailer(s []byte, raw *bytes.Buffer) error {
+func (h *Header) parseTrailer(s []byte) error {
 	// use errl to test if this header is common to see
 	errl.Printf("got Trailer header: %s\n", s)
 	if len(s) != 0 {
@@ -395,7 +393,7 @@ func (h *Header) parseTrailer(s []byte, raw *bytes.Buffer) error {
 // strategies supported by polipo, which is easiest to implement in cow.
 // TODO If we see lots of expect 100-continue usage, provide full support.
 
-func (h *Header) parseExpect(s []byte, raw *bytes.Buffer) error {
+func (h *Header) parseExpect(s []byte) error {
 	ASCIIToLowerInplace(s)
 	errl.Printf("Expect header: %s\n", s) // put here to see if expect header is widely used
 	h.ExpectContinue = true
@@ -451,7 +449,7 @@ func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, url *URL) 
 			if len(val) == 0 {
 				continue
 			}
-			parseFunc(h, val, raw)
+			parseFunc(h, val)
 		} else {
 			// mark this header as not of interest to proxy
 			lastLine = nil
@@ -521,6 +519,9 @@ func parseRequest(c *clientConn, r *Request) (err error) {
 	if err = r.parseHeader(reader, r.raw, r.URL); err != nil {
 		errl.Printf("parse request header: %v %v\n", err, r)
 		return err
+	}
+	if r.Chunking {
+		r.raw.WriteString(fullHeaderTransferEncoding)
 	}
 	if r.ConnectionKeepAlive {
 		r.raw.WriteString(fullHeaderConnectionKeepAlive)
@@ -601,18 +602,19 @@ func parseResponse(sv *serverConn, r *Request, rp *Response) (err error) {
 		return parseResponse(sv, r, rp)
 	}
 
-	// Connection close, no content length specification
-	// Use chunked encoding to pass content back to client
-	if !rp.ConnectionKeepAlive && !rp.Chunking && rp.ContLen == -1 {
+	if rp.Chunking {
+		rp.raw.WriteString(fullHeaderTransferEncoding)
+	} else if !rp.ConnectionKeepAlive && rp.ContLen == -1 {
 		if rp.hasBody(r.Method) {
+			// Connection close, no content length specification.
+			// Use chunked encoding to pass content back to client.
 			debug.Println("add chunked encoding to close connection response", r, rp)
-			rp.raw.WriteString("Transfer-Encoding: chunked\r\n")
+			rp.raw.WriteString(fullHeaderTransferEncoding)
 		} else {
 			debug.Println("add content-length 0 to close connection response", r, rp)
 			rp.raw.WriteString("Content-Length: 0\r\n")
 		}
 	}
-
 	// Whether COW should respond with keep-alive depends on client request,
 	// not server response.
 	if r.ConnectionKeepAlive {
