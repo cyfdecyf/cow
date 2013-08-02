@@ -219,19 +219,15 @@ func genNonce() string {
 
 func calcRequestDigest(kv map[string]string, ha1, method string) string {
 	// Refer to rfc2617 section 3.2.2.1 Request-Digest
-	buf := bytes.NewBufferString(ha1)
-	buf.WriteByte(':')
-	buf.WriteString(kv["nonce"])
-	buf.WriteByte(':')
-	buf.WriteString(kv["nc"])
-	buf.WriteByte(':')
-	buf.WriteString(kv["cnonce"])
-	buf.WriteByte(':')
-	buf.WriteString("auth") // qop value
-	buf.WriteByte(':')
-	buf.WriteString(md5sum(method + ":" + kv["uri"]))
-
-	return md5sum(buf.String())
+	arr := []string{
+		ha1,
+		kv["nonce"],
+		kv["nc"],
+		kv["cnonce"],
+		"auth",
+		md5sum(method + ":" + kv["uri"]),
+	}
+	return md5sum(strings.Join(arr, ":"))
 }
 
 func checkProxyAuthorization(conn *clientConn, r *Request) error {
