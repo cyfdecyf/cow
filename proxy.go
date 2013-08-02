@@ -119,10 +119,10 @@ type clientConn struct {
 }
 
 var (
-	errPageSent      = errors.New("Error page has sent")
-	errShouldClose   = errors.New("Error can only be handled by close connection")
-	errClientTimeout = errors.New("Read client request timeout")
-	errAuthRequired  = errors.New("Authentication requried")
+	errPageSent      = errors.New("error page has sent")
+	errShouldClose   = errors.New("error can only be handled by close connection")
+	errClientTimeout = errors.New("read client request timeout")
+	errAuthRequired  = errors.New("authentication requried")
 )
 
 func NewProxy(addr, addrInPAC string) *Proxy {
