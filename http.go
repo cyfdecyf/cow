@@ -429,7 +429,7 @@ func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, url *URL) 
 		trimmed := TrimSpace(s)
 		if len(trimmed) == 0 { // end of headers
 			if len(s) > 2 {
-				errl.Printf("end of headers, len: %d, %#s", len(s), s)
+				errl.Printf("end of headers, len: %d, %#v", len(s), string(s))
 			}
 			return
 		}
@@ -557,9 +557,14 @@ func parseResponse(sv *serverConn, r *Request, rp *Response) (err error) {
 		sv.setReadTimeout("parseResponse")
 	}
 	if s, err = reader.ReadSlice('\n'); err != nil {
+		// err maybe timeout caused by explicity setting deadline, EOF, or
+		// reset caused by GFW.
+		debug.Printf("read response status line %v %v\n", err, r)
 		// Server connection with error will not be used any more, so no need
 		// to unset timeout.
-		return fmt.Errorf("read response status line %v", err)
+		// For read error, return directly in order to identify whether this
+		// is caused by GFW.
+		return err
 	}
 	if sv.maybeFake() {
 		sv.unsetReadTimeout("parseResponse")
