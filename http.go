@@ -441,7 +441,7 @@ func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, url *URL) 
 			// trimmed = bytes.Join([][]byte{lastLine, []byte{' '}, trimmed}, nil)
 		}
 		if name, val, err = splitHeader(trimmed); err != nil {
-			errl.Printf("invalid raw header:\n%s\n", raw.Bytes())
+			errl.Printf("%v raw header:\n%s\n", err, raw.Bytes())
 			return
 		}
 		// Wait Go to solve/provide the string<->[]byte optimization
