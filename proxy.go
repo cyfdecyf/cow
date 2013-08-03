@@ -209,7 +209,7 @@ func (c *clientConn) serveSelfURL(r *Request) (err error) {
 		return errPageSent
 	}
 end:
-	sendErrorPage(c, "404 not found", "Page not found", "Handling request to proxy itself.")
+	sendErrorPage(c, "404 not found", "Page not found", "Serving request to COW proxy.")
 	return errPageSent
 }
 
@@ -604,7 +604,7 @@ func (c *clientConn) connect(r *Request, siteInfo *VisitCnt) (srvconn conn, err 
 		if srvconn, err = connectByParentProxy(r.URL); err == nil {
 			return
 		}
-		errMsg = genErrMsg(r, nil, "Parent proxy connection failed, always using parent proxy.")
+		errMsg = genErrMsg(r, nil, "Parent proxy connection failed, always use parent proxy.")
 		goto fail
 	}
 	if siteInfo.AsBlocked() && hasParentProxy {
@@ -959,7 +959,7 @@ func (sv *serverConn) doConnect(r *Request, c *clientConn) (err error) {
 		}
 		if err = sv.sendHTTPProxyRequest(r, c); err != nil {
 			if debug {
-				debug.Printf("cli(%s) error sending CONNECT request to http proxy server: %v\n",
+				debug.Printf("cli(%s) error send CONNECT request to http proxy server: %v\n",
 					c.RemoteAddr(), err)
 			}
 			return err
@@ -968,7 +968,7 @@ func (sv *serverConn) doConnect(r *Request, c *clientConn) (err error) {
 		// debug.Printf("send connection confirmation to %s->%s\n", c.RemoteAddr(), r.URL.HostPort)
 		if _, err = c.Write(connEstablished); err != nil {
 			if debug {
-				debug.Printf("cli(%s) error sending 200 Connecion established: %v\n",
+				debug.Printf("cli(%s) error send 200 Connecion established: %v\n",
 					c.RemoteAddr(), err)
 			}
 			return err
@@ -1005,7 +1005,7 @@ func (sv *serverConn) doConnect(r *Request, c *clientConn) (err error) {
 func (sv *serverConn) sendHTTPProxyRequest(r *Request, c *clientConn) (err error) {
 	if _, err = sv.Write(r.proxyRequestLine()); err != nil {
 		return c.handleServerWriteError(r, sv, err,
-			"sending proxy request line to http parent")
+			"send proxy request line to http parent")
 	}
 	// Add authorization header for parent http proxy
 	hp, ok := sv.creator.(*httpParent)
@@ -1015,12 +1015,12 @@ func (sv *serverConn) sendHTTPProxyRequest(r *Request, c *clientConn) (err error
 	if hp.authHeader != nil {
 		if _, err = sv.Write(hp.authHeader); err != nil {
 			return c.handleServerWriteError(r, sv, err,
-				"sending proxy authorization header to http parent")
+				"send proxy authorization header to http parent")
 		}
 	}
 	if _, err = sv.Write(r.rawHeaderBody()); err != nil {
 		return c.handleServerWriteError(r, sv, err,
-			"sending proxy request header to http parent")
+			"send proxy request header to http parent")
 	}
 	/*
 		if bool(dbgRq) && verbose {
@@ -1041,7 +1041,7 @@ func (sv *serverConn) sendRequest(r *Request, c *clientConn) (err error) {
 		}
 	*/
 	if _, err = sv.Write(r.rawRequest()); err != nil {
-		err = c.handleServerWriteError(r, sv, err, "sending request to server")
+		err = c.handleServerWriteError(r, sv, err, "send request to server")
 	}
 	return
 }
@@ -1060,11 +1060,11 @@ func (sv *serverConn) doRequest(c *clientConn, r *Request, rp *Response) (err er
 		// Length or Transfer-Encoding header. Refer to http://stackoverflow.com/a/299696/306935
 		if err = sendBody(c, sv, r, nil); err != nil {
 			if err == io.EOF && isErrOpRead(err) {
-				errl.Printf("cli(%s) EOF reading request body from client %v\n", c.RemoteAddr(), r)
+				errl.Printf("cli(%s) EOF read request body from client %v\n", c.RemoteAddr(), r)
 			} else if isErrOpWrite(err) {
-				err = c.handleServerWriteError(r, sv, err, "sending request body")
+				err = c.handleServerWriteError(r, sv, err, "send request body")
 			} else {
-				errl.Printf("cli(%s) reading request body: %v\n", c.RemoteAddr(), err)
+				errl.Printf("cli(%s) read request body: %v\n", c.RemoteAddr(), err)
 			}
 			return
 		}
@@ -1098,7 +1098,7 @@ func skipTrailer(r *bufio.Reader) error {
 	for {
 		s, err := r.ReadSlice('\n')
 		if err != nil {
-			errl.Println("skipping trailer:", err)
+			errl.Println("skip trailer:", err)
 			return err
 		}
 		if len(s) == 2 {
@@ -1120,7 +1120,7 @@ func sendBodyChunked(r *bufio.Reader, w io.Writer, rdSize int) (err error) {
 		var s []byte
 		// Read chunk size line, ignore chunk extension if any.
 		if s, err = r.PeekSlice('\n'); err != nil {
-			errl.Println("peeking chunk size:", err)
+			errl.Println("peek chunk size:", err)
 			return
 		}
 		// debug.Printf("Chunk size line %s\n", s)
@@ -1139,7 +1139,7 @@ func sendBodyChunked(r *bufio.Reader, w io.Writer, rdSize int) (err error) {
 				return
 			}
 			if _, err = w.Write([]byte(chunkEnd)); err != nil {
-				debug.Println("sending chunk ending:", err)
+				debug.Println("send chunk ending:", err)
 			}
 			return
 		}
@@ -1149,7 +1149,7 @@ func sendBodyChunked(r *bufio.Reader, w io.Writer, rdSize int) (err error) {
 		total := len(s) + int(size) + 2 // total data size for this chunk, including ending CRLF
 		// PeekSlice will not advance reader, so we can just copy total sized data.
 		if err = copyN(w, r, total, rdSize); err != nil {
-			debug.Println("copying chunked data:", err)
+			debug.Println("copy chunked data:", err)
 			return
 		}
 	}
@@ -1170,7 +1170,7 @@ func sendBodySplitIntoChunk(r *bufio.Reader, w io.Writer) (err error) {
 				// debug.Println("end chunked encoding")
 				_, err = w.Write([]byte(chunkEnd))
 				if err != nil {
-					debug.Println("Write chunk end 0")
+					debug.Println("write chunk end 0", err)
 				}
 				return
 			}
@@ -1180,15 +1180,15 @@ func sendBodySplitIntoChunk(r *bufio.Reader, w io.Writer) (err error) {
 
 		chunkSize := []byte(fmt.Sprintf("%x\r\n", len(b)))
 		if _, err = w.Write(chunkSize); err != nil {
-			debug.Printf("writing chunk size %v\n", err)
+			debug.Printf("write chunk size %v\n", err)
 			return
 		}
 		if _, err = w.Write(b); err != nil {
-			debug.Println("writing chunk data:", err)
+			debug.Println("write chunk data:", err)
 			return
 		}
 		if _, err = w.Write([]byte(CRLF)); err != nil {
-			debug.Println("writing chunk ending CRLF:", err)
+			debug.Println("write chunk ending CRLF:", err)
 			return
 		}
 	}
