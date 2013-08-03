@@ -144,11 +144,11 @@ func (py *Proxy) Serve(done chan byte) {
 	}
 	host, _, _ := net.SplitHostPort(py.addr)
 	if host == "" || host == "0.0.0.0" {
-		info.Printf("COW proxy address %s, PAC url http://<hostip>:%s/pac\n", py.addr, py.port)
+		info.Printf("COW %s proxy address %s, PAC url http://<hostip>:%s/pac\n", version, py.addr, py.port)
 	} else if py.addrInPAC == "" {
-		info.Printf("COW proxy address %s, PAC url http://%s/pac\n", py.addr, py.addr)
+		info.Printf("COW %s proxy address %s, PAC url http://%s/pac\n", version, py.addr, py.addr)
 	} else {
-		info.Printf("COW proxy address %s, PAC url http://%s/pac\n", py.addr, py.addrInPAC)
+		info.Printf("COW %s proxy address %s, PAC url http://%s/pac\n", version, py.addr, py.addrInPAC)
 	}
 
 	for {
