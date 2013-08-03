@@ -113,6 +113,6 @@ Bug reporter:
 
 GitHub users: glacjay, trawor, Blaskyy, lucifer9, zellux, xream, hieixu, fantasticfears, perrywky, JayXon, graminc, WingGao, polong, dallascao
 
-Twitter users: @shao222
+Twitter users: 特别感谢 @shao222 多次帮助测试新版并报告了不少 bug, @xixitalk
 
 @glacjay 对 0.3 版本的 COW 提出了让它更加自动化的建议，使我重新考虑 COW 的设计目标并且改进成 0.5 版本之后的工作方式。

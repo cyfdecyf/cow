@@ -1,3 +1,9 @@
+0.8 (not released)
+    * Share server connections between different clients
+    * Add tunnelAllowedPort option to limit ports CONNECT method can connect to
+    * Avoid timeout too soon for frequently visited direct sites
+    * Fix reporting malformed requests when authenticating requests with body
+
 0.7.6 (2013-07-28)
     * Fix bug for close connection response with no body
     * Fix response not keep alive by default
