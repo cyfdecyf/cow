@@ -64,22 +64,14 @@ type Proxy struct {
 	addrInPAC string // proxy server address to use in PAC
 }
 
-type connType byte
+var zeroTime time.Time
 
-const (
-	ctNilConn connType = iota
-	ctDirectConn
-	ctSocksConn
-	ctShadowctSocksConn
-	ctHttpProxyConn
-)
+type directConn struct {
+	net.Conn
+}
 
-var ctName = [...]string{
-	ctNilConn:           "nil",
-	ctDirectConn:        "direct",
-	ctSocksConn:         "socks5",
-	ctShadowctSocksConn: "shadowsocks",
-	ctHttpProxyConn:     "http parent",
+func (dc directConn) String() string {
+	return "direct connection"
 }
 
 type serverConnState byte
@@ -90,17 +82,8 @@ const (
 	svStopped
 )
 
-type conn struct {
-	connType
-	net.Conn
-	creator proxyConnector
-}
-
-var zeroConn conn
-var zeroTime time.Time
-
 type serverConn struct {
-	conn
+	net.Conn
 	bufRd       *bufio.Reader
 	buf         []byte // buffer for the buffered reader
 	hostPort    string
@@ -405,8 +388,8 @@ func genErrMsg(r *Request, sv *serverConn, what string) string {
 	if sv == nil {
 		return fmt.Sprintf("<p>HTTP Request <strong>%v</strong></p> <p>%s</p>", r, what)
 	}
-	return fmt.Sprintf("<p>HTTP Request <strong>%v</strong></p> <p>%s</p> <p>Using %s connection.</p>",
-		r, what, ctName[sv.connType])
+	return fmt.Sprintf("<p>HTTP Request <strong>%v</strong></p> <p>%s</p> <p>Using %s.</p>",
+		r, what, sv.Conn)
 }
 
 func (c *clientConn) handleBlockedRequest(r *Request, err error) error {
@@ -555,7 +538,7 @@ func (c *clientConn) getServerConn(r *Request) (*serverConn, error) {
 	return c.createServerConn(r)
 }
 
-func connectDirect(url *URL, siteInfo *VisitCnt) (conn, error) {
+func connectDirect(url *URL, siteInfo *VisitCnt) (net.Conn, error) {
 	var c net.Conn
 	var err error
 	if siteInfo.AlwaysDirect() {
@@ -575,10 +558,10 @@ func connectDirect(url *URL, siteInfo *VisitCnt) (conn, error) {
 	if err != nil {
 		// Time out is very likely to be caused by GFW
 		debug.Printf("error direct connect to: %s %v\n", url.HostPort, err)
-		return zeroConn, err
+		return nil, err
 	}
 	// debug.Println("directly connected to", url.HostPort)
-	return conn{ctDirectConn, c, nil}, nil
+	return directConn{c}, nil
 }
 
 func isErrTimeout(err error) bool {
@@ -594,7 +577,7 @@ func maybeBlocked(err error) bool {
 
 // Connect to requested server according to whether it's visit count.
 // If direct connection fails, try parent proxies.
-func (c *clientConn) connect(r *Request, siteInfo *VisitCnt) (srvconn conn, err error) {
+func (c *clientConn) connect(r *Request, siteInfo *VisitCnt) (srvconn net.Conn, err error) {
 	var errMsg string
 	if config.AlwaysProxy {
 		if srvconn, err = connectByParentProxy(r.URL); err == nil {
@@ -657,7 +640,7 @@ func (c *clientConn) connect(r *Request, siteInfo *VisitCnt) (srvconn conn, err 
 
 fail:
 	sendErrorPage(c, "504 Connection failed", err.Error(), errMsg)
-	return zeroConn, errPageSent
+	return nil, errPageSent
 }
 
 func (c *clientConn) createServerConn(r *Request) (*serverConn, error) {
@@ -677,9 +660,9 @@ func (c *clientConn) createServerConn(r *Request) (*serverConn, error) {
 // Should call initBuf before reading http response from server. This allows
 // us not init buf for connect method which does not need to parse http
 // respnose.
-func newServerConn(c conn, hostPort string, siteInfo *VisitCnt) *serverConn {
+func newServerConn(c net.Conn, hostPort string, siteInfo *VisitCnt) *serverConn {
 	sv := &serverConn{
-		conn:     c,
+		Conn:     c,
 		hostPort: hostPort,
 		siteInfo: siteInfo,
 	}
@@ -687,7 +670,8 @@ func newServerConn(c conn, hostPort string, siteInfo *VisitCnt) *serverConn {
 }
 
 func (sv *serverConn) isDirect() bool {
-	return sv.connType == ctDirectConn
+	_, ok := sv.Conn.(directConn)
+	return ok
 }
 
 func (sv *serverConn) updateVisit() {
@@ -949,7 +933,8 @@ var connEstablished = []byte("HTTP/1.1 200 Tunnel established\r\n\r\n")
 func (sv *serverConn) doConnect(r *Request, c *clientConn) (err error) {
 	r.state = rsCreated
 
-	if sv.connType == ctHttpProxyConn {
+	_, isHttpConn := sv.Conn.(httpConn)
+	if isHttpConn {
 		if debug {
 			debug.Printf("cli(%s) send CONNECT request to http parent\n", c.RemoteAddr())
 		}
@@ -1004,12 +989,12 @@ func (sv *serverConn) sendHTTPProxyRequest(r *Request, c *clientConn) (err error
 			"send proxy request line to http parent")
 	}
 	// Add authorization header for parent http proxy
-	hp, ok := sv.creator.(*httpParent)
+	hc, ok := sv.Conn.(httpConn)
 	if !ok {
 		panic("must be http parent connection")
 	}
-	if hp.authHeader != nil {
-		if _, err = sv.Write(hp.authHeader); err != nil {
+	if hc.parent.authHeader != nil {
+		if _, err = sv.Write(hc.parent.authHeader); err != nil {
 			return c.handleServerWriteError(r, sv, err,
 				"send proxy authorization header to http parent")
 		}
@@ -1028,7 +1013,8 @@ func (sv *serverConn) sendHTTPProxyRequest(r *Request, c *clientConn) (err error
 
 func (sv *serverConn) sendRequest(r *Request, c *clientConn) (err error) {
 	// Send request to the server
-	if sv.connType == ctHttpProxyConn {
+	_, isHttpConn := sv.Conn.(httpConn)
+	if isHttpConn {
 		return sv.sendHTTPProxyRequest(r, c)
 	}
 	/*
