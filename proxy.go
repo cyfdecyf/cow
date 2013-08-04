@@ -8,7 +8,6 @@ import (
 	"github.com/cyfdecyf/leakybuf"
 	"io"
 	"net"
-	"reflect"
 	"strings"
 	"time"
 )
@@ -120,7 +119,6 @@ type clientConn struct {
 
 var (
 	errPageSent      = errors.New("error page has sent")
-	errShouldClose   = errors.New("error can only be handled by close connection")
 	errClientTimeout = errors.New("read client request timeout")
 	errAuthRequired  = errors.New("authentication requried")
 )
@@ -348,7 +346,7 @@ func (c *clientConn) serve() {
 		}
 		if sv, err = c.getServerConn(&r); err != nil {
 			if debug {
-				debug.Printf("cli(%s) failed to get server conn %v\n", c.RemoteAddr(), r)
+				debug.Printf("cli(%s) failed to get server conn %v\n", c.RemoteAddr(), &r)
 			}
 			// Failed connection will send error page back to the client.
 			// For CONNECT, the client read buffer is released in copyClient2Server,
@@ -433,7 +431,7 @@ func (c *clientConn) handleServerReadError(r *Request, sv *serverConn, err error
 		return errPageSent
 	}
 	errl.Printf("cli(%s) unhandled server read error %s %v %v\n", c.RemoteAddr(), msg, err, r)
-	return errShouldClose
+	return err
 }
 
 func (c *clientConn) handleServerWriteError(r *Request, sv *serverConn, err error, msg string) error {
@@ -513,14 +511,12 @@ func (c *clientConn) readResponse(sv *serverConn, r *Request, rp *Response) (err
 				// The client connection will be closed to indicate this error.
 				// Proxy can't send error page here because response header has
 				// been sent.
-				errl.Println("unexpected EOF reading body from server", r)
+				return fmt.Errorf("read response body unexpected EOF", r)
 			} else if isErrOpRead(err) {
 				return c.handleServerReadError(r, sv, err, "read response body")
-			} else if isErrOpWrite(err) {
-				return err
 			}
-			errl.Println("sendBody unknown network op error", reflect.TypeOf(err), r)
-			return errShouldClose
+			// errl.Println("sendBody unknown network op error", reflect.TypeOf(err), r)
+			return err
 		}
 	}
 	r.state = rsDone
@@ -1060,11 +1056,11 @@ func (sv *serverConn) doRequest(c *clientConn, r *Request, rp *Response) (err er
 		// Length or Transfer-Encoding header. Refer to http://stackoverflow.com/a/299696/306935
 		if err = sendBody(c, sv, r, nil); err != nil {
 			if err == io.EOF && isErrOpRead(err) {
-				errl.Printf("cli(%s) EOF read request body from client %v\n", c.RemoteAddr(), r)
+				errl.Printf("cli(%s) read request body EOF %v\n", c.RemoteAddr(), r)
 			} else if isErrOpWrite(err) {
 				err = c.handleServerWriteError(r, sv, err, "send request body")
 			} else {
-				errl.Printf("cli(%s) read request body: %v\n", c.RemoteAddr(), err)
+				errl.Printf("cli(%s) read request body %v\n", c.RemoteAddr(), err)
 			}
 			return
 		}
