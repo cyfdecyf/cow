@@ -260,22 +260,6 @@ func isDirExists(path string) (bool, error) {
 	return false, err
 }
 
-// Get host IP address
-func hostIP() (addrs []string, err error) {
-	name, err := os.Hostname()
-	if err != nil {
-		fmt.Printf("Error get host name: %v\n", err)
-		return
-	}
-
-	addrs, err = net.LookupHost(name)
-	if err != nil {
-		fmt.Printf("Error getting host IP address: %v\n", err)
-		return
-	}
-	return
-}
-
 func getUserHomeDir() string {
 	home := os.Getenv("HOME")
 	if home == "" {
