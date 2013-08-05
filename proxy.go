@@ -382,8 +382,7 @@ func (c *clientConn) serve() {
 			connPool.Put(sv)
 		} else {
 			if debug {
-				debug.Printf("cli(%s) server %s close connection\n",
-					c.RemoteAddr(), sv.hostPort)
+				debug.Printf("cli(%s) server %s close conn\n", c.RemoteAddr(), sv.hostPort)
 			}
 			sv.Close()
 		}
@@ -846,7 +845,7 @@ func (sw *serverWriter) Write(p []byte) (int, error) {
 		sw.rq.partial = true
 	} else if sw.rq.responseNotSent() {
 		sw.rq.raw.Write(p)
-	} else { // has sent response
+	} else { // has sent response, happens when saving data for CONNECT method
 		sw.rq.releaseBuf()
 	}
 	return sw.sv.Write(p)
