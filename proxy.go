@@ -1109,6 +1109,8 @@ func sendBodyChunked(r *bufio.Reader, w io.Writer, rdSize int) (err error) {
 		smid := bytes.IndexByte(s, ';')
 		if smid == -1 {
 			smid = len(s)
+		} else {
+			errl.Printf("got chunk extension: %s\n", s)
 		}
 		var size int64
 		if size, err = ParseIntFromBytes(TrimSpace(s[:smid]), 16); err != nil {
