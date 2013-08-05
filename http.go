@@ -406,62 +406,106 @@ func (h *Header) parseExpect(s []byte) error {
 }
 
 func splitHeader(s []byte) (name, val []byte, err error) {
-	var f [][]byte
-	if f = bytes.SplitN(s, []byte{':'}, 2); len(f) != 2 {
+	i := bytes.IndexByte(s, ':')
+	if i < 0 {
 		return nil, nil, fmt.Errorf("malformed header: %s", s)
 	}
 	// Do not lower case field value, as it maybe case sensitive
-	return ASCIIToLower(f[0]), f[1], nil
+	return ASCIIToLower(s[:i]), TrimSpace(s[i+1:]), nil
+}
+
+// Learned from net.textproto. One difference is that this one keeps the
+// ending '\n' in the returned line. Buf if there's only CRLF in the line,
+// return nil for the line.
+func readContinuedLineSlice(r *bufio.Reader) ([]byte, error) {
+	// Read the first line.
+	line, err := r.ReadSlice('\n')
+	if err != nil {
+		return nil, err
+	}
+
+	// There are servers that use \n for line ending, so trim first before check ending.
+	// For example, the 404 page for http://plan9.bell-labs.com/magic/man2html/1/2l
+	trimmed := TrimSpace(line)
+	if len(trimmed) == 0 {
+		if len(line) > 2 {
+			return nil, fmt.Errorf("malformed end of headers, len: %d, %#v", len(line), string(line))
+		}
+		return nil, nil
+	}
+
+	if !IsASCIILetter(line[0]) {
+		return nil, fmt.Errorf("malformed header, start not ascii letter: %#v", string(line))
+	}
+
+	// Optimistically assume that we have started to buffer the next line
+	// and it starts with an ASCII letter (the next header key), so we can
+	// avoid copying that buffered data around in memory and skipping over
+	// non-existent whitespace.
+	if r.Buffered() > 0 {
+		peek, err := r.Peek(1)
+		if err == nil && IsASCIILetter(peek[0]) {
+			return line, nil
+		}
+	}
+
+	var buf []byte
+	buf = append(buf, trimmed...)
+
+	// Read continuation lines.
+	for skipSpace(r) > 0 {
+		line, err := r.ReadSlice('\n')
+		if err != nil {
+			break
+		}
+		buf = append(buf, ' ')
+		buf = append(buf, TrimTrailingSpace(line)...)
+	}
+	buf = append(buf, '\r', '\n')
+	return buf, nil
+}
+
+func skipSpace(r *bufio.Reader) int {
+	n := 0
+	for {
+		c, err := r.ReadByte()
+		if err != nil {
+			// Bufio will keep err until next read.
+			break
+		}
+		if c != ' ' && c != '\t' {
+			r.UnreadByte()
+			break
+		}
+		n++
+	}
+	return n
 }
 
 // Only add headers that are of interest for a proxy into request/response's header map.
 func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, url *URL) (err error) {
 	h.ContLen = -1
-	dummyLastLine := []byte{}
-	// Read request header and body
-	var s, name, val, lastLine []byte
 	for {
-		if s, err = reader.ReadSlice('\n'); err != nil {
+		var line, name, val []byte
+		if line, err = readContinuedLineSlice(reader); err != nil || len(line) == 0 {
 			return
 		}
-		// There are servers that use \n for line ending, so trim first before check ending.
-		// For example, the 404 page for http://plan9.bell-labs.com/magic/man2html/1/2l
-		trimmed := TrimSpace(s)
-		if len(trimmed) == 0 { // end of headers
-			if len(s) > 2 {
-				errl.Printf("end of headers, len: %d, %#v", len(s), string(s))
-			}
-			return
-		}
-		if (s[0] == ' ' || s[0] == '\t') && lastLine != nil { // multi-line header
-			// I've never seen multi-line header used in headers that's of interest.
-			// Disable multi-line support to avoid copy for now.
-			return fmt.Errorf("multi-line support disabled: %v %s", url, s)
-			// combine previous line with current line
-			// trimmed = bytes.Join([][]byte{lastLine, []byte{' '}, trimmed}, nil)
-		}
-		if name, val, err = splitHeader(trimmed); err != nil {
+		if name, val, err = splitHeader(line); err != nil {
 			errl.Printf("%v raw header:\n%s\n", err, raw.Bytes())
 			return
 		}
 		// Wait Go to solve/provide the string<->[]byte optimization
 		kn := string(name)
 		if parseFunc, ok := headerParser[kn]; ok {
-			// lastLine = append([]byte(nil), trimmed...) // copy to avoid next read invalidating the trimmed line
-			lastLine = dummyLastLine
-			val = TrimSpace(val)
 			if len(val) == 0 {
 				continue
 			}
 			parseFunc(h, val)
-		} else {
-			// mark this header as not of interest to proxy
-			lastLine = nil
 		}
 		if hopByHopHeader[kn] {
 			continue
 		}
-		raw.Write(s)
+		raw.Write(line)
 		// debug.Printf("len %d %s", len(s), s)
 	}
 }

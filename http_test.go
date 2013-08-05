@@ -74,15 +74,13 @@ func TestParseHeader(t *testing.T) {
 			"",
 			&Header{ContLen: -1, Chunking: true, ConnectionKeepAlive: true,
 				KeepAlive: 10 * time.Second}},
-		/*
-			{"Connection: keep-alive\r\nKeep-Alive: max=5,\r\n timeout=10\r\n\r\n", // test multi-line header
-				"Connection: keep-alive\r\n",
-				&Header{ContLen: -1, Chunking: false, ConnectionKeepAlive: true,
-					KeepAlive: 10 * time.Second}},
-			{"Connection: \r\n keep-alive\r\n\r\n", // test multi-line header
-				"Connection: keep-alive\r\n",
-				&Header{ContLen: -1, Chunking: false, ConnectionKeepAlive: true}},
-		*/
+		{"Connection:\r\n keep-alive\r\nKeep-Alive: max=5,\r\n timeout=10\r\n\r\n",
+			"",
+			&Header{ContLen: -1, Chunking: false, ConnectionKeepAlive: true,
+				KeepAlive: 10 * time.Second}},
+		{"Connection: \r\n close\r\nLong: line\r\n continued\r\n\tagain\r\n\r\n",
+			"Long: line continued again\r\n",
+			&Header{ContLen: -1, Chunking: false, ConnectionKeepAlive: false}},
 	}
 	for _, td := range testData {
 		var h Header
