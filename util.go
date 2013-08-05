@@ -256,7 +256,7 @@ func expandTilde(pth string) string {
 }
 
 // copyN copys N bytes from src to dst, reading at most rdSize for each read.
-// rdSize should be smaller than the buffer size of Reader.
+// rdSize should <= buffer size of the buffered reader.
 // Returns any encountered error.
 func copyN(dst io.Writer, src *bufio.Reader, n, rdSize int) (err error) {
 	// Most of the copy is copied from io.Copy

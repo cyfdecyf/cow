@@ -481,7 +481,7 @@ func (c *clientConn) readResponse(sv *serverConn, r *Request, rp *Response) (err
 	rp.releaseBuf()
 
 	if rp.hasBody(r.Method) {
-		if err = sendBody(c, sv, nil, rp); err != nil {
+		if err = sendBody(c, sv.bufRd, int(rp.ContLen), rp.Chunking); err != nil {
 			if debug {
 				debug.Printf("cli(%s) send body %v\n", c.RemoteAddr(), err)
 			}
@@ -819,6 +819,7 @@ func newServerWriter(r *Request, sv *serverConn) *serverWriter {
 }
 
 // Write to server, store written data in request buffer if necessary.
+// We have to save request body in order to retry request.
 // FIXME: too tighly coupled with Request.
 func (sw *serverWriter) Write(p []byte) (int, error) {
 	if sw.rq.raw == nil {
@@ -1040,7 +1041,8 @@ func (sv *serverConn) doRequest(c *clientConn, r *Request, rp *Response) (err er
 	if !r.isRetry() && (r.Chunking || r.ContLen > 0) {
 		// Message body in request is signaled by the inclusion of a Content-
 		// Length or Transfer-Encoding header. Refer to http://stackoverflow.com/a/299696/306935
-		if err = sendBody(c, sv, r, nil); err != nil {
+		err = sendBody(newServerWriter(r, sv), c.bufRd, int(r.ContLen), r.Chunking)
+		if err != nil {
 			if err == io.EOF && isErrOpRead(err) {
 				errl.Printf("cli(%s) read request body EOF %v\n", c.RemoteAddr(), r)
 			} else if isErrOpWrite(err) {
@@ -1192,30 +1194,8 @@ func sendBodySplitIntoChunk(r *bufio.Reader, w io.Writer) (err error) {
 	}
 }
 
-// Send message body. If req is not nil, read from client, send to server. If
-// rp is not nil, the direction is the oppisite.
-func sendBody(c *clientConn, sv *serverConn, req *Request, rp *Response) (err error) {
-	var contLen int
-	var chunk bool
-	var bufRd *bufio.Reader
-	var w io.Writer
-
-	if rp != nil { // read responses from server, write to client
-		w = c
-		bufRd = sv.bufRd
-		contLen = int(rp.ContLen)
-		chunk = rp.Chunking
-	} else if req != nil { // read request body from client, send to server
-		// The server connection may have been closed, need to retry request in that case.
-		// So always need to save request body.
-		w = newServerWriter(req, sv)
-		bufRd = c.bufRd
-		contLen = int(req.ContLen)
-		chunk = req.Chunking
-	} else {
-		panic("sendBody must have either request or response not nil")
-	}
-
+// Send message body.
+func sendBody(w io.Writer, bufRd *bufio.Reader, contLen int, chunk bool) (err error) {
 	// chunked encoding has precedence over content length
 	// COW does not sanitize response header, but can correctly handle it
 	if chunk {
@@ -1223,7 +1203,7 @@ func sendBody(c *clientConn, sv *serverConn, req *Request, rp *Response) (err er
 	} else if contLen >= 0 {
 		// It's possible to have content length 0 if server response has no
 		// body.
-		err = sendBodyWithContLen(bufRd, w, contLen)
+		err = sendBodyWithContLen(bufRd, w, int(contLen))
 	} else {
 		// Must be reading server response here, because sendBody is called in
 		// reading response iff chunked or content length > 0.
