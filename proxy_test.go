@@ -22,6 +22,11 @@ func TestSendBodyChunked(t *testing.T) {
 		*/
 	}
 
+	// supress error log when finding chunk extension
+	errl = false
+	defer func() {
+		errl = true
+	}()
 	// use different reader buffer size to test for both all buffered and partially buffered chunk
 	sizeArr := []int{32, 64, 128}
 	for _, size := range sizeArr {

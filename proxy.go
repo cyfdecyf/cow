@@ -1123,6 +1123,7 @@ func sendBodyChunked(r *bufio.Reader, w io.Writer, rdSize int) (err error) {
 		if smid == -1 {
 			smid = len(s)
 		} else {
+			// use error log to find usage of chunk extension
 			errl.Printf("got chunk extension: %s\n", s)
 		}
 		var size int64
