@@ -1074,6 +1074,7 @@ func sendBodyWithContLen(r *bufio.Reader, w io.Writer, contLen int) (err error) 
 	return
 }
 
+// Use this function until we find Trailer headers actually in use.
 func skipTrailer(r *bufio.Reader) error {
 	// It's possible to get trailer headers, but the body will always end with
 	// a line with just CRLF.
@@ -1083,14 +1084,26 @@ func skipTrailer(r *bufio.Reader) error {
 			errl.Println("skip trailer:", err)
 			return err
 		}
-		if len(s) == 2 {
+		if len(s) == 2 && s[0] == '\r' && s[1] == '\n' {
 			return nil
 		}
-		if len(s) == 1 {
-			return errors.New("chunked encoding end with single LF")
+		errl.Printf("skip trailer: %#v", string(s))
+		if len(s) == 1 || len(s) == 2 {
+			return fmt.Errorf("malformed chunk body end: %#v", s)
 		}
-		errl.Printf("skip trailer: %s", s)
 	}
+}
+
+func skipCRLF(r *bufio.Reader) (err error) {
+	var buf [2]byte
+	if _, err = io.ReadFull(r, buf[:]); err != nil {
+		errl.Println("skip chunk body end:", err)
+		return
+	}
+	if buf[0] != '\r' || buf[1] != '\n' {
+		return fmt.Errorf("malformed chunk body end: %#v", buf)
+	}
+	return
 }
 
 // Send response body if header specifies chunked encoding. rdSize specifies
@@ -1119,7 +1132,7 @@ func sendBodyChunked(r *bufio.Reader, w io.Writer, rdSize int) (err error) {
 		}
 		if size == 0 {
 			r.Skip(len(s))
-			if err = skipTrailer(r); err != nil {
+			if err = skipCRLF(r); err != nil {
 				return
 			}
 			if _, err = w.Write([]byte(chunkEnd)); err != nil {
