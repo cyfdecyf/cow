@@ -248,6 +248,12 @@ func dbgPrintRq(c *clientConn, r *Request) {
 	}
 }
 
+type SinkWriter struct{}
+
+func (s SinkWriter) Write(p []byte) (int, error) {
+	return len(p), nil
+}
+
 func (c *clientConn) serve() {
 	var r Request
 	var rp Response
@@ -335,6 +341,11 @@ func (c *clientConn) serve() {
 			// For CONNECT, the client read buffer is released in copyClient2Server,
 			// so can't go back to getRequest.
 			if err == errPageSent && !r.isConnect {
+				if r.hasBody() {
+					// skip request body
+					debug.Printf("cli(%s) skip request body %v\n", c.RemoteAddr(), &r)
+					sendBody(SinkWriter{}, c.bufRd, int(r.ContLen), r.Chunking)
+				}
 				continue
 			}
 			return
@@ -356,7 +367,9 @@ func (c *clientConn) serve() {
 			sv.Close()
 			if c.shouldRetry(&r, sv, err) {
 				goto retry
-			} else if err == errPageSent {
+			} else if err == errPageSent && (!r.hasBody() || r.state >= rsSent) {
+				// Can only continue if request has no body, or request body
+				// has been read.
 				continue
 			}
 			return
