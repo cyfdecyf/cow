@@ -92,10 +92,13 @@ func IsSpace(b byte) bool {
 	return spaceTbl[b]
 }
 
+// Copied from net/textproto.go
+func IsASCIILetter(b byte) bool {
+	b |= 0x20 // make lower case
+	return 'a' <= b && b <= 'z'
+}
+
 func TrimSpace(s []byte) []byte {
-	if len(s) == 0 {
-		return s
-	}
 	st := 0
 	end := len(s) - 1
 	for ; st < len(s) && IsSpace(s[st]); st++ {
@@ -106,6 +109,13 @@ func TrimSpace(s []byte) []byte {
 	for ; end >= 0 && IsSpace(s[end]); end-- {
 	}
 	return s[st : end+1]
+}
+
+func TrimTrailingSpace(s []byte) []byte {
+	end := len(s) - 1
+	for ; end >= 0 && IsSpace(s[end]); end-- {
+	}
+	return s[:end+1]
 }
 
 // FieldsN is simliar with bytes.Fields, but only consider space and '\t' as

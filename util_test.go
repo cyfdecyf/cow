@@ -99,6 +99,26 @@ func TestTrimSpace(t *testing.T) {
 	}
 }
 
+func TestTrimTrailingSpace(t *testing.T) {
+	testData := []struct {
+		old    string
+		trimed string
+	}{
+		{"hello", "hello"},
+		{" hello", " hello"},
+		{"  hello\r\n ", "  hello"},
+		{"  hello \t  ", "  hello"},
+		{"", ""},
+		{"\r\n", ""},
+	}
+	for _, td := range testData {
+		trimed := string(TrimTrailingSpace([]byte(td.old)))
+		if trimed != td.trimed {
+			t.Errorf("%s trimmed to %s, should be %s\n", td.old, trimed, td.trimed)
+		}
+	}
+}
+
 func TestFieldsN(t *testing.T) {
 	testData := []struct {
 		raw string
