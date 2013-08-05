@@ -93,6 +93,13 @@ func (r *Request) Verbose() []byte {
 	return rqbyte
 }
 
+// Message body in request is signaled by the inclusion of a Content-Length
+// or Transfer-Encoding header.
+// Refer to http://stackoverflow.com/a/299696/306935
+func (r *Request) hasBody() bool {
+	return r.Chunking || r.ContLen > 0
+}
+
 func (r *Request) isRetry() bool {
 	return r.tryCnt > 1
 }

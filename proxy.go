@@ -1038,9 +1038,7 @@ func (sv *serverConn) doRequest(c *clientConn, r *Request, rp *Response) (err er
 
 	// Send request body. If this is retry, r.raw contains request body and is
 	// sent while sending request.
-	if !r.isRetry() && (r.Chunking || r.ContLen > 0) {
-		// Message body in request is signaled by the inclusion of a Content-
-		// Length or Transfer-Encoding header. Refer to http://stackoverflow.com/a/299696/306935
+	if !r.isRetry() && r.hasBody() {
 		err = sendBody(newServerWriter(r, sv), c.bufRd, int(r.ContLen), r.Chunking)
 		if err != nil {
 			if err == io.EOF && isErrOpRead(err) {
