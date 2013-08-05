@@ -4,42 +4,9 @@ import (
 	"bytes"
 	"errors"
 	"github.com/cyfdecyf/bufio"
-	"io"
 	"strings"
 	"testing"
 )
-
-func TestReadLine(t *testing.T) {
-	testData := []struct {
-		text  string
-		lines []string
-	}{
-		{"one\ntwo", []string{"one", "two"}},
-		{"three\r\nfour\n", []string{"three", "four"}},
-		{"five\r\nsix\r\n", []string{"five", "six"}},
-		{"seven", []string{"seven"}},
-		{"eight\n", []string{"eight"}},
-		{"\r\n", []string{""}},
-		{"\n", []string{""}},
-	}
-	for _, td := range testData {
-		raw := strings.NewReader(td.text)
-		rd := bufio.NewReader(raw)
-		for i, line := range td.lines {
-			l, err := ReadLine(rd)
-			if err != nil {
-				t.Fatalf("%d read error %v got: %s\ntext: %s\n", i+1, err, l, td.text)
-			}
-			if line != l {
-				t.Fatalf("%d read got: %s (%d) should be: %s (%d)\n", i+1, l, len(l), line, len(line))
-			}
-		}
-		_, err := ReadLine(rd)
-		if err != io.EOF {
-			t.Error("ReadLine past end should return EOF")
-		}
-	}
-}
 
 func TestASCIIToUpper(t *testing.T) {
 	testData := []struct {

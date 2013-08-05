@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/cyfdecyf/bufio"
-	"io"
 	"io/ioutil"
 	"math/rand"
 	"os"
@@ -442,20 +441,17 @@ func loadSiteList(fpath string) (lst []string, err error) {
 	}
 	defer f.Close()
 
-	fr := bufio.NewReader(f)
+	scanner := bufio.NewScanner(f)
 	lst = make([]string, 0)
-	var site string
-	for {
-		site, err = ReadLine(fr)
-		if err == io.EOF {
-			return lst, nil
-		} else if err != nil {
-			errl.Printf("Error reading domain list %s: %v\n", fpath, err)
-			return
-		}
+	for scanner.Scan() {
+		site := strings.TrimSpace(scanner.Text())
 		if site == "" {
 			continue
 		}
-		lst = append(lst, strings.TrimSpace(site))
+		lst = append(lst, site)
 	}
+	if scanner.Err() != nil {
+		errl.Printf("Error reading domain list %s: %v\n", fpath, scanner.Err())
+	}
+	return lst, scanner.Err()
 }

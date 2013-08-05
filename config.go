@@ -4,7 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"github.com/cyfdecyf/bufio"
-	"io"
 	"net"
 	"os"
 	"path"
@@ -413,23 +412,15 @@ func parseConfig(path string) {
 
 	IgnoreUTF8BOM(f)
 
-	fr := bufio.NewReader(f)
+	scanner := bufio.NewScanner(f)
 
 	parser := reflect.ValueOf(configParser{})
 	zeroMethod := reflect.Value{}
 
-	var line string
 	var n int
-	for {
+	for scanner.Scan() {
 		n++
-		line, err = ReadLine(fr)
-		if err == io.EOF {
-			return
-		} else if err != nil {
-			Fatalf("Error reading rc file: %v\n", err)
-		}
-
-		line = strings.TrimSpace(line)
+		line := strings.TrimSpace(scanner.Text())
 		if line == "" || line[0] == '#' {
 			continue
 		}
@@ -451,6 +442,9 @@ func parseConfig(path string) {
 		}
 		args := []reflect.Value{reflect.ValueOf(val)}
 		method.Call(args)
+	}
+	if scanner.Err() != nil {
+		Fatalf("Error reading rc file: %v\n", scanner.Err())
 	}
 }
 

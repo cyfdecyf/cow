@@ -37,37 +37,6 @@ func (n notification) hasNotified() bool {
 	}
 }
 
-// ReadLine read till '\n' is found or encounter error. The returned line does
-// not include ending '\r' and '\n'. If returns err != nil if and only if
-// len(line) == 0.
-func ReadLine(r *bufio.Reader) (string, error) {
-	l, err := ReadLineSlice(r)
-	return string(l), err
-}
-
-// ReadLineBytes read till '\n' is found or encounter error. The returned line
-// does not include ending '\r\n' or '\n'. Returns err != nil if and only if
-// len(line) == 0. Note the returned byte should not be used for append and
-// maybe overwritten by next I/O operation. Copied code of readLineSlice from
-// $GOROOT/src/pkg/net/textproto/reader.go
-func ReadLineSlice(r *bufio.Reader) (line []byte, err error) {
-	for {
-		l, more, err := r.ReadLine()
-		if err != nil {
-			return nil, err
-		}
-		// Avoid the copy if the first call produced a full line.
-		if line == nil && !more {
-			return l, nil
-		}
-		line = append(line, l...)
-		if !more {
-			break
-		}
-	}
-	return line, nil
-}
-
 func ASCIIToUpperInplace(b []byte) {
 	for i := 0; i < len(b); i++ {
 		if 97 <= b[i] && b[i] <= 122 {
