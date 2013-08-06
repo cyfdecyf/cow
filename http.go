@@ -678,7 +678,9 @@ func parseResponse(sv *serverConn, r *Request, rp *Response) (err error) {
 
 	if rp.Chunking {
 		rp.raw.WriteString(fullHeaderTransferEncoding)
-	} else if !rp.ConnectionKeepAlive && rp.ContLen == -1 {
+	} else if rp.ContLen == -1 {
+		// No chunk, no content length, assume close to signal end.
+		rp.ConnectionKeepAlive = false
 		if rp.hasBody(r.Method) {
 			// Connection close, no content length specification.
 			// Use chunked encoding to pass content back to client.
