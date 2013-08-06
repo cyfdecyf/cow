@@ -429,6 +429,13 @@ func splitHeader(s []byte) (name, val []byte, err error) {
 // ending '\n' in the returned line. Buf if there's only CRLF in the line,
 // return nil for the line.
 func readContinuedLineSlice(r *bufio.Reader) ([]byte, error) {
+	// feedly.com request headers contains things like:
+	// "$Authorization.feedly: $FeedlyAuth\r\n", so we must test for only
+	// continuation spaces.
+	isspace := func(b byte) bool {
+		return b == ' ' || b == '\t'
+	}
+
 	// Read the first line.
 	line, err := r.ReadSlice('\n')
 	if err != nil {
@@ -445,8 +452,8 @@ func readContinuedLineSlice(r *bufio.Reader) ([]byte, error) {
 		return nil, nil
 	}
 
-	if !IsASCIILetter(line[0]) {
-		return nil, fmt.Errorf("malformed header, start not ascii letter: %#v", string(line))
+	if isspace(line[0]) {
+		return nil, fmt.Errorf("malformed header, start with space: %#v", string(line))
 	}
 
 	// Optimistically assume that we have started to buffer the next line
@@ -455,7 +462,7 @@ func readContinuedLineSlice(r *bufio.Reader) ([]byte, error) {
 	// non-existent whitespace.
 	if r.Buffered() > 0 {
 		peek, err := r.Peek(1)
-		if err == nil && IsASCIILetter(peek[0]) {
+		if err == nil && !isspace(peek[0]) {
 			return line, nil
 		}
 	}

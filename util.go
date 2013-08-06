@@ -92,12 +92,6 @@ func IsSpace(b byte) bool {
 	return spaceTbl[b]
 }
 
-// Copied from net/textproto.go
-func IsASCIILetter(b byte) bool {
-	b |= 0x20 // make lower case
-	return 'a' <= b && b <= 'z'
-}
-
 func TrimSpace(s []byte) []byte {
 	st := 0
 	end := len(s) - 1
