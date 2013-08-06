@@ -951,7 +951,7 @@ func (sv *serverConn) doConnect(r *Request, c *clientConn) (err error) {
 		if debug {
 			debug.Printf("cli(%s) send CONNECT request to http parent\n", c.RemoteAddr())
 		}
-		if err = sv.sendHTTPProxyRequest(r, c); err != nil {
+		if err = sv.sendHTTPProxyRequestHeader(r, c); err != nil {
 			if debug {
 				debug.Printf("cli(%s) error send CONNECT request to http proxy server: %v\n",
 					c.RemoteAddr(), err)
@@ -996,7 +996,7 @@ func (sv *serverConn) doConnect(r *Request, c *clientConn) (err error) {
 	return
 }
 
-func (sv *serverConn) sendHTTPProxyRequest(r *Request, c *clientConn) (err error) {
+func (sv *serverConn) sendHTTPProxyRequestHeader(r *Request, c *clientConn) (err error) {
 	if _, err = sv.Write(r.proxyRequestLine()); err != nil {
 		return c.handleServerWriteError(r, sv, err,
 			"send proxy request line to http parent")
@@ -1012,6 +1012,7 @@ func (sv *serverConn) sendHTTPProxyRequest(r *Request, c *clientConn) (err error
 				"send proxy authorization header to http parent")
 		}
 	}
+	// When retry, body is in raw buffer.
 	if _, err = sv.Write(r.rawHeaderBody()); err != nil {
 		return c.handleServerWriteError(r, sv, err,
 			"send proxy request header to http parent")
@@ -1024,11 +1025,11 @@ func (sv *serverConn) sendHTTPProxyRequest(r *Request, c *clientConn) (err error
 	return
 }
 
-func (sv *serverConn) sendRequest(r *Request, c *clientConn) (err error) {
+func (sv *serverConn) sendRequestHeader(r *Request, c *clientConn) (err error) {
 	// Send request to the server
 	_, isHttpConn := sv.Conn.(httpConn)
 	if isHttpConn {
-		return sv.sendHTTPProxyRequest(r, c)
+		return sv.sendHTTPProxyRequestHeader(r, c)
 	}
 	/*
 		if bool(debug) && verbose {
@@ -1041,34 +1042,38 @@ func (sv *serverConn) sendRequest(r *Request, c *clientConn) (err error) {
 	return
 }
 
-// Do HTTP request other that CONNECT
-func (sv *serverConn) doRequest(c *clientConn, r *Request, rp *Response) (err error) {
-	r.state = rsCreated
-	if err = sv.sendRequest(r, c); err != nil {
+func (sv *serverConn) sendRequestBody(r *Request, c *clientConn) (err error) {
+	// Send request body. If this is retry, r.raw contains request body and is
+	// sent while sending raw request.
+	if !r.hasBody() || r.isRetry() {
 		return
 	}
 
-	// Send request body. If this is retry, r.raw contains request body and is
-	// sent while sending request.
-	if !r.isRetry() && r.hasBody() {
-		err = sendBody(newServerWriter(r, sv), c.bufRd, int(r.ContLen), r.Chunking)
-		if err != nil {
-			if err == io.EOF && isErrOpRead(err) {
-				errl.Printf("cli(%s) read request body EOF %v\n", c.RemoteAddr(), r)
-			} else if isErrOpWrite(err) {
-				err = c.handleServerWriteError(r, sv, err, "send request body")
-			} else {
-				errl.Printf("cli(%s) read request body %v\n", c.RemoteAddr(), err)
-			}
-			return
+	err = sendBody(newServerWriter(r, sv), c.bufRd, int(r.ContLen), r.Chunking)
+	if err != nil {
+		errl.Printf("cli(%s) send request body error %v %s\n", c.RemoteAddr(), err, r)
+		if isErrOpWrite(err) {
+			err = c.handleServerWriteError(r, sv, err, "send request body")
 		}
-		if debug {
-			debug.Printf("cli(%s) request body sent %s\n", c.RemoteAddr(), r)
-		}
+		return
+	}
+	if debug {
+		debug.Printf("cli(%s) request body sent %s\n", c.RemoteAddr(), r)
+	}
+	return
+}
+
+// Do HTTP request other that CONNECT
+func (sv *serverConn) doRequest(c *clientConn, r *Request, rp *Response) (err error) {
+	r.state = rsCreated
+	if err = sv.sendRequestHeader(r, c); err != nil {
+		return
+	}
+	if err = sv.sendRequestBody(r, c); err != nil {
+		return
 	}
 	r.state = rsSent
-	err = c.readResponse(sv, r, rp)
-	if err == nil {
+	if err = c.readResponse(sv, r, rp); err == nil {
 		sv.updateVisit()
 	}
 	return err
