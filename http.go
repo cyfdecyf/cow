@@ -116,6 +116,10 @@ func (r *Request) responseNotSent() bool {
 	return r.state <= rsSent
 }
 
+func (r *Request) hasSent() bool {
+	return r.state >= rsSent
+}
+
 func (r *Request) releaseBuf() {
 	if r.raw != nil {
 		httpBuf.Put(r.rawByte)

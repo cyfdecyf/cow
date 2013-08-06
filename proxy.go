@@ -367,7 +367,7 @@ func (c *clientConn) serve() {
 			sv.Close()
 			if c.shouldRetry(&r, sv, err) {
 				goto retry
-			} else if err == errPageSent && (!r.hasBody() || r.state >= rsSent) {
+			} else if err == errPageSent && (!r.hasBody() || r.hasSent()) {
 				// Can only continue if request has no body, or request body
 				// has been read.
 				continue
