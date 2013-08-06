@@ -518,7 +518,9 @@ func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, url *URL) 
 			if len(val) == 0 {
 				continue
 			}
-			parseFunc(h, val)
+			if err = parseFunc(h, val); err != nil {
+				return
+			}
 		}
 		if hopByHopHeader[kn] {
 			continue
@@ -581,9 +583,9 @@ func parseRequest(c *clientConn, r *Request) (err error) {
 	}
 	r.headStart = r.raw.Len()
 
-	// Read request header
+	// Read request header.
 	if err = r.parseHeader(reader, r.raw, r.URL); err != nil {
-		errl.Printf("parse request header: %v %v\n", err, r)
+		errl.Printf("parse request header: %v %s\n%s", err, r, r.Verbose())
 		return err
 	}
 	if r.Chunking {
@@ -664,7 +666,8 @@ func parseResponse(sv *serverConn, r *Request, rp *Response) (err error) {
 	}
 
 	if err = rp.parseHeader(reader, rp.raw, r.URL); err != nil {
-		return fmt.Errorf("parse response header: %v %v", err, r)
+		errl.Printf("parse response header: %v %s\n%s", err, rp, rp.Verbose())
+		return err
 	}
 
 	if rp.Status == statusCodeContinue && !r.ExpectContinue {
