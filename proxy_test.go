@@ -32,9 +32,9 @@ func TestSendBodyChunked(t *testing.T) {
 	for _, size := range sizeArr {
 		for _, td := range testData {
 			r := bufio.NewReaderSize(strings.NewReader(td.raw), size)
-			var w bytes.Buffer
+			w := new(bytes.Buffer)
 
-			if err := sendBodyChunked(r, &w, size); err != nil {
+			if err := sendBodyChunked(w, r, size); err != nil {
 				t.Fatalf("sent data %q err: %v\n", w.Bytes(), err)
 			}
 			if td.want == "" {

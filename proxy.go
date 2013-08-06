@@ -1075,7 +1075,7 @@ func (sv *serverConn) doRequest(c *clientConn, r *Request, rp *Response) (err er
 }
 
 // Send response body if header specifies content length
-func sendBodyWithContLen(r *bufio.Reader, w io.Writer, contLen int) (err error) {
+func sendBodyWithContLen(w io.Writer, r *bufio.Reader, contLen int) (err error) {
 	// debug.Println("Sending body with content length", contLen)
 	if contLen == 0 {
 		return
@@ -1121,7 +1121,7 @@ func skipCRLF(r *bufio.Reader) (err error) {
 // Send response body if header specifies chunked encoding. rdSize specifies
 // the size of each read on Reader, it should be set to be the buffer size of
 // the Reader, this parameter is added for testing.
-func sendBodyChunked(r *bufio.Reader, w io.Writer, rdSize int) (err error) {
+func sendBodyChunked(w io.Writer, r *bufio.Reader, rdSize int) (err error) {
 	// debug.Println("Sending chunked body")
 	for {
 		var s []byte
@@ -1168,7 +1168,7 @@ func sendBodyChunked(r *bufio.Reader, w io.Writer, rdSize int) (err error) {
 const CRLF = "\r\n"
 const chunkEnd = "0\r\n\r\n"
 
-func sendBodySplitIntoChunk(r *bufio.Reader, w io.Writer) (err error) {
+func sendBodySplitIntoChunk(w io.Writer, r *bufio.Reader) (err error) {
 	// debug.Printf("sendBodySplitIntoChunk called\n")
 	var b []byte
 	for {
@@ -1209,15 +1209,15 @@ func sendBody(w io.Writer, bufRd *bufio.Reader, contLen int, chunk bool) (err er
 	// chunked encoding has precedence over content length
 	// COW does not sanitize response header, but can correctly handle it
 	if chunk {
-		err = sendBodyChunked(bufRd, w, httpBufSize)
+		err = sendBodyChunked(w, bufRd, httpBufSize)
 	} else if contLen >= 0 {
 		// It's possible to have content length 0 if server response has no
 		// body.
-		err = sendBodyWithContLen(bufRd, w, int(contLen))
+		err = sendBodyWithContLen(w, bufRd, int(contLen))
 	} else {
 		// Must be reading server response here, because sendBody is called in
 		// reading response iff chunked or content length > 0.
-		err = sendBodySplitIntoChunk(bufRd, w)
+		err = sendBodySplitIntoChunk(w, bufRd)
 	}
 	return
 }
