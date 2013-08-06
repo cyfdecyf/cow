@@ -159,11 +159,11 @@ func newClientConn(cli net.Conn, proxy *Proxy) *clientConn {
 }
 
 func (c *clientConn) releaseBuf() {
-	c.bufRd = nil
-	if c.buf != nil {
+	if c.bufRd != nil {
 		// debug.Println("release client buffer")
 		httpBuf.Put(c.buf)
 		c.buf = nil
+		c.bufRd = nil
 	}
 }
 
@@ -379,6 +379,9 @@ func (c *clientConn) serve() {
 			if debug {
 				debug.Printf("cli(%s) connPool put %s", c.RemoteAddr(), sv.hostPort)
 			}
+			// If the server connection is not going to be used soon,
+			// release buffer before putting back to pool can save memory.
+			sv.releaseBuf()
 			connPool.Put(sv)
 		} else {
 			if debug {
@@ -457,9 +460,7 @@ func dbgPrintRep(c *clientConn, r *Request, rp *Response) {
 func (c *clientConn) readResponse(sv *serverConn, r *Request, rp *Response) (err error) {
 	sv.initBuf()
 	defer func() {
-		if rp != nil {
-			rp.releaseBuf()
-		}
+		rp.releaseBuf()
 	}()
 
 	/*
@@ -705,13 +706,17 @@ func (sv *serverConn) initBuf() {
 	}
 }
 
-func (sv *serverConn) Close() error {
-	sv.bufRd = nil
-	if sv.buf != nil {
+func (sv *serverConn) releaseBuf() {
+	if sv.bufRd != nil {
 		// debug.Println("release server buffer")
 		httpBuf.Put(sv.buf)
 		sv.buf = nil
+		sv.bufRd = nil
 	}
+}
+
+func (sv *serverConn) Close() error {
+	sv.releaseBuf()
 	if debug {
 		debug.Printf("close connection to %s remains %d concurrent connections\n",
 			sv.hostPort, decSrvConnCnt(sv.hostPort))
