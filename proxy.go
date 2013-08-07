@@ -507,7 +507,7 @@ func (c *clientConn) readResponse(sv *serverConn, r *Request, rp *Response) (err
 				// The client connection will be closed to indicate this error.
 				// Proxy can't send error page here because response header has
 				// been sent.
-				return fmt.Errorf("read response body unexpected EOF", r)
+				return fmt.Errorf("read response body unexpected EOF %v", rp)
 			} else if isErrOpRead(err) {
 				return c.handleServerReadError(r, sv, err, "read response body")
 			}
@@ -1111,7 +1111,7 @@ func skipTrailer(r *bufio.Reader) error {
 		}
 		errl.Printf("skip trailer: %#v", string(s))
 		if len(s) == 1 || len(s) == 2 {
-			return fmt.Errorf("malformed chunk body end: %#v", s)
+			return fmt.Errorf("malformed chunk body end: %#v", string(s))
 		}
 	}
 }
@@ -1123,7 +1123,7 @@ func skipCRLF(r *bufio.Reader) (err error) {
 		return
 	}
 	if buf[0] != '\r' || buf[1] != '\n' {
-		return fmt.Errorf("malformed chunk body end: %#v", buf)
+		return fmt.Errorf("malformed chunk body end: %#v", string(buf[:]))
 	}
 	return
 }

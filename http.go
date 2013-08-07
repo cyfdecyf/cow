@@ -419,7 +419,7 @@ func (h *Header) parseExpect(s []byte) error {
 func splitHeader(s []byte) (name, val []byte, err error) {
 	i := bytes.IndexByte(s, ':')
 	if i < 0 {
-		return nil, nil, fmt.Errorf("malformed header: %s", s)
+		return nil, nil, fmt.Errorf("malformed header: %#v", string(s))
 	}
 	// Do not lower case field value, as it maybe case sensitive
 	return ASCIIToLower(s[:i]), TrimSpace(s[i+1:]), nil
@@ -556,7 +556,7 @@ func parseRequest(c *clientConn, r *Request) (err error) {
 	var f [][]byte
 	// Tolerate with multiple spaces and '\t' is achieved by FieldsN.
 	if f = FieldsN(s, 3); len(f) != 3 {
-		return errors.New(fmt.Sprintf("malformed request line: %s", s))
+		return fmt.Errorf("malformed request line: %#v", string(s))
 	}
 	ASCIIToUpperInplace(f[0])
 	r.Method = string(f[0])
@@ -638,7 +638,7 @@ func parseResponse(sv *serverConn, r *Request, rp *Response) (err error) {
 	// response status line parsing
 	var f [][]byte
 	if f = FieldsN(s, 3); len(f) < 2 { // status line are separated by SP
-		return fmt.Errorf("malformed response status line: %s %v", s, r)
+		return fmt.Errorf("malformed response status line: %#v %v", string(s), r)
 	}
 	status, err := ParseIntFromBytes(f[1], 10)
 
