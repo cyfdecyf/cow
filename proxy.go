@@ -1142,7 +1142,6 @@ func sendBodyChunked(w io.Writer, r *bufio.Reader, rdSize int) (err error) {
 			errl.Println("peek chunk size:", err)
 			return
 		}
-		// debug.Printf("Chunk size line %s\n", s)
 		smid := bytes.IndexByte(s, ';')
 		if smid == -1 {
 			smid = len(s)
@@ -1154,6 +1153,12 @@ func sendBodyChunked(w io.Writer, r *bufio.Reader, rdSize int) (err error) {
 		if size, err = ParseIntFromBytes(TrimSpace(s[:smid]), 16); err != nil {
 			errl.Println("chunk size invalid:", err)
 			return
+		}
+		if debug {
+			// To debug getting malformed response status line with "0\r\n".
+			if c, ok := w.(*clientConn); ok {
+				debug.Printf("cli(%s) chunk size %d %#v\n", c.RemoteAddr(), size, string(s))
+			}
 		}
 		if size == 0 {
 			r.Skip(len(s))
