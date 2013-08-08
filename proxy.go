@@ -736,7 +736,8 @@ func setConnReadTimeout(cn net.Conn, d time.Duration, msg string) {
 
 func unsetConnReadTimeout(cn net.Conn, msg string) {
 	if err := cn.SetReadDeadline(zeroTime); err != nil {
-		errl.Println("Unset readtimeout:", msg, err)
+		// It's possible that conn has been closed, so use debug log.
+		debug.Println("Unset readtimeout:", msg, err)
 	}
 }
 
@@ -862,7 +863,8 @@ func copyClient2Server(c *clientConn, sv *serverConn, r *Request, srvStopped not
 	deadlineIsSet := false
 	defer func() {
 		if deadlineIsSet {
-			// maybe need to retry, should unset timeout here because
+			// May need to retry, unset timeout here to avoid read client
+			// timeout on retry. Note c.Conn maybe closed when calling this.
 			unsetConnReadTimeout(c.Conn, "cli->srv after err")
 		}
 		close(done)
