@@ -331,7 +331,7 @@ func (c *clientConn) serve() {
 	retry:
 		r.tryOnce()
 		if bool(debug) && r.isRetry() {
-			errl.Printf("cli(%s) retry request tryCnt=%d %v\n", c.RemoteAddr(), r.tryCnt, &r)
+			debug.Printf("cli(%s) retry request tryCnt=%d %v\n", c.RemoteAddr(), r.tryCnt, &r)
 		}
 		if sv, err = c.getServerConn(&r); err != nil {
 			if debug {
