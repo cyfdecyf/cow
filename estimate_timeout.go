@@ -33,8 +33,8 @@ var estimateReq = []byte("GET / HTTP/1.1\r\n" +
 // considering non-blocked sites as blocked when network connection is bad.
 func estimateTimeout() {
 	// debug.Println("estimating timeout")
-	buf := connectBuf.Get()
-	defer connectBuf.Put(buf)
+	buf := httpBuf.Get()
+	defer httpBuf.Put(buf)
 	var est time.Duration
 
 	start := time.Now()
