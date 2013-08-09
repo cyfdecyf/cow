@@ -22,10 +22,11 @@ import (
 // http://www.mnot.net/blog/2011/07/11/what_proxies_must_do
 // "URIs should be allowed at least 8000 octets, and HTTP headers should have
 // 4000 as an absolute minimum".
-const httpBufSize = 4096
+const httpBufSize = 8192
 
-// Hold at most 8MB memory as buffer for parsing http request/response.
-var httpBuf = leakybuf.NewLeakyBuf(2048, httpBufSize)
+// Hold at most 4MB memory as buffer for parsing http request/response and
+// holding post data.
+var httpBuf = leakybuf.NewLeakyBuf(512, httpBufSize)
 
 // If no keep-alive header in response, use this as the keep-alive value.
 const defaultServerConnTimeout = 15 * time.Second
@@ -765,10 +766,18 @@ func (sv *serverConn) mayBeClosed() bool {
 	return time.Now().After(sv.willCloseOn)
 }
 
+// Use smaller buffer for connection method as the buffer will be hold for a
+// very long time.
+const connectBufSize = 4096
+
+// Hold at most 2M memory for connection buffer. This can support 256
+// concurrent connect method.
+var connectBuf = leakybuf.NewLeakyBuf(512, connectBufSize)
+
 func copyServer2Client(sv *serverConn, c *clientConn, r *Request) (err error) {
-	buf := httpBuf.Get()
+	buf := connectBuf.Get()
 	defer func() {
-		httpBuf.Put(buf)
+		connectBuf.Put(buf)
 	}()
 
 	/*
@@ -895,9 +904,9 @@ func copyClient2Server(c *clientConn, sv *serverConn, r *Request, srvStopped not
 	if config.DetectSSLErr {
 		start = time.Now()
 	}
-	buf := httpBuf.Get()
+	buf := connectBuf.Get()
 	defer func() {
-		httpBuf.Put(buf)
+		connectBuf.Put(buf)
 	}()
 	for {
 		// debug.Println("cli->srv")
