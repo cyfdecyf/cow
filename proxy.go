@@ -22,6 +22,8 @@ import (
 // http://www.mnot.net/blog/2011/07/11/what_proxies_must_do
 // "URIs should be allowed at least 8000 octets, and HTTP headers should have
 // 4000 as an absolute minimum".
+// In practice, there are sites using cookies larger than 4096 bytes,
+// e.g. www.fitbit.com. So set http buffer size to 8192 to be safe.
 const httpBufSize = 8192
 
 // Hold at most 4MB memory as buffer for parsing http request/response and
