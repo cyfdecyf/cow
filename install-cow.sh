@@ -99,7 +99,7 @@ if [ ! -e $config_dir ]; then
     mkdir -p $config_dir || exit_on_fail "Can't create $config_dir directory"
     for f in rc; do
         echo "Downloading $sample_config_base/$f to $config_dir/$f"
-        curl -s -L "$sample_config_base/$f" -o $config_dir/$f || \
+        curl -L "$sample_config_base/$f" -o $config_dir/$f || \
             exit_on_fail "Downloading sample config file $f failed"
     done
 fi
@@ -111,7 +111,7 @@ if [ $start_on_login == "y" ]; then
     plist_url="$doc_base/osx/$plist"
     mkdir -p $la_dir && exit_on_fail "Can't create directory $la_dir"
     echo "Downloading $plist_url to $la_dir/$plist"
-    curl -s -L "$plist_url" | \
+    curl -L "$plist_url" | \
         sed -e "s,COWBINARY,$install_dir/cow," > $la_dir/$plist || \
         exit_on_fail "Download startup plist file to $la_dir failed"
 fi
