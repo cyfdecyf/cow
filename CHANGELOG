@@ -1,8 +1,14 @@
-0.8 (not released)
+0.8 (2013-08-10)
     * Share server connections between different clients
     * Add tunnelAllowedPort option to limit ports CONNECT method can connect to
     * Avoid timeout too soon for frequently visited direct sites
-    * Fix reporting malformed requests when authenticating requests with body
+    * Fix reporting malformed requests in two cases when request has body:
+      - Authenticate requests
+      - Error occured before request is sent
+    * Support multi-lined headers
+    * Change client connection timeout to 15s
+    * Change as direct delta to 15
+    * Provide ARMv5 binary
 
 0.7.6 (2013-07-28)
     * Fix bug for close connection response with no body
