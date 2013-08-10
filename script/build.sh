@@ -8,19 +8,27 @@ echo "creating cow binary version $version"
 mkdir -p bin
 build() {
     local name
-    local GOOS
-    local GOARCH
+    local goos
+    local goarch
+    local goarm
+    local cgo
+
+    goos="GOOS=$1"
+    goarch="GOARCH=$2"
+    if [[ $3 == "linux-armv5" ]]; then
+        goarm="GOARM=5"
+    fi
 
     if [[ $1 == "darwin" ]]; then
         # Enable CGO for OS X so change network location will not cause problem.
-        export CGO_ENABLED=1
+        cgo="CGO_ENABLED=1"
     else
-        export CGO_ENABLED=0
+        cgo="CGO_ENABLED=0"
     fi
 
     name=cow-$3-$version
     echo "building $name"
-    GOOS=$1 GOARCH=$2 go build || exit 1
+    eval $cgo $goos $goarch $goarm go build || exit 1
     if [[ $1 == "windows" ]]; then
         mv cow.exe script
         pushd script
@@ -29,7 +37,7 @@ build() {
         rm -f cow.exe sample-rc.txt
         mv $name.zip ../bin/
         popd
-    else 
+    else
         mv cow bin/$name
         gzip -f bin/$name
     fi
@@ -39,6 +47,6 @@ build darwin amd64 mac64
 build linux amd64 linux64
 build linux 386 linux32
 build linux arm linux-armv6
+build linux arm linux-armv5
 build windows amd64 win64
 build windows 386 win32
-

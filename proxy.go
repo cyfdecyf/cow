@@ -8,7 +8,6 @@ import (
 	"github.com/cyfdecyf/leakybuf"
 	"io"
 	"net"
-	"reflect"
 	"strings"
 	"time"
 )
@@ -19,10 +18,12 @@ import (
 //
 // For limits about URL and HTTP header size, refer to:
 // http://stackoverflow.com/questions/417142/what-is-the-maximum-length-of-a-url
-// (URL usually are less than 2100 bytes.)
+// "de facto limit of 2000 characters"
 // http://www.mnot.net/blog/2011/07/11/what_proxies_must_do
-// (This says "URIs should be allowed at least 8000 octets, and HTTP headers
-// (should have 4000 as an absolute minimum".)
+// "URIs should be allowed at least 8000 octets, and HTTP headers should have
+// 4000 as an absolute minimum".
+// In practice, there are sites using cookies larger than 4096 bytes,
+// e.g. www.fitbit.com. So set http buffer size to 8192 to be safe.
 const httpBufSize = 8192
 
 // Hold at most 4MB memory as buffer for parsing http request/response and
@@ -32,18 +33,12 @@ var httpBuf = leakybuf.NewLeakyBuf(512, httpBufSize)
 // If no keep-alive header in response, use this as the keep-alive value.
 const defaultServerConnTimeout = 15 * time.Second
 
-// Close client connection if no new request received in some time. To prevent
-// keeping too many idle (keep-alive) server connections, COW timeout read for
-// the initial request line after clientConnTimeout, and closes client
-// connection after clientMaxTimeoutCnt timeout.
+// Close client connection if no new requests received in some time.
 // (On OS X, the default soft limit of open file descriptor is 256, which is
-// very conservative and easy to cause problem if we are not careful.)
-const clientConnTimeout = 5 * time.Second
-const clientMaxTimeoutCnt = 2
-const fullKeepAliveHeader = "Keep-Alive: timeout=10\r\n"
-
-// Remove idle server connection every cleanServerInterval second.
-const cleanServerInterval = 5 * time.Second
+// very conservative and easy to cause problem if we are not careful to limit
+// open fds.)
+const clientConnTimeout = 15 * time.Second
+const fullKeepAliveHeader = "Keep-Alive: timeout=15\r\n"
 
 // If client closed connection for HTTP CONNECT method in less then 1 second,
 // consider it as an ssl error. This is only effective for Chrome which will
@@ -71,22 +66,14 @@ type Proxy struct {
 	addrInPAC string // proxy server address to use in PAC
 }
 
-type connType byte
+var zeroTime time.Time
 
-const (
-	ctNilConn connType = iota
-	ctDirectConn
-	ctSocksConn
-	ctShadowctSocksConn
-	ctHttpProxyConn
-)
+type directConn struct {
+	net.Conn
+}
 
-var ctName = [...]string{
-	ctNilConn:           "nil",
-	ctDirectConn:        "direct",
-	ctSocksConn:         "socks5",
-	ctShadowctSocksConn: "shadowsocks",
-	ctHttpProxyConn:     "http parent",
+func (dc directConn) String() string {
+	return "direct connection"
 }
 
 type serverConnState byte
@@ -97,20 +84,11 @@ const (
 	svStopped
 )
 
-type conn struct {
-	connType
-	net.Conn
-	creator proxyConnector
-}
-
-var zeroConn conn
-var zeroTime time.Time
-
 type serverConn struct {
-	conn
+	net.Conn
 	bufRd       *bufio.Reader
 	buf         []byte // buffer for the buffered reader
-	url         *URL
+	hostPort    string
 	state       serverConnState
 	willCloseOn time.Time
 	siteInfo    *VisitCnt
@@ -118,29 +96,16 @@ type serverConn struct {
 }
 
 type clientConn struct {
-	net.Conn   // connection to the proxy client
-	bufRd      *bufio.Reader
-	buf        []byte                 // buffer for the buffered reader
-	serverConn map[string]*serverConn // request serverConn, host:port as key
-	timeoutCnt int                    // number of timeouts reading requests
-	cleanedOn  time.Time              // time of last idle server clean up
-	proxy      *Proxy
+	net.Conn // connection to the proxy client
+	bufRd    *bufio.Reader
+	buf      []byte // buffer for the buffered reader
+	proxy    *Proxy
 }
 
 var (
-	errTooManyRetry  = errors.New("Too many retry")
-	errPageSent      = errors.New("Error page has sent")
-	errShouldClose   = errors.New("Error can only be handled by close connection")
-	errInternal      = errors.New("Internal error")
-	errNoParentProxy = errors.New("No parent proxy")
-	errClientTimeout = errors.New("Read client request timeout")
-
-	errChunkedEncode   = errors.New("Invalid chunked encoding")
-	errMalformHeader   = errors.New("Malformed HTTP header")
-	errMalformResponse = errors.New("Malformed HTTP response")
-	errNotSupported    = errors.New("Not supported")
-	errBadRequest      = errors.New("Bad request")
-	errAuthRequired    = errors.New("Authentication requried")
+	errPageSent      = errors.New("error page has sent")
+	errClientTimeout = errors.New("read client request timeout")
+	errAuthRequired  = errors.New("authentication requried")
 )
 
 func NewProxy(addr, addrInPAC string) *Proxy {
@@ -162,17 +127,17 @@ func (py *Proxy) Serve(done chan byte) {
 	}
 	host, _, _ := net.SplitHostPort(py.addr)
 	if host == "" || host == "0.0.0.0" {
-		info.Printf("COW proxy address %s, PAC url http://<hostip>:%s/pac\n", py.addr, py.port)
+		info.Printf("COW %s proxy address %s, PAC url http://<hostip>:%s/pac\n", version, py.addr, py.port)
 	} else if py.addrInPAC == "" {
-		info.Printf("COW proxy address %s, PAC url http://%s/pac\n", py.addr, py.addr)
+		info.Printf("COW %s proxy address %s, PAC url http://%s/pac\n", version, py.addr, py.addr)
 	} else {
-		info.Printf("COW proxy address %s, PAC url http://%s/pac\n", py.addr, py.addrInPAC)
+		info.Printf("COW %s proxy address %s, PAC url http://%s/pac\n", version, py.addr, py.addrInPAC)
 	}
 
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
-			debug.Println("client connection:", err)
+			debug.Printf("proxy(%s) accept %v\n", ln.Addr(), err)
 			continue
 		}
 		c := newClientConn(conn, py)
@@ -183,11 +148,10 @@ func (py *Proxy) Serve(done chan byte) {
 func newClientConn(cli net.Conn, proxy *Proxy) *clientConn {
 	buf := httpBuf.Get()
 	c := &clientConn{
-		Conn:       cli,
-		serverConn: map[string]*serverConn{},
-		buf:        buf,
-		bufRd:      bufio.NewReaderFromBuf(cli, buf),
-		proxy:      proxy,
+		Conn:  cli,
+		buf:   buf,
+		bufRd: bufio.NewReaderFromBuf(cli, buf),
+		proxy: proxy,
 	}
 	if debug {
 		debug.Printf("cli(%s) connected, total %d clients\n",
@@ -197,19 +161,16 @@ func newClientConn(cli net.Conn, proxy *Proxy) *clientConn {
 }
 
 func (c *clientConn) releaseBuf() {
-	c.bufRd = nil
-	if c.buf != nil {
+	if c.bufRd != nil {
 		// debug.Println("release client buffer")
 		httpBuf.Put(c.buf)
 		c.buf = nil
+		c.bufRd = nil
 	}
 }
 
 func (c *clientConn) Close() {
 	c.releaseBuf()
-	for _, sv := range c.serverConn {
-		sv.Close(c)
-	}
 	if debug {
 		debug.Printf("cli(%s) closed, total %d clients\n",
 			c.RemoteAddr(), decCliCnt())
@@ -231,7 +192,7 @@ func (c *clientConn) serveSelfURL(r *Request) (err error) {
 		return errPageSent
 	}
 end:
-	sendErrorPage(c, "404 not found", "Page not found", "Handling request to proxy itself.")
+	sendErrorPage(c, "404 not found", "Page not found", "Serving request to COW proxy.")
 	return errPageSent
 }
 
@@ -241,11 +202,15 @@ func (c *clientConn) shouldRetry(r *Request, sv *serverConn, re error) bool {
 	}
 	err, _ := re.(RetryError)
 	if !r.responseNotSent() {
-		debug.Printf("%v has sent some response, can't retry\n", r)
+		if debug {
+			debug.Printf("cli(%s) has sent some response, can't retry %v\n", c.RemoteAddr(), r)
+		}
 		return false
 	}
 	if r.partial {
-		debug.Printf("%v partial request, can't retry\n", r)
+		if debug {
+			debug.Printf("cli(%s) partial request, can't retry %v\n", c.RemoteAddr(), r)
+		}
 		sendErrorPage(c, "502 partial request", err.Error(),
 			genErrMsg(r, sv, "Request is too large to hold in buffer, can't retry. "+
 				"Refresh to retry may work."))
@@ -263,7 +228,7 @@ func (c *clientConn) shouldRetry(r *Request, sv *serverConn, re error) bool {
 			r.tryCnt = 0
 			return true
 		}
-		debug.Printf("Can't retry %v tryCnt=%d\n", r, r.tryCnt)
+		debug.Printf("cli(%s) can't retry %v tryCnt=%d\n", c.RemoteAddr(), r, r.tryCnt)
 		sendErrorPage(c, "502 retry failed", "Can't finish HTTP request",
 			genErrMsg(r, sv, "Has tried several times."))
 		return false
@@ -272,6 +237,10 @@ func (c *clientConn) shouldRetry(r *Request, sv *serverConn, re error) bool {
 }
 
 func dbgPrintRq(c *clientConn, r *Request) {
+	if r.Trailer {
+		errl.Printf("cli(%s) request  %s has Trailer header\n%s",
+			c.RemoteAddr(), r, r.Verbose())
+	}
 	if dbgRq {
 		if verbose {
 			dbgRq.Printf("cli(%s) request  %s\n%s", c.RemoteAddr(), r, r.Verbose())
@@ -281,6 +250,12 @@ func dbgPrintRq(c *clientConn, r *Request) {
 	}
 }
 
+type SinkWriter struct{}
+
+func (s SinkWriter) Write(p []byte) (int, error) {
+	return len(p), nil
+}
+
 func (c *clientConn) serve() {
 	var r Request
 	var rp Response
@@ -288,7 +263,6 @@ func (c *clientConn) serve() {
 	var err error
 
 	var authed bool
-	var authCnt int
 
 	defer func() {
 		r.releaseBuf()
@@ -300,10 +274,6 @@ func (c *clientConn) serve() {
 	for {
 		if c.bufRd == nil || c.buf == nil {
 			panic("client read buffer nil")
-		}
-		// clean up idle server connection before waiting for client request
-		if c.shouldCleanServerConn() {
-			c.cleanServerConn()
 		}
 
 		if err = parseRequest(c, &r); err != nil {
@@ -317,19 +287,15 @@ func (c *clientConn) serve() {
 				sendErrorPage(c, "404 Bad request", "Bad request", err.Error())
 				return
 			}
-			c.timeoutCnt++
-			if c.timeoutCnt < clientMaxTimeoutCnt {
-				c.cleanServerConn()
-				continue
-			}
 			sendErrorPage(c, statusRequestTimeout, statusRequestTimeout,
 				"Your browser didn't send a complete request in time.")
 			return
 		}
-		// next getRequest should start with timeout count 0
-		c.timeoutCnt = 0
 		dbgPrintRq(c, &r)
 
+		// PAC may leak frequently visited sites information. But if cow
+		// requires authentication for PAC, some clients may not be able
+		// handle it. (e.g. Proxy SwitchySharp extension on Chrome.)
 		if isSelfURL(r.URL.HostPort) {
 			if err = c.serveSelfURL(&r); err != nil {
 				return
@@ -338,18 +304,20 @@ func (c *clientConn) serve() {
 		}
 
 		if auth.required && !authed {
-			if authCnt > 5 {
+			if err = Authenticate(c, &r); err != nil {
+				errl.Printf("cli(%s) %v\n", c.RemoteAddr(), err)
+				// Request may have body. To make things simple, close
+				// connection so we don't need to skip request body before
+				// reading the next request.
 				return
 			}
-			if err = Authenticate(c, &r); err != nil {
-				if err == errAuthRequired {
-					authCnt++
-					continue
-				} else {
-					return
-				}
-			}
 			authed = true
+		}
+
+		if r.isConnect && !config.TunnelAllowedPort[r.URL.Port] {
+			sendErrorPage(c, statusForbidden, "Forbidden tunnel port",
+				genErrMsg(&r, nil, "Please contact proxy admin."))
+			return
 		}
 
 		if r.ExpectContinue {
@@ -365,24 +333,30 @@ func (c *clientConn) serve() {
 	retry:
 		r.tryOnce()
 		if bool(debug) && r.isRetry() {
-			errl.Printf("cli(%s) retry request tryCnt=%d %v\n", c.RemoteAddr(), r.tryCnt, &r)
+			debug.Printf("cli(%s) retry request tryCnt=%d %v\n", c.RemoteAddr(), r.tryCnt, &r)
 		}
 		if sv, err = c.getServerConn(&r); err != nil {
-			// debug.Printf("Failed to get serverConn for %s %v\n", c.RemoteAddr(), r)
+			if debug {
+				debug.Printf("cli(%s) failed to get server conn %v\n", c.RemoteAddr(), &r)
+			}
 			// Failed connection will send error page back to the client.
 			// For CONNECT, the client read buffer is released in copyClient2Server,
 			// so can't go back to getRequest.
 			if err == errPageSent && !r.isConnect {
+				if r.hasBody() {
+					// skip request body
+					debug.Printf("cli(%s) skip request body %v\n", c.RemoteAddr(), &r)
+					sendBody(SinkWriter{}, c.bufRd, int(r.ContLen), r.Chunking)
+				}
 				continue
 			}
 			return
 		}
 
 		if r.isConnect {
+			// server connection will be closed in doConnect
 			err = sv.doConnect(&r, c)
-			sv.Close(c)
 			if c.shouldRetry(&r, sv, err) {
-				// connection for CONNECT is not reused, no need to remove
 				goto retry
 			}
 			// debug.Printf("doConnect %s to %s done\n", c.RemoteAddr(), r.URL.HostPort)
@@ -390,18 +364,37 @@ func (c *clientConn) serve() {
 		}
 
 		if err = sv.doRequest(c, &r, &rp); err != nil {
-			c.removeServerConn(sv)
+			// For client I/O error, we can actually put server connection to
+			// pool. But let's make thing simple for now.
+			sv.Close()
 			if c.shouldRetry(&r, sv, err) {
 				goto retry
-			} else if err == errPageSent {
+			} else if err == errPageSent && (!r.hasBody() || r.hasSent()) {
+				// Can only continue if request has no body, or request body
+				// has been read.
 				continue
 			}
 			return
 		}
+		// Put server connection to pool, so other clients can use it.
+		if rp.ConnectionKeepAlive {
+			if debug {
+				debug.Printf("cli(%s) connPool put %s", c.RemoteAddr(), sv.hostPort)
+			}
+			// If the server connection is not going to be used soon,
+			// release buffer before putting back to pool can save memory.
+			sv.releaseBuf()
+			connPool.Put(sv)
+		} else {
+			if debug {
+				debug.Printf("cli(%s) server %s close conn\n", c.RemoteAddr(), sv.hostPort)
+			}
+			sv.Close()
+		}
 
 		if !r.ConnectionKeepAlive {
 			if debug {
-				debug.Println("cli(%s) close connection", c.RemoteAddr())
+				debug.Printf("cli(%s) close connection\n", c.RemoteAddr())
 			}
 			return
 		}
@@ -412,8 +405,8 @@ func genErrMsg(r *Request, sv *serverConn, what string) string {
 	if sv == nil {
 		return fmt.Sprintf("<p>HTTP Request <strong>%v</strong></p> <p>%s</p>", r, what)
 	}
-	return fmt.Sprintf("<p>HTTP Request <strong>%v</strong></p> <p>%s</p> <p>Using %s connection.</p>",
-		r, what, ctName[sv.connType])
+	return fmt.Sprintf("<p>HTTP Request <strong>%v</strong></p> <p>%s</p> <p>Using %s.</p>",
+		r, what, sv.Conn)
 }
 
 func (c *clientConn) handleBlockedRequest(r *Request, err error) error {
@@ -422,11 +415,11 @@ func (c *clientConn) handleBlockedRequest(r *Request, err error) error {
 }
 
 func (c *clientConn) handleServerReadError(r *Request, sv *serverConn, err error, msg string) error {
+	if debug {
+		debug.Printf("cli(%s) server read error %s %v %v\n", c.RemoteAddr(), msg, err, r)
+	}
 	var errMsg string
 	if err == io.EOF {
-		if debug {
-			debug.Printf("cli(%s) %s read from server EOF\n", c.RemoteAddr(), msg)
-		}
 		return RetryError{err}
 	}
 	if sv.maybeFake() && maybeBlocked(err) {
@@ -437,8 +430,8 @@ func (c *clientConn) handleServerReadError(r *Request, sv *serverConn, err error
 		sendErrorPage(c, "502 read error", err.Error(), errMsg)
 		return errPageSent
 	}
-	errl.Println(msg+" unhandled server read error:", err, reflect.TypeOf(err), r)
-	return errShouldClose
+	errl.Printf("cli(%s) unhandled server read error %s %v %v\n", c.RemoteAddr(), msg, err, r)
+	return err
 }
 
 func (c *clientConn) handleServerWriteError(r *Request, sv *serverConn, err error, msg string) error {
@@ -451,6 +444,10 @@ func (c *clientConn) handleServerWriteError(r *Request, sv *serverConn, err erro
 }
 
 func dbgPrintRep(c *clientConn, r *Request, rp *Response) {
+	if rp.Trailer {
+		errl.Printf("cli(%s) response %s has Trailer header\n%s",
+			c.RemoteAddr(), rp, rp.Verbose())
+	}
 	if dbgRep {
 		if verbose {
 			dbgRep.Printf("cli(%s) response %s %s\n%s",
@@ -465,9 +462,7 @@ func dbgPrintRep(c *clientConn, r *Request, rp *Response) {
 func (c *clientConn) readResponse(sv *serverConn, r *Request, rp *Response) (err error) {
 	sv.initBuf()
 	defer func() {
-		if rp != nil {
-			rp.releaseBuf()
-		}
+		rp.releaseBuf()
 	}()
 
 	/*
@@ -484,8 +479,9 @@ func (c *clientConn) readResponse(sv *serverConn, r *Request, rp *Response) (err
 	*/
 
 	if err = parseResponse(sv, r, rp); err != nil {
-		return c.handleServerReadError(r, sv, err, "Parse response from server.")
+		return c.handleServerReadError(r, sv, err, "parse response")
 	}
+	dbgPrintRep(c, r, rp)
 	// After have received the first reponses from the server, we consider
 	// ther server as real instead of fake one caused by wrong DNS reply. So
 	// don't time out later.
@@ -496,12 +492,11 @@ func (c *clientConn) readResponse(sv *serverConn, r *Request, rp *Response) (err
 	if _, err = c.Write(rp.rawResponse()); err != nil {
 		return err
 	}
-	dbgPrintRep(c, r, rp)
 
 	rp.releaseBuf()
 
 	if rp.hasBody(r.Method) {
-		if err = sendBody(c, sv, nil, rp); err != nil {
+		if err = sendBody(c, sv.bufRd, int(rp.ContLen), rp.Chunking); err != nil {
 			if debug {
 				debug.Printf("cli(%s) send body %v\n", c.RemoteAddr(), err)
 			}
@@ -514,14 +509,12 @@ func (c *clientConn) readResponse(sv *serverConn, r *Request, rp *Response) (err
 				// The client connection will be closed to indicate this error.
 				// Proxy can't send error page here because response header has
 				// been sent.
-				errl.Println("unexpected EOF reading body from server", r)
+				return fmt.Errorf("read response body unexpected EOF %v", rp)
 			} else if isErrOpRead(err) {
-				return c.handleServerReadError(r, sv, err, "Read response body from server.")
-			} else if isErrOpWrite(err) {
-				return err
+				return c.handleServerReadError(r, sv, err, "read response body")
 			}
-			errl.Println("sendBody unknown network op error", reflect.TypeOf(err), r)
-			return errShouldClose
+			// errl.Println("sendBody unknown network op error", reflect.TypeOf(err), r)
+			return err
 		}
 	}
 	r.state = rsDone
@@ -530,77 +523,60 @@ func (c *clientConn) readResponse(sv *serverConn, r *Request, rp *Response) (err
 			debug.Printf("[Finished] %v request %s %s\n", c.RemoteAddr(), r.Method, r.URL)
 		}
 	*/
-	var remoteAddr string // avoid evaluating c.RemoteAddr() in the following debug call
-	if debug {
-		remoteAddr = c.RemoteAddr().String()
-	}
 	if rp.ConnectionKeepAlive {
 		if rp.KeepAlive == time.Duration(0) {
 			sv.willCloseOn = time.Now().Add(defaultServerConnTimeout)
 		} else {
-			debug.Printf("cli(%s) server %s keep-alive %v\n",
-				remoteAddr, sv.url.HostPort, rp.KeepAlive)
+			// debug.Printf("cli(%s) server %s keep-alive %v\n", c.RemoteAddr(), sv.hostPort, rp.KeepAlive)
 			sv.willCloseOn = time.Now().Add(rp.KeepAlive)
 		}
-	} else {
-		debug.Printf("cli(%s) server %s close connection\n",
-			remoteAddr, sv.url.HostPort)
-		c.removeServerConn(sv)
 	}
 	return
 }
 
-func (c *clientConn) shouldCleanServerConn() bool {
-	return len(c.serverConn) > 0 &&
-		time.Now().Sub(c.cleanedOn) > cleanServerInterval
-}
+func (c *clientConn) getServerConn(r *Request) (*serverConn, error) {
+	// For CONNECT method, always create new connection.
+	if r.isConnect {
+		return c.createServerConn(r)
+	}
 
-// Remove all maybe closed server connection
-func (c *clientConn) cleanServerConn() {
-	now := time.Now()
-	c.cleanedOn = now
-	for _, sv := range c.serverConn {
-		if now.After(sv.willCloseOn) {
-			c.removeServerConn(sv)
+	sv := connPool.Get(r.URL.HostPort)
+	if sv != nil {
+		if debug {
+			debug.Printf("cli(%s) connPool get %s\n", c.RemoteAddr(), r.URL.HostPort)
 		}
+		return sv, nil
 	}
 	if debug {
-		debug.Printf("cli(%s) close idle connections, remains %d\n",
-			c.RemoteAddr(), len(c.serverConn))
+		debug.Printf("cli(%s) connPool no conn %s", c.RemoteAddr(), r.URL.HostPort)
 	}
+	return c.createServerConn(r)
 }
 
-func (c *clientConn) getServerConn(r *Request) (sv *serverConn, err error) {
-	sv, ok := c.serverConn[r.URL.HostPort]
-	if ok && sv.mayBeClosed() {
-		// debug.Printf("Connection to %s maybe closed\n", sv.url.HostPort)
-		c.removeServerConn(sv)
-		ok = false
+func connectDirect(url *URL, siteInfo *VisitCnt) (net.Conn, error) {
+	var c net.Conn
+	var err error
+	if siteInfo.AlwaysDirect() {
+		c, err = net.Dial("tcp", url.HostPort)
+	} else {
+		to := dialTimeout
+		if siteInfo.OnceBlocked() && to >= defaultDialTimeout {
+			// If once blocked, decrease timeout to switch to parent proxy faster.
+			to = minDialTimeout
+		} else if siteInfo.AsDirect() {
+			// If usually can be accessed directly, increase timeout to avoid
+			// problems when network condition is bad.
+			to = maxTimeout
+		}
+		c, err = net.DialTimeout("tcp", url.HostPort, to)
 	}
-	if !ok {
-		sv, err = c.createServerConn(r)
-	}
-	return
-}
-
-func (c *clientConn) removeServerConn(sv *serverConn) {
-	sv.Close(c)
-	delete(c.serverConn, sv.url.HostPort)
-}
-
-func connectDirect(url *URL, siteInfo *VisitCnt) (conn, error) {
-	to := dialTimeout
-	if siteInfo.OnceBlocked() && to >= defaultDialTimeout {
-		to = minDialTimeout
-	}
-	c, err := net.DialTimeout("tcp", url.HostPort, to)
 	if err != nil {
 		// Time out is very likely to be caused by GFW
 		debug.Printf("error direct connect to: %s %v\n", url.HostPort, err)
-		return zeroConn, err
+		return nil, err
 	}
 	// debug.Println("directly connected to", url.HostPort)
-	return conn{ctDirectConn, c, nil}, nil
+	return directConn{c}, nil
 }
 
 func isErrTimeout(err error) bool {
@@ -616,13 +592,13 @@ func maybeBlocked(err error) bool {
 
 // Connect to requested server according to whether it's visit count.
 // If direct connection fails, try parent proxies.
-func (c *clientConn) connect(r *Request, siteInfo *VisitCnt) (srvconn conn, err error) {
+func (c *clientConn) connect(r *Request, siteInfo *VisitCnt) (srvconn net.Conn, err error) {
 	var errMsg string
 	if config.AlwaysProxy {
 		if srvconn, err = connectByParentProxy(r.URL); err == nil {
 			return
 		}
-		errMsg = genErrMsg(r, nil, "Parent proxy connection failed, always using parent proxy.")
+		errMsg = genErrMsg(r, nil, "Parent proxy connection failed, always use parent proxy.")
 		goto fail
 	}
 	if siteInfo.AsBlocked() && hasParentProxy {
@@ -667,15 +643,19 @@ func (c *clientConn) connect(r *Request, siteInfo *VisitCnt) (srvconn conn, err 
 		var socksErr error
 		if srvconn, socksErr = connectByParentProxy(r.URL); socksErr == nil {
 			c.handleBlockedRequest(r, err)
-			debug.Println("direct connection failed, use parent proxy for", r)
+			if debug {
+				debug.Printf("cli(%s) direct connection failed, use parent proxy for %v\n",
+					c.RemoteAddr(), r)
+			}
 			return srvconn, nil
 		}
-		errMsg = genErrMsg(r, nil, "Direct and parent proxy connection failed, maybe blocked site.")
+		errMsg = genErrMsg(r, nil,
+			"Direct and parent proxy connection failed, maybe blocked site.")
 	}
 
 fail:
 	sendErrorPage(c, "504 Connection failed", err.Error(), errMsg)
-	return zeroConn, errPageSent
+	return nil, errPageSent
 }
 
 func (c *clientConn) createServerConn(r *Request) (*serverConn, error) {
@@ -684,35 +664,29 @@ func (c *clientConn) createServerConn(r *Request) (*serverConn, error) {
 	if err != nil {
 		return nil, err
 	}
-	sv := newServerConn(srvconn, r.URL, siteInfo)
-	if r.isConnect {
-		// Don't put connection for CONNECT method for reuse
-		return sv, nil
-	}
-	c.serverConn[sv.url.HostPort] = sv
+	sv := newServerConn(srvconn, r.URL.HostPort, siteInfo)
 	if debug {
 		debug.Printf("cli(%s) connected to %s %d concurrent connections\n",
-			c.RemoteAddr(), sv.url.HostPort, incSrvConnCnt(sv.url.HostPort))
+			c.RemoteAddr(), sv.hostPort, incSrvConnCnt(sv.hostPort))
 	}
-	// client will connect to differnet servers in a single proxy connection
-	// debug.Printf("serverConn to for client %v %v\n", c.RemoteAddr(), c.serverConn)
 	return sv, nil
 }
 
 // Should call initBuf before reading http response from server. This allows
 // us not init buf for connect method which does not need to parse http
 // respnose.
-func newServerConn(c conn, url *URL, siteInfo *VisitCnt) *serverConn {
+func newServerConn(c net.Conn, hostPort string, siteInfo *VisitCnt) *serverConn {
 	sv := &serverConn{
-		conn:     c,
-		url:      url,
+		Conn:     c,
+		hostPort: hostPort,
 		siteInfo: siteInfo,
 	}
 	return sv
 }
 
 func (sv *serverConn) isDirect() bool {
-	return sv.connType == ctDirectConn
+	_, ok := sv.Conn.(directConn)
+	return ok
 }
 
 func (sv *serverConn) updateVisit() {
@@ -734,16 +708,20 @@ func (sv *serverConn) initBuf() {
 	}
 }
 
-func (sv *serverConn) Close(c *clientConn) error {
-	sv.bufRd = nil
-	if sv.buf != nil {
+func (sv *serverConn) releaseBuf() {
+	if sv.bufRd != nil {
 		// debug.Println("release server buffer")
 		httpBuf.Put(sv.buf)
 		sv.buf = nil
+		sv.bufRd = nil
 	}
+}
+
+func (sv *serverConn) Close() error {
+	sv.releaseBuf()
 	if debug {
-		debug.Printf("cli(%s) close connection to %s remains %d concurrent connections\n",
-			c.RemoteAddr(), sv.url.HostPort, decSrvConnCnt(sv.url.HostPort))
+		debug.Printf("close connection to %s remains %d concurrent connections\n",
+			sv.hostPort, decSrvConnCnt(sv.hostPort))
 	}
 	return sv.Conn.Close()
 }
@@ -760,16 +738,17 @@ func setConnReadTimeout(cn net.Conn, d time.Duration, msg string) {
 
 func unsetConnReadTimeout(cn net.Conn, msg string) {
 	if err := cn.SetReadDeadline(zeroTime); err != nil {
-		errl.Println("Unset readtimeout:", msg, err)
+		// It's possible that conn has been closed, so use debug log.
+		debug.Println("Unset readtimeout:", msg, err)
 	}
 }
 
-// setReadTimeout will only set timeout if the server connection maybe fake.
-// In case it's not fake, this will unset timeout.
 func (sv *serverConn) setReadTimeout(msg string) {
 	to := readTimeout
 	if sv.siteInfo.OnceBlocked() && to > defaultReadTimeout {
 		to = minReadTimeout
+	} else if sv.siteInfo.AsDirect() {
+		to = maxTimeout
 	}
 	setConnReadTimeout(sv.Conn, to, msg)
 }
@@ -860,6 +839,7 @@ func newServerWriter(r *Request, sv *serverConn) *serverWriter {
 }
 
 // Write to server, store written data in request buffer if necessary.
+// We have to save request body in order to retry request.
 // FIXME: too tighly coupled with Request.
 func (sw *serverWriter) Write(p []byte) (int, error) {
 	if sw.rq.raw == nil {
@@ -868,27 +848,28 @@ func (sw *serverWriter) Write(p []byte) (int, error) {
 		// Avoid using too much memory to hold request body. If a request is
 		// not buffered completely, COW can't retry and can release memory
 		// immediately.
-		debug.Println("request body too large, not buffering any more")
+		debug.Println(sw.rq, "request body too large, not buffering any more")
 		sw.rq.releaseBuf()
 		sw.rq.partial = true
 	} else if sw.rq.responseNotSent() {
 		sw.rq.raw.Write(p)
-	} else { // has sent response
+	} else { // has sent response, happens when saving data for CONNECT method
 		sw.rq.releaseBuf()
 	}
 	return sw.sv.Write(p)
 }
 
-func copyClient2Server(c *clientConn, sv *serverConn, r *Request, srvStopped notification, done chan byte) (err error) {
+func copyClient2Server(c *clientConn, sv *serverConn, r *Request, srvStopped notification, done chan struct{}) (err error) {
 	// sv.maybeFake may change during execution in this function.
 	// So need a variable to record the whether timeout is set.
 	deadlineIsSet := false
 	defer func() {
 		if deadlineIsSet {
-			// maybe need to retry, should unset timeout here because
+			// May need to retry, unset timeout here to avoid read client
+			// timeout on retry. Note c.Conn maybe closed when calling this.
 			unsetConnReadTimeout(c.Conn, "cli->srv after err")
 		}
-		done <- 1
+		close(done)
 	}()
 
 	var n int
@@ -974,11 +955,14 @@ var connEstablished = []byte("HTTP/1.1 200 Tunnel established\r\n\r\n")
 func (sv *serverConn) doConnect(r *Request, c *clientConn) (err error) {
 	r.state = rsCreated
 
-	if sv.connType == ctHttpProxyConn {
-		// debug.Printf("%s Sending CONNECT request to http proxy server\n", c.RemoteAddr())
-		if err = sv.sendHTTPProxyRequest(r, c); err != nil {
+	_, isHttpConn := sv.Conn.(httpConn)
+	if isHttpConn {
+		if debug {
+			debug.Printf("cli(%s) send CONNECT request to http parent\n", c.RemoteAddr())
+		}
+		if err = sv.sendHTTPProxyRequestHeader(r, c); err != nil {
 			if debug {
-				debug.Printf("cli(%s) error sending CONNECT request to http proxy server: %v\n",
+				debug.Printf("cli(%s) error send CONNECT request to http proxy server: %v\n",
 					c.RemoteAddr(), err)
 			}
 			return err
@@ -987,7 +971,7 @@ func (sv *serverConn) doConnect(r *Request, c *clientConn) (err error) {
 		// debug.Printf("send connection confirmation to %s->%s\n", c.RemoteAddr(), r.URL.HostPort)
 		if _, err = c.Write(connEstablished); err != nil {
 			if debug {
-				debug.Printf("cli(%s) error sending 200 Connecion established: %v\n",
+				debug.Printf("cli(%s) error send 200 Connecion established: %v\n",
 					c.RemoteAddr(), err)
 			}
 			return err
@@ -995,12 +979,14 @@ func (sv *serverConn) doConnect(r *Request, c *clientConn) (err error) {
 	}
 
 	var cli2srvErr error
-	done := make(chan byte, 1)
+	done := make(chan struct{})
 	srvStopped := newNotification()
 	go func() {
 		// debug.Printf("doConnect: cli(%s)->srv(%s)\n", c.RemoteAddr(), r.URL.HostPort)
 		cli2srvErr = copyClient2Server(c, sv, r, srvStopped, done)
-		sv.Close(c) // close sv to force read from server in copyServer2Client return
+		// Close sv to force read from server in copyServer2Client return.
+		// Note: there's no other code closing the server connection for CONNECT.
+		sv.Close()
 	}()
 
 	// debug.Printf("doConnect: srv(%s)->cli(%s)\n", r.URL.HostPort, c.RemoteAddr())
@@ -1019,25 +1005,26 @@ func (sv *serverConn) doConnect(r *Request, c *clientConn) (err error) {
 	return
 }
 
-func (sv *serverConn) sendHTTPProxyRequest(r *Request, c *clientConn) (err error) {
+func (sv *serverConn) sendHTTPProxyRequestHeader(r *Request, c *clientConn) (err error) {
 	if _, err = sv.Write(r.proxyRequestLine()); err != nil {
 		return c.handleServerWriteError(r, sv, err,
-			"sending proxy request line to http parent")
+			"send proxy request line to http parent")
 	}
 	// Add authorization header for parent http proxy
-	hp, ok := sv.creator.(*httpParent)
+	hc, ok := sv.Conn.(httpConn)
 	if !ok {
 		panic("must be http parent connection")
 	}
-	if hp.authHeader != nil {
-		if _, err = sv.Write(hp.authHeader); err != nil {
+	if hc.parent.authHeader != nil {
+		if _, err = sv.Write(hc.parent.authHeader); err != nil {
 			return c.handleServerWriteError(r, sv, err,
-				"sending proxy authorization header to http parent")
+				"send proxy authorization header to http parent")
 		}
 	}
+	// When retry, body is in raw buffer.
 	if _, err = sv.Write(r.rawHeaderBody()); err != nil {
 		return c.handleServerWriteError(r, sv, err,
-			"sending proxy request header to http parent")
+			"send proxy request header to http parent")
 	}
 	/*
 		if bool(dbgRq) && verbose {
@@ -1047,10 +1034,11 @@ func (sv *serverConn) sendHTTPProxyRequest(r *Request, c *clientConn) (err error
 	return
 }
 
-func (sv *serverConn) sendRequest(r *Request, c *clientConn) (err error) {
+func (sv *serverConn) sendRequestHeader(r *Request, c *clientConn) (err error) {
 	// Send request to the server
-	if sv.connType == ctHttpProxyConn {
-		return sv.sendHTTPProxyRequest(r, c)
+	_, isHttpConn := sv.Conn.(httpConn)
+	if isHttpConn {
+		return sv.sendHTTPProxyRequestHeader(r, c)
 	}
 	/*
 		if bool(debug) && verbose {
@@ -1058,7 +1046,28 @@ func (sv *serverConn) sendRequest(r *Request, c *clientConn) (err error) {
 		}
 	*/
 	if _, err = sv.Write(r.rawRequest()); err != nil {
-		err = c.handleServerWriteError(r, sv, err, "sending request to server")
+		err = c.handleServerWriteError(r, sv, err, "send request to server")
+	}
+	return
+}
+
+func (sv *serverConn) sendRequestBody(r *Request, c *clientConn) (err error) {
+	// Send request body. If this is retry, r.raw contains request body and is
+	// sent while sending raw request.
+	if !r.hasBody() || r.isRetry() {
+		return
+	}
+
+	err = sendBody(newServerWriter(r, sv), c.bufRd, int(r.ContLen), r.Chunking)
+	if err != nil {
+		errl.Printf("cli(%s) send request body error %v %s\n", c.RemoteAddr(), err, r)
+		if isErrOpWrite(err) {
+			err = c.handleServerWriteError(r, sv, err, "send request body")
+		}
+		return
+	}
+	if debug {
+		debug.Printf("cli(%s) request body sent %s\n", c.RemoteAddr(), r)
 	}
 	return
 }
@@ -1066,39 +1075,21 @@ func (sv *serverConn) sendRequest(r *Request, c *clientConn) (err error) {
 // Do HTTP request other that CONNECT
 func (sv *serverConn) doRequest(c *clientConn, r *Request, rp *Response) (err error) {
 	r.state = rsCreated
-	if err = sv.sendRequest(r, c); err != nil {
+	if err = sv.sendRequestHeader(r, c); err != nil {
 		return
 	}
-
-	// Send request body. If this is retry, r.raw contains request body and is
-	// sent while sending request.
-	if !r.isRetry() && (r.Chunking || r.ContLen > 0) {
-		// Message body in request is signaled by the inclusion of a Content-
-		// Length or Transfer-Encoding header. Refer to http://stackoverflow.com/a/299696/306935
-		if err = sendBody(c, sv, r, nil); err != nil {
-			if err == io.EOF && isErrOpRead(err) {
-				errl.Println("EOF reading request body from client", r)
-			} else if isErrOpWrite(err) {
-				err = c.handleServerWriteError(r, sv, err, "sending request body")
-			} else {
-				errl.Println("reading request body:", err)
-			}
-			return
-		}
-		if debug {
-			debug.Printf("cli(%s) %s request body sent\n", c.RemoteAddr(), r)
-		}
+	if err = sv.sendRequestBody(r, c); err != nil {
+		return
 	}
 	r.state = rsSent
-	err = c.readResponse(sv, r, rp)
-	if err == nil {
+	if err = c.readResponse(sv, r, rp); err == nil {
 		sv.updateVisit()
 	}
 	return err
 }
 
 // Send response body if header specifies content length
-func sendBodyWithContLen(r *bufio.Reader, w io.Writer, contLen int) (err error) {
+func sendBodyWithContLen(w io.Writer, r *bufio.Reader, contLen int) (err error) {
 	// debug.Println("Sending body with content length", contLen)
 	if contLen == 0 {
 		return
@@ -1109,46 +1100,85 @@ func sendBodyWithContLen(r *bufio.Reader, w io.Writer, contLen int) (err error) 
 	return
 }
 
+// Use this function until we find Trailer headers actually in use.
+func skipTrailer(r *bufio.Reader) error {
+	// It's possible to get trailer headers, but the body will always end with
+	// a line with just CRLF.
+	for {
+		s, err := r.ReadSlice('\n')
+		if err != nil {
+			errl.Println("skip trailer:", err)
+			return err
+		}
+		if len(s) == 2 && s[0] == '\r' && s[1] == '\n' {
+			return nil
+		}
+		errl.Printf("skip trailer: %#v", string(s))
+		if len(s) == 1 || len(s) == 2 {
+			return fmt.Errorf("malformed chunk body end: %#v", string(s))
+		}
+	}
+}
+
+func skipCRLF(r *bufio.Reader) (err error) {
+	var buf [2]byte
+	if _, err = io.ReadFull(r, buf[:]); err != nil {
+		errl.Println("skip chunk body end:", err)
+		return
+	}
+	if buf[0] != '\r' || buf[1] != '\n' {
+		return fmt.Errorf("malformed chunk body end: %#v", string(buf[:]))
+	}
+	return
+}
+
 // Send response body if header specifies chunked encoding. rdSize specifies
 // the size of each read on Reader, it should be set to be the buffer size of
 // the Reader, this parameter is added for testing.
-func sendBodyChunked(r *bufio.Reader, w io.Writer, rdSize int) (err error) {
+func sendBodyChunked(w io.Writer, r *bufio.Reader, rdSize int) (err error) {
 	// debug.Println("Sending chunked body")
 	for {
 		var s []byte
 		// Read chunk size line, ignore chunk extension if any.
 		if s, err = r.PeekSlice('\n'); err != nil {
-			errl.Println("peeking chunk size:", err)
+			errl.Println("peek chunk size:", err)
 			return
 		}
-		// debug.Printf("Chunk size line %s\n", s)
 		smid := bytes.IndexByte(s, ';')
 		if smid == -1 {
 			smid = len(s)
+		} else {
+			// use error log to find usage of chunk extension
+			errl.Printf("got chunk extension: %s\n", s)
 		}
 		var size int64
 		if size, err = ParseIntFromBytes(TrimSpace(s[:smid]), 16); err != nil {
 			errl.Println("chunk size invalid:", err)
 			return
 		}
-		// end of chunked data. As we remove trailer header in request sending
-		// to server, there should be no trailer in response.
-		// TODO: Is it possible for client request body to have trailers in it?
+		if debug {
+			// To debug getting malformed response status line with "0\r\n".
+			if c, ok := w.(*clientConn); ok {
+				debug.Printf("cli(%s) chunk size %d %#v\n", c.RemoteAddr(), size, string(s))
+			}
+		}
 		if size == 0 {
 			r.Skip(len(s))
-			skipCRLF(r)
+			if err = skipCRLF(r); err != nil {
+				return
+			}
 			if _, err = w.Write([]byte(chunkEnd)); err != nil {
-				debug.Println("sending chunk ending:", err)
+				debug.Println("send chunk ending:", err)
 			}
 			return
 		}
-		// The spec section 19.3 only suggest toleranting single LF for
+		// RFC 2616 19.3 only suggest tolerating single LF for
 		// headers, not for chunked encoding. So assume the server will send
 		// CRLF. If not, the following parse int may find errors.
 		total := len(s) + int(size) + 2 // total data size for this chunk, including ending CRLF
 		// PeekSlice will not advance reader, so we can just copy total sized data.
 		if err = copyN(w, r, total, rdSize); err != nil {
-			debug.Println("copying chunked data:", err)
+			debug.Println("copy chunked data:", err)
 			return
 		}
 	}
@@ -1157,7 +1187,7 @@ func sendBodyChunked(r *bufio.Reader, w io.Writer, rdSize int) (err error) {
 const CRLF = "\r\n"
 const chunkEnd = "0\r\n\r\n"
 
-func sendBodySplitIntoChunk(r *bufio.Reader, w io.Writer) (err error) {
+func sendBodySplitIntoChunk(w io.Writer, r *bufio.Reader) (err error) {
 	// debug.Printf("sendBodySplitIntoChunk called\n")
 	var b []byte
 	for {
@@ -1169,7 +1199,7 @@ func sendBodySplitIntoChunk(r *bufio.Reader, w io.Writer) (err error) {
 				// debug.Println("end chunked encoding")
 				_, err = w.Write([]byte(chunkEnd))
 				if err != nil {
-					debug.Println("Write chunk end 0")
+					debug.Println("write chunk end 0", err)
 				}
 				return
 			}
@@ -1179,56 +1209,34 @@ func sendBodySplitIntoChunk(r *bufio.Reader, w io.Writer) (err error) {
 
 		chunkSize := []byte(fmt.Sprintf("%x\r\n", len(b)))
 		if _, err = w.Write(chunkSize); err != nil {
-			debug.Printf("writing chunk size %v\n", err)
+			debug.Printf("write chunk size %v\n", err)
 			return
 		}
 		if _, err = w.Write(b); err != nil {
-			debug.Println("writing chunk data:", err)
+			debug.Println("write chunk data:", err)
 			return
 		}
 		if _, err = w.Write([]byte(CRLF)); err != nil {
-			debug.Println("writing chunk ending CRLF:", err)
+			debug.Println("write chunk ending CRLF:", err)
 			return
 		}
 	}
 }
 
-// Send message body. If req is not nil, read from client, send to server. If
-// rp is not nil, the direction is the oppisite.
-func sendBody(c *clientConn, sv *serverConn, req *Request, rp *Response) (err error) {
-	var contLen int
-	var chunk bool
-	var bufRd *bufio.Reader
-	var w io.Writer
-
-	if rp != nil { // read responses from server, write to client
-		w = c
-		bufRd = sv.bufRd
-		contLen = int(rp.ContLen)
-		chunk = rp.Chunking
-	} else if req != nil { // read request body from client, send to server
-		// The server connection may have been closed, need to retry request in that case.
-		// So always need to save request body.
-		w = newServerWriter(req, sv)
-		bufRd = c.bufRd
-		contLen = int(req.ContLen)
-		chunk = req.Chunking
-	} else {
-		panic("sendBody must have either request or response not nil")
-	}
-
+// Send message body.
+func sendBody(w io.Writer, bufRd *bufio.Reader, contLen int, chunk bool) (err error) {
 	// chunked encoding has precedence over content length
-	// COW does not sanitize response header, but should correctly handle it
+	// COW does not sanitize response header, but can correctly handle it
 	if chunk {
-		err = sendBodyChunked(bufRd, w, httpBufSize)
+		err = sendBodyChunked(w, bufRd, httpBufSize)
 	} else if contLen >= 0 {
-		err = sendBodyWithContLen(bufRd, w, contLen)
+		// It's possible to have content length 0 if server response has no
+		// body.
+		err = sendBodyWithContLen(w, bufRd, int(contLen))
 	} else {
-		if req != nil {
-			errl.Println("client request with body but no length or chunked encoding specified.")
-			return errBadRequest
-		}
-		err = sendBodySplitIntoChunk(bufRd, w)
+		// Must be reading server response here, because sendBody is called in
+		// reading response iff chunked or content length > 0.
+		err = sendBodySplitIntoChunk(w, bufRd)
 	}
 	return
 }

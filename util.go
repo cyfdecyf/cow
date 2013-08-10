@@ -37,37 +37,6 @@ func (n notification) hasNotified() bool {
 	}
 }
 
-// ReadLine read till '\n' is found or encounter error. The returned line does
-// not include ending '\r' and '\n'. If returns err != nil if and only if
-// len(line) == 0.
-func ReadLine(r *bufio.Reader) (string, error) {
-	l, err := ReadLineSlice(r)
-	return string(l), err
-}
-
-// ReadLineBytes read till '\n' is found or encounter error. The returned line
-// does not include ending '\r\n' or '\n'. Returns err != nil if and only if
-// len(line) == 0. Note the returned byte should not be used for append and
-// maybe overwritten by next I/O operation. Copied code of readLineSlice from
-// $GOROOT/src/pkg/net/textproto/reader.go
-func ReadLineSlice(r *bufio.Reader) (line []byte, err error) {
-	for {
-		l, more, err := r.ReadLine()
-		if err != nil {
-			return nil, err
-		}
-		// Avoid the copy if the first call produced a full line.
-		if line == nil && !more {
-			return l, nil
-		}
-		line = append(line, l...)
-		if !more {
-			break
-		}
-	}
-	return line, nil
-}
-
 func ASCIIToUpperInplace(b []byte) {
 	for i := 0; i < len(b); i++ {
 		if 97 <= b[i] && b[i] <= 122 {
@@ -124,9 +93,6 @@ func IsSpace(b byte) bool {
 }
 
 func TrimSpace(s []byte) []byte {
-	if len(s) == 0 {
-		return s
-	}
 	st := 0
 	end := len(s) - 1
 	for ; st < len(s) && IsSpace(s[st]); st++ {
@@ -137,6 +103,13 @@ func TrimSpace(s []byte) []byte {
 	for ; end >= 0 && IsSpace(s[end]); end-- {
 	}
 	return s[st : end+1]
+}
+
+func TrimTrailingSpace(s []byte) []byte {
+	end := len(s) - 1
+	for ; end >= 0 && IsSpace(s[end]); end-- {
+	}
+	return s[:end+1]
 }
 
 // FieldsN is simliar with bytes.Fields, but only consider space and '\t' as
@@ -195,11 +168,11 @@ func ParseIntFromBytes(b []byte, base int) (n int64, err error) {
 	// Refer to: http://code.google.com/p/go/issues/detail?id=2632
 	// That's why I created this function.
 	if base != 10 && base != 16 {
-		err = errors.New(fmt.Sprintf("Invalid base: %d\n", base))
+		err = errors.New(fmt.Sprintf("invalid base: %d", base))
 		return
 	}
 	if len(b) == 0 {
-		err = errors.New("Parse int from empty string")
+		err = errors.New("parse int from empty bytes")
 		return
 	}
 
@@ -215,12 +188,12 @@ func ParseIntFromBytes(b []byte, base int) (n int64, err error) {
 		v := digitTbl[d]
 		if v == -1 {
 			n = 0
-			err = errors.New(fmt.Sprintf("Invalid number: %s", b))
+			err = errors.New(fmt.Sprintf("invalid number: %s", b))
 			return
 		}
 		if int(v) >= base {
 			n = 0
-			err = errors.New(fmt.Sprintf("Invalid base %d number: %s", base, b))
+			err = errors.New(fmt.Sprintf("invalid base %d number: %s", base, b))
 			return
 		}
 		n *= int64(base)
@@ -260,22 +233,6 @@ func isDirExists(path string) (bool, error) {
 	return false, err
 }
 
-// Get host IP address
-func hostIP() (addrs []string, err error) {
-	name, err := os.Hostname()
-	if err != nil {
-		fmt.Printf("Error get host name: %v\n", err)
-		return
-	}
-
-	addrs, err = net.LookupHost(name)
-	if err != nil {
-		fmt.Printf("Error getting host IP address: %v\n", err)
-		return
-	}
-	return
-}
-
 func getUserHomeDir() string {
 	home := os.Getenv("HOME")
 	if home == "" {
@@ -293,7 +250,7 @@ func expandTilde(pth string) string {
 }
 
 // copyN copys N bytes from src to dst, reading at most rdSize for each read.
-// rdSize should be smaller than the buffer size of Reader.
+// rdSize should <= buffer size of the buffered reader.
 // Returns any encountered error.
 func copyN(dst io.Writer, src *bufio.Reader, n, rdSize int) (err error) {
 	// Most of the copy is copied from io.Copy

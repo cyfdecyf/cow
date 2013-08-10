@@ -11,7 +11,7 @@ import (
 	"strconv"
 )
 
-func connectByParentProxy(url *URL) (srvconn conn, err error) {
+func connectByParentProxy(url *URL) (srvconn net.Conn, err error) {
 	const baseFailCnt = 9
 	var skipped []int
 	nproxy := len(parentProxy)
@@ -43,12 +43,12 @@ func connectByParentProxy(url *URL) (srvconn conn, err error) {
 	if len(parentProxy) != 0 {
 		return
 	}
-	return zeroConn, errNoParentProxy
+	return nil, errors.New("no parent proxy")
 }
 
 // proxyConnector is the interface that all parent proxies should support.
 type proxyConnector interface {
-	connect(*URL) (conn, error)
+	connect(*URL) (net.Conn, error)
 }
 
 type ParentProxy struct {
@@ -62,7 +62,7 @@ func addParentProxy(pc proxyConnector) {
 	parentProxy = append(parentProxy, ParentProxy{pc, 0})
 }
 
-func (pp *ParentProxy) connect(url *URL) (srvconn conn, err error) {
+func (pp *ParentProxy) connect(url *URL) (srvconn net.Conn, err error) {
 	const maxFailCnt = 30
 	srvconn, err = pp.proxyConnector.connect(url)
 	if err != nil {
@@ -95,6 +95,15 @@ type httpParent struct {
 	authHeader []byte
 }
 
+type httpConn struct {
+	net.Conn
+	parent *httpParent
+}
+
+func (hc httpConn) String() string {
+	return "http parent proxy " + hc.parent.server
+}
+
 func newHttpParent(server string) *httpParent {
 	return &httpParent{server: server}
 }
@@ -104,20 +113,29 @@ func (hp *httpParent) initAuth(userPasswd string) {
 	hp.authHeader = []byte(headerProxyAuthorization + ": Basic " + b64 + CRLF)
 }
 
-func (hp *httpParent) connect(url *URL) (cn conn, err error) {
+func (hp *httpParent) connect(url *URL) (net.Conn, error) {
 	c, err := net.Dial("tcp", hp.server)
 	if err != nil {
 		errl.Printf("can't connect to http parent proxy %s for %s: %v\n", hp.server, url.HostPort, err)
-		return zeroConn, err
+		return nil, err
 	}
 	debug.Println("connected to:", url.HostPort, "via http parent proxy:", hp.server)
-	return conn{ctHttpProxyConn, c, hp}, nil
+	return httpConn{c, hp}, nil
 }
 
 // shadowsocks parent proxy
 type shadowsocksParent struct {
 	server string
 	cipher *ss.Cipher
+}
+
+type shadowsocksConn struct {
+	net.Conn
+	parent *shadowsocksParent
+}
+
+func (s shadowsocksConn) String() string {
+	return "shadowsocks proxy " + s.parent.server
 }
 
 // In order to use parent proxy in the order specified in the config file, we
@@ -136,15 +154,15 @@ func (sp *shadowsocksParent) initCipher(passwd, method string) {
 	sp.cipher = cipher
 }
 
-func (sp *shadowsocksParent) connect(url *URL) (conn, error) {
+func (sp *shadowsocksParent) connect(url *URL) (net.Conn, error) {
 	c, err := ss.Dial(url.HostPort, sp.server, sp.cipher.Copy())
 	if err != nil {
 		errl.Printf("create shadowsocks connection to %s through server %s failed %v\n",
 			url.HostPort, sp.server, err)
-		return zeroConn, err
+		return nil, err
 	}
 	debug.Println("connected to:", url.HostPort, "via shadowsocks:", sp.server)
-	return conn{ctShadowctSocksConn, c, sp}, nil
+	return shadowsocksConn{c, sp}, nil
 }
 
 // For socks documentation, refer to rfc 1928 http://www.ietf.org/rfc/rfc1928.txt
@@ -174,16 +192,25 @@ type socksParent struct {
 	server string
 }
 
+type socksConn struct {
+	net.Conn
+	parent socksParent
+}
+
+func (s socksConn) String() string {
+	return "socks proxy " + s.parent.server
+}
+
 func newSocksParent(server string) socksParent {
 	return socksParent{server}
 }
 
-func (sp socksParent) connect(url *URL) (cn conn, err error) {
+func (sp socksParent) connect(url *URL) (net.Conn, error) {
 	c, err := net.Dial("tcp", sp.server)
 	if err != nil {
 		errl.Printf("can't connect to socks server %s for %s: %v\n",
 			sp.server, url.HostPort, err)
-		return
+		return nil, err
 	}
 	hasErr := false
 	defer func() {
@@ -196,7 +223,7 @@ func (sp socksParent) connect(url *URL) (cn conn, err error) {
 	if n, err = c.Write(socksMsgVerMethodSelection); n != 3 || err != nil {
 		errl.Printf("sending ver/method selection msg %v n = %v\n", err, n)
 		hasErr = true
-		return
+		return nil, err
 	}
 
 	// version/method selection
@@ -205,13 +232,13 @@ func (sp socksParent) connect(url *URL) (cn conn, err error) {
 	if err != nil {
 		errl.Printf("read ver/method selection error %v\n", err)
 		hasErr = true
-		return
+		return nil, err
 	}
 	if repBuf[0] != 5 || repBuf[1] != 0 {
 		errl.Printf("socks ver/method selection reply error ver %d method %d",
 			repBuf[0], repBuf[1])
 		hasErr = true
-		return
+		return nil, err
 	}
 	// debug.Println("Socks version selection done")
 
@@ -221,7 +248,7 @@ func (sp socksParent) connect(url *URL) (cn conn, err error) {
 	if err != nil {
 		errl.Printf("should not happen, port error %v\n", port)
 		hasErr = true
-		return
+		return nil, err
 	}
 
 	hostLen := len(host)
@@ -244,7 +271,7 @@ func (sp socksParent) connect(url *URL) (cn conn, err error) {
 	if n, err = c.Write(reqBuf); err != nil || n != bufLen {
 		errl.Printf("send socks request err %v n %d\n", err, n)
 		hasErr = true
-		return
+		return nil, err
 	}
 
 	// I'm not clear why the buffer is fixed at 10. The rfc document does not say this.
@@ -256,27 +283,27 @@ func (sp socksParent) connect(url *URL) (cn conn, err error) {
 			errl.Printf("read socks reply err %v n %d\n", err, n)
 		}
 		hasErr = true
-		return zeroConn, errors.New("Connection failed (by socks server). No such host?")
+		return nil, errors.New("Connection failed (by socks server). No such host?")
 	}
 	// debug.Printf("Socks reply length %d\n", n)
 
 	if replyBuf[0] != 5 {
 		errl.Printf("socks reply connect %s VER %d not supported\n", url.HostPort, replyBuf[0])
 		hasErr = true
-		return zeroConn, socksProtocolErr
+		return nil, socksProtocolErr
 	}
 	if replyBuf[1] != 0 {
 		errl.Printf("socks reply connect %s error %s\n", url.HostPort, socksError[replyBuf[1]])
 		hasErr = true
-		return zeroConn, socksProtocolErr
+		return nil, socksProtocolErr
 	}
 	if replyBuf[3] != 1 {
 		errl.Printf("socks reply connect %s ATYP %d\n", url.HostPort, replyBuf[3])
 		hasErr = true
-		return zeroConn, socksProtocolErr
+		return nil, socksProtocolErr
 	}
 
 	debug.Println("connected to:", url.HostPort, "via socks server:", sp.server)
 	// Now the socket can be used to pass data.
-	return conn{ctSocksConn, c, sp}, nil
+	return socksConn{c, sp}, nil
 }

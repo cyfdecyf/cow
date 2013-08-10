@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/cyfdecyf/bufio"
-	"io"
 	"net"
 	"strconv"
 	"strings"
@@ -18,8 +17,9 @@ const (
 
 const (
 	statusBadReq         = "400 Bad Request"
+	statusForbidden      = "403 Forbidden"
 	statusExpectFailed   = "417 Expectation Failed"
-	statusRequestTimeout = "408 Request Time-out"
+	statusRequestTimeout = "408 Request Timeout"
 )
 
 type Header struct {
@@ -27,6 +27,7 @@ type Header struct {
 	KeepAlive           time.Duration
 	ProxyAuthorization  string
 	Chunking            bool
+	Trailer             bool
 	ConnectionKeepAlive bool
 	ExpectContinue      bool
 }
@@ -92,6 +93,13 @@ func (r *Request) Verbose() []byte {
 	return rqbyte
 }
 
+// Message body in request is signaled by the inclusion of a Content-Length
+// or Transfer-Encoding header.
+// Refer to http://stackoverflow.com/a/299696/306935
+func (r *Request) hasBody() bool {
+	return r.Chunking || r.ContLen > 0
+}
+
 func (r *Request) isRetry() bool {
 	return r.tryCnt > 1
 }
@@ -106,6 +114,10 @@ func (r *Request) tooManyRetry() bool {
 
 func (r *Request) responseNotSent() bool {
 	return r.state <= rsSent
+}
+
+func (r *Request) hasSent() bool {
+	return r.state >= rsSent
 }
 
 func (r *Request) releaseBuf() {
@@ -294,6 +306,7 @@ var headerParser = map[string]HeaderParserFunc{
 	headerProxyAuthorization: (*Header).parseProxyAuthorization,
 	headerProxyConnection:    (*Header).parseConnection,
 	headerTransferEncoding:   (*Header).parseTransferEncoding,
+	headerTrailer:            (*Header).parseTrailer,
 	headerExpect:             (*Header).parseExpect,
 }
 
@@ -316,7 +329,7 @@ var hopByHopHeader = map[string]bool{
 // If Header needs to hold raw value, make a copy. For example,
 // parseProxyAuthorization does this.
 
-type HeaderParserFunc func(*Header, []byte, *bytes.Buffer) error
+type HeaderParserFunc func(*Header, []byte) error
 
 // Used by both "Connection" and "Proxy-Connection" header. COW always adds
 // connection header at the end of a request/response (in parseRequest and
@@ -324,18 +337,18 @@ type HeaderParserFunc func(*Header, []byte, *bytes.Buffer) error
 // This will change the order of headers, but should be OK as RFC2616 4.2 says
 // header order is not significant. (Though general-header first is "good-
 // practice".)
-func (h *Header) parseConnection(s []byte, raw *bytes.Buffer) error {
+func (h *Header) parseConnection(s []byte) error {
 	ASCIIToLowerInplace(s)
 	h.ConnectionKeepAlive = !bytes.Contains(s, []byte("close"))
 	return nil
 }
 
-func (h *Header) parseContentLength(s []byte, raw *bytes.Buffer) (err error) {
+func (h *Header) parseContentLength(s []byte) (err error) {
 	h.ContLen, err = ParseIntFromBytes(s, 10)
 	return err
 }
 
-func (h *Header) parseKeepAlive(s []byte, raw *bytes.Buffer) (err error) {
+func (h *Header) parseKeepAlive(s []byte) (err error) {
 	ASCIIToLowerInplace(s)
 	id := bytes.Index(s, []byte("timeout="))
 	if id != -1 {
@@ -343,37 +356,55 @@ func (h *Header) parseKeepAlive(s []byte, raw *bytes.Buffer) (err error) {
 		end := id
 		for ; end < len(s) && IsDigit(s[end]); end++ {
 		}
-		delta, _ := ParseIntFromBytes(s[id:end], 10)
+		delta, err := ParseIntFromBytes(s[id:end], 10)
+		if err != nil {
+			return err // possible empty bytes
+		}
 		h.KeepAlive = time.Second * time.Duration(delta)
 	}
 	return nil
 }
 
-func (h *Header) parseProxyAuthorization(s []byte, raw *bytes.Buffer) error {
+func (h *Header) parseProxyAuthorization(s []byte) error {
 	h.ProxyAuthorization = string(s)
 	return nil
 }
 
-func (h *Header) parseTransferEncoding(s []byte, raw *bytes.Buffer) error {
+func (h *Header) parseTransferEncoding(s []byte) error {
 	ASCIIToLowerInplace(s)
 	// For transfer-encoding: identify, it's the same as specifying neither
 	// content-length nor transfer-encoding.
 	h.Chunking = bytes.Contains(s, []byte("chunked"))
-	if h.Chunking {
-		raw.WriteString(fullHeaderTransferEncoding)
-	} else if !bytes.Contains(s, []byte("identity")) {
-		errl.Printf("invalid transfer encoding: %s\n", s)
-		return errNotSupported
+	if !h.Chunking && !bytes.Contains(s, []byte("identity")) {
+		return fmt.Errorf("invalid transfer encoding: %s", s)
 	}
 	return nil
 }
 
-// For now, cow does not fully support 100-continue. It will return "417
+// RFC 2616 3.6.1 states when trailers are allowed:
+//
+// a) request includes TE header
+// b) server is the original server
+//
+// Even though COW removes TE header, the original server can still respond
+// with Trailer header.
+// As Trailer is general header, it's possible to appear in request. But is
+// there any client does this?
+func (h *Header) parseTrailer(s []byte) error {
+	// use errl to test if this header is common to see
+	errl.Printf("got Trailer header: %s\n", s)
+	if len(s) != 0 {
+		h.Trailer = true
+	}
+	return nil
+}
+
+// For now, COW does not fully support 100-continue. It will return "417
 // expectation failed" if a request contains expect header. This is one of the
 // strategies supported by polipo, which is easiest to implement in cow.
 // TODO If we see lots of expect 100-continue usage, provide full support.
 
-func (h *Header) parseExpect(s []byte, raw *bytes.Buffer) error {
+func (h *Header) parseExpect(s []byte) error {
 	ASCIIToLowerInplace(s)
 	errl.Printf("Expect header: %s\n", s) // put here to see if expect header is widely used
 	h.ExpectContinue = true
@@ -386,60 +417,115 @@ func (h *Header) parseExpect(s []byte, raw *bytes.Buffer) error {
 }
 
 func splitHeader(s []byte) (name, val []byte, err error) {
-	var f [][]byte
-	if f = bytes.SplitN(s, []byte{':'}, 2); len(f) != 2 {
-		errl.Printf("malformed header: %s\n", s)
-		return nil, nil, errMalformHeader
+	i := bytes.IndexByte(s, ':')
+	if i < 0 {
+		return nil, nil, fmt.Errorf("malformed header: %#v", string(s))
 	}
 	// Do not lower case field value, as it maybe case sensitive
-	return ASCIIToLower(f[0]), f[1], nil
+	return ASCIIToLower(s[:i]), TrimSpace(s[i+1:]), nil
+}
+
+// Learned from net.textproto. One difference is that this one keeps the
+// ending '\n' in the returned line. Buf if there's only CRLF in the line,
+// return nil for the line.
+func readContinuedLineSlice(r *bufio.Reader) ([]byte, error) {
+	// feedly.com request headers contains things like:
+	// "$Authorization.feedly: $FeedlyAuth\r\n", so we must test for only
+	// continuation spaces.
+	isspace := func(b byte) bool {
+		return b == ' ' || b == '\t'
+	}
+
+	// Read the first line.
+	line, err := r.ReadSlice('\n')
+	if err != nil {
+		return nil, err
+	}
+
+	// There are servers that use \n for line ending, so trim first before check ending.
+	// For example, the 404 page for http://plan9.bell-labs.com/magic/man2html/1/2l
+	trimmed := TrimSpace(line)
+	if len(trimmed) == 0 {
+		if len(line) > 2 {
+			return nil, fmt.Errorf("malformed end of headers, len: %d, %#v", len(line), string(line))
+		}
+		return nil, nil
+	}
+
+	if isspace(line[0]) {
+		return nil, fmt.Errorf("malformed header, start with space: %#v", string(line))
+	}
+
+	// Optimistically assume that we have started to buffer the next line
+	// and it starts with an ASCII letter (the next header key), so we can
+	// avoid copying that buffered data around in memory and skipping over
+	// non-existent whitespace.
+	if r.Buffered() > 0 {
+		peek, err := r.Peek(1)
+		if err == nil && !isspace(peek[0]) {
+			return line, nil
+		}
+	}
+
+	var buf []byte
+	buf = append(buf, trimmed...)
+
+	// Read continuation lines.
+	for skipSpace(r) > 0 {
+		line, err := r.ReadSlice('\n')
+		if err != nil {
+			break
+		}
+		buf = append(buf, ' ')
+		buf = append(buf, TrimTrailingSpace(line)...)
+	}
+	buf = append(buf, '\r', '\n')
+	return buf, nil
+}
+
+func skipSpace(r *bufio.Reader) int {
+	n := 0
+	for {
+		c, err := r.ReadByte()
+		if err != nil {
+			// Bufio will keep err until next read.
+			break
+		}
+		if c != ' ' && c != '\t' {
+			r.UnreadByte()
+			break
+		}
+		n++
+	}
+	return n
 }
 
 // Only add headers that are of interest for a proxy into request/response's header map.
 func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, url *URL) (err error) {
 	h.ContLen = -1
-	dummyLastLine := []byte{}
-	// Read request header and body
-	var s, name, val, lastLine []byte
 	for {
-		if s, err = reader.ReadSlice('\n'); err != nil {
+		var line, name, val []byte
+		if line, err = readContinuedLineSlice(reader); err != nil || len(line) == 0 {
 			return
 		}
-		// There are servers that use \n for line ending, so trim first before check ending.
-		// For example, the 404 page for http://plan9.bell-labs.com/magic/man2html/1/2l
-		trimmed := TrimSpace(s)
-		if len(trimmed) == 0 { // end of headers
-			return
-		}
-		if (s[0] == ' ' || s[0] == '\t') && lastLine != nil { // multi-line header
-			// I've never seen multi-line header used in headers that's of interest.
-			// Disable multi-line support to avoid copy for now.
-			errl.Printf("Multi-line support disabled: %v %s", url, s)
-			return errNotSupported
-			// combine previous line with current line
-			// trimmed = bytes.Join([][]byte{lastLine, []byte{' '}, trimmed}, nil)
-		}
-		if name, val, err = splitHeader(trimmed); err != nil {
+		if name, val, err = splitHeader(line); err != nil {
+			errl.Printf("%v raw header:\n%s\n", err, raw.Bytes())
 			return
 		}
 		// Wait Go to solve/provide the string<->[]byte optimization
 		kn := string(name)
 		if parseFunc, ok := headerParser[kn]; ok {
-			// lastLine = append([]byte(nil), trimmed...) // copy to avoid next read invalidating the trimmed line
-			lastLine = dummyLastLine
-			val = TrimSpace(val)
 			if len(val) == 0 {
 				continue
 			}
-			parseFunc(h, val, raw)
-		} else {
-			// mark this header as not of interest to proxy
-			lastLine = nil
+			if err = parseFunc(h, val); err != nil {
+				return
+			}
 		}
 		if hopByHopHeader[kn] {
 			continue
 		}
-		raw.Write(s)
+		raw.Write(line)
 		// debug.Printf("len %d %s", len(s), s)
 	}
 }
@@ -449,8 +535,7 @@ func parseRequest(c *clientConn, r *Request) (err error) {
 	var s []byte
 	reader := c.bufRd
 	// make actual timeout a little longer than keep-alive value sent to client
-	setConnReadTimeout(c.Conn,
-		clientConnTimeout+time.Duration(c.timeoutCnt)*time.Second, "parseRequest")
+	setConnReadTimeout(c.Conn, clientConnTimeout+2*time.Second, "parseRequest")
 	// parse request line
 	if s, err = reader.ReadSlice('\n'); err != nil {
 		if isErrTimeout(err) {
@@ -471,7 +556,7 @@ func parseRequest(c *clientConn, r *Request) (err error) {
 	var f [][]byte
 	// Tolerate with multiple spaces and '\t' is achieved by FieldsN.
 	if f = FieldsN(s, 3); len(f) != 3 {
-		return errors.New(fmt.Sprintf("malformed HTTP request: %s", s))
+		return fmt.Errorf("malformed request line: %#v", string(s))
 	}
 	ASCIIToUpperInplace(f[0])
 	r.Method = string(f[0])
@@ -498,10 +583,13 @@ func parseRequest(c *clientConn, r *Request) (err error) {
 	}
 	r.headStart = r.raw.Len()
 
-	// Read request header
+	// Read request header.
 	if err = r.parseHeader(reader, r.raw, r.URL); err != nil {
-		errl.Printf("Parsing request header: %v %v\n", err, r)
+		errl.Printf("parse request header: %v %s\n%s", err, r, r.Verbose())
 		return err
+	}
+	if r.Chunking {
+		r.raw.WriteString(fullHeaderTransferEncoding)
 	}
 	if r.ConnectionKeepAlive {
 		r.raw.WriteString(fullHeaderConnectionKeepAlive)
@@ -516,19 +604,10 @@ func parseRequest(c *clientConn, r *Request) (err error) {
 	return
 }
 
-func skipCRLF(r *bufio.Reader) error {
-	// There maybe servers using single '\n' for line ending
-	if _, err := r.ReadSlice('\n'); err != nil {
-		errl.Println("Error reading CRLF:", err)
-		return err
-	}
-	return nil
-}
-
 // If an http response may have message body
 func (rp *Response) hasBody(method string) bool {
 	if method == "HEAD" || rp.Status == 304 || rp.Status == 204 ||
-		(100 <= rp.Status && rp.Status < 200) {
+		rp.Status < 200 {
 		return false
 	}
 	return true
@@ -542,11 +621,13 @@ func parseResponse(sv *serverConn, r *Request, rp *Response) (err error) {
 		sv.setReadTimeout("parseResponse")
 	}
 	if s, err = reader.ReadSlice('\n'); err != nil {
-		if err != io.EOF {
-			// err maybe timeout caused by explicity setting deadline
-			debug.Printf("Reading Response status line: %v %v\n", err, r)
-		}
-		// For timeout, the connection will not be used, so no need to unset timeout
+		// err maybe timeout caused by explicity setting deadline, EOF, or
+		// reset caused by GFW.
+		debug.Printf("read response status line %v %v\n", err, r)
+		// Server connection with error will not be used any more, so no need
+		// to unset timeout.
+		// For read error, return directly in order to identify whether this
+		// is caused by GFW.
 		return err
 	}
 	if sv.maybeFake() {
@@ -557,16 +638,14 @@ func parseResponse(sv *serverConn, r *Request, rp *Response) (err error) {
 	// response status line parsing
 	var f [][]byte
 	if f = FieldsN(s, 3); len(f) < 2 { // status line are separated by SP
-		errl.Printf("Malformed HTTP response status line: %s %v\n", s, r)
-		return errMalformResponse
+		return fmt.Errorf("malformed response status line: %#v %v", string(s), r)
 	}
 	status, err := ParseIntFromBytes(f[1], 10)
 
 	rp.reset()
 	rp.Status = int(status)
 	if err != nil {
-		errl.Printf("response status not valid: %s len=%d %v\n", f[1], len(f[1]), err)
-		return
+		return fmt.Errorf("response status not valid: %s len=%d %v", f[1], len(f[1]), err)
 	}
 	if len(f) == 3 {
 		rp.Reason = f[2]
@@ -574,8 +653,7 @@ func parseResponse(sv *serverConn, r *Request, rp *Response) (err error) {
 
 	proto := f[0]
 	if !bytes.Equal(proto[0:7], []byte("HTTP/1.")) {
-		errl.Printf("Invalid response status line: %s request %v\n", string(f[0]), r)
-		return errMalformResponse
+		return fmt.Errorf("invalid response status line: %s request %v", string(f[0]), r)
 	}
 	if proto[7] == '1' {
 		rp.raw.Write(s)
@@ -584,12 +662,11 @@ func parseResponse(sv *serverConn, r *Request, rp *Response) (err error) {
 		// will be converted to chunked encoding
 		rp.raw.WriteString(rp.genStatusLine())
 	} else {
-		errl.Printf("Response protocol not supported: %s\n", f[0])
-		return errNotSupported
+		return fmt.Errorf("response protocol not supported: %s", f[0])
 	}
 
 	if err = rp.parseHeader(reader, rp.raw, r.URL); err != nil {
-		errl.Printf("Reading response header: %v %v\n", err, r)
+		errl.Printf("parse response header: %v %s\n%s", err, rp, rp.Verbose())
 		return err
 	}
 
@@ -599,23 +676,21 @@ func parseResponse(sv *serverConn, r *Request, rp *Response) (err error) {
 		return parseResponse(sv, r, rp)
 	}
 
-	// Connection close, no content length specification
-	// Use chunked encoding to pass content back to client
-	if !rp.ConnectionKeepAlive && !rp.Chunking && rp.ContLen == -1 {
+	if rp.Chunking {
+		rp.raw.WriteString(fullHeaderTransferEncoding)
+	} else if rp.ContLen == -1 {
+		// No chunk, no content length, assume close to signal end.
+		rp.ConnectionKeepAlive = false
 		if rp.hasBody(r.Method) {
+			// Connection close, no content length specification.
+			// Use chunked encoding to pass content back to client.
 			debug.Println("add chunked encoding to close connection response", r, rp)
-			rp.raw.WriteString("Transfer-Encoding: chunked\r\n")
+			rp.raw.WriteString(fullHeaderTransferEncoding)
 		} else {
 			debug.Println("add content-length 0 to close connection response", r, rp)
 			rp.raw.WriteString("Content-Length: 0\r\n")
 		}
 	}
-	// Check for invalid response
-	if !rp.hasBody(r.Method) && (rp.Chunking || rp.ContLen != -1) {
-		errl.Printf("response has no body, but with chunked/content-length set\n%s",
-			rp.Verbose())
-	}
-
 	// Whether COW should respond with keep-alive depends on client request,
 	// not server response.
 	if r.ConnectionKeepAlive {

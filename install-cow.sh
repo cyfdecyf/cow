@@ -1,6 +1,6 @@
 #!/bin/bash
 
-version=0.7.6
+version=0.8
 
 arch=`uname -m`
 case $arch in
@@ -12,6 +12,9 @@ case $arch in
         ;;
     "armv6l")
         arch="-armv6"
+        ;;
+    "armv5tel")
+        arch="-armv5"
         ;;
     *)
         echo "$arch currently has no precompiled binary"
