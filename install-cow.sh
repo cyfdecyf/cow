@@ -13,6 +13,9 @@ case $arch in
     "armv6l")
         arch="-armv6"
         ;;
+    "armv5tel")
+        arch="-armv5"
+        ;;
     *)
         echo "$arch currently has no precompiled binary"
         ;;
