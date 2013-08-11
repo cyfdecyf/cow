@@ -32,8 +32,7 @@ var defaultTunnelAllowedPort = []string{
 	"143", "220", "585", "993", // imap, imap3, imap4-ssl, imaps
 	"109", "110", "473", "995", // pop2, pop3, hybrid-pop, pop3s
 	"5222", "5269", // jabber-client, jabber-server
-	"2401", // cvspserver
-	"9418", // git
+	"2401", "3690", "9418", // cvspserver, svn, git
 }
 
 type Config struct {
