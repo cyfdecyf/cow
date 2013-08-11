@@ -44,6 +44,7 @@ build() {
 }
 
 build darwin amd64 mac64
+build darwin 386 mac32
 build linux amd64 linux64
 build linux 386 linux32
 build linux arm linux-armv6
