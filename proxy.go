@@ -421,7 +421,6 @@ func (c *clientConn) handleServerReadError(r *Request, sv *serverConn, err error
 	if debug {
 		debug.Printf("cli(%s) server read error %s %v %v\n", c.RemoteAddr(), msg, err, r)
 	}
-	var errMsg string
 	if err == io.EOF {
 		return RetryError{err}
 	}
@@ -429,11 +428,10 @@ func (c *clientConn) handleServerReadError(r *Request, sv *serverConn, err error
 		return c.handleBlockedRequest(r, err)
 	}
 	if r.responseNotSent() {
-		errMsg = genErrMsg(r, sv, msg)
-		sendErrorPage(c, "502 read error", err.Error(), errMsg)
+		sendErrorPage(c, "502 read error", err.Error(), genErrMsg(r, sv, msg))
 		return errPageSent
 	}
-	errl.Printf("cli(%s) unhandled server read error %s %v %v\n", c.RemoteAddr(), msg, err, r)
+	errl.Printf("cli(%s) unhandled server read error %s %v %s\n", c.RemoteAddr(), msg, err, r)
 	return err
 }
 
