@@ -1186,7 +1186,6 @@ func sendBodyChunked(w io.Writer, r *bufio.Reader, rdSize int) (err error) {
 	}
 }
 
-const CRLF = "\r\n"
 const chunkEnd = "0\r\n\r\n"
 
 func sendBodySplitIntoChunk(w io.Writer, r *bufio.Reader) (err error) {

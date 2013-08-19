@@ -11,6 +11,8 @@ import (
 	"time"
 )
 
+const CRLF = "\r\n"
+
 const (
 	statusCodeContinue = 100
 )
@@ -188,13 +190,14 @@ func (rp *Response) rawResponse() []byte {
 	return rp.raw.Bytes()
 }
 
-func (rp *Response) genStatusLine() (res string) {
-	if len(rp.Reason) == 0 {
-		res = strings.Join([]string{"HTTP/1.1", strconv.Itoa(rp.Status)}, " ")
-	} else {
-		res = strings.Join([]string{"HTTP/1.1", strconv.Itoa(rp.Status), string(rp.Reason)}, " ")
+func (rp *Response) genStatusLine() {
+	rp.raw.Write([]byte("HTTP/1.1 "))
+	rp.raw.WriteString(strconv.Itoa(rp.Status))
+	if len(rp.Reason) != 0 {
+		rp.raw.WriteByte(' ')
+		rp.raw.Write(rp.Reason)
 	}
-	res += CRLF
+	rp.raw.Write([]byte(CRLF))
 	return
 }
 
@@ -659,7 +662,7 @@ func parseResponse(sv *serverConn, r *Request, rp *Response) (err error) {
 	} else if proto[7] == '0' {
 		// Should return HTTP version as 1.1 to client since closed connection
 		// will be converted to chunked encoding
-		rp.raw.WriteString(rp.genStatusLine())
+		rp.genStatusLine()
 	} else {
 		return fmt.Errorf("response protocol not supported: %s", f[0])
 	}
