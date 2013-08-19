@@ -3,13 +3,11 @@ package main
 import (
 	"fmt"
 	"net"
-	"reflect"
 	"strings"
 	"syscall"
 )
 
 var _ = fmt.Println
-var _ = reflect.TypeOf
 
 func isErrConnReset(err error) bool {
 	// fmt.Printf("calling isErrConnReset for err type: %v Error() %s\n",

@@ -419,7 +419,8 @@ func (c *clientConn) handleBlockedRequest(r *Request, err error) error {
 
 func (c *clientConn) handleServerReadError(r *Request, sv *serverConn, err error, msg string) error {
 	if debug {
-		debug.Printf("cli(%s) server read error %s %v %v\n", c.RemoteAddr(), msg, err, r)
+		debug.Printf("cli(%s) server read error %s %T %v %v\n",
+			c.RemoteAddr(), msg, err, err, r)
 	}
 	if err == io.EOF {
 		return RetryError{err}
@@ -514,7 +515,7 @@ func (c *clientConn) readResponse(sv *serverConn, r *Request, rp *Response) (err
 			} else if isErrOpRead(err) {
 				return c.handleServerReadError(r, sv, err, "read response body")
 			}
-			// errl.Println("sendBody unknown network op error", reflect.TypeOf(err), r)
+			// errl.Printf("cli(%s) sendBody error %T %v %v", err, err, r)
 			return err
 		}
 	}
@@ -634,7 +635,7 @@ func (c *clientConn) connect(r *Request, siteInfo *VisitCnt) (srvconn net.Conn, 
 		}
 		// net.Dial does two things: DNS lookup and TCP connection.
 		// GFW may cause failure here: make it time out or reset connection.
-		// debug.Printf("type of err %v\n", reflect.TypeOf(err))
+		// debug.Printf("type of err %T %v\n", err, err)
 
 		// RST during TCP handshake is valid and would return as connection
 		// refused error. My observation is that GFW does not use RST to stop
