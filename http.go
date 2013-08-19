@@ -151,6 +151,17 @@ func (r *Request) proxyRequestLine() []byte {
 	return r.raw.Bytes()[0:r.reqLnStart]
 }
 
+func (r *Request) genRequestLine() {
+	// Generate normal HTTP request line
+	r.raw.WriteString(r.Method + " ")
+	if len(r.URL.Path) == 0 {
+		r.raw.WriteString("/")
+	} else {
+		r.raw.WriteString(r.URL.Path)
+	}
+	r.raw.WriteString(" HTTP/1.1\r\n")
+}
+
 type Response struct {
 	Status int
 	Reason []byte
@@ -574,14 +585,7 @@ func parseRequest(c *clientConn, r *Request) (err error) {
 			r.raw.Write(s)
 		}
 	} else {
-		// Generate normal HTTP request line
-		r.raw.WriteString(r.Method + " ")
-		if len(r.URL.Path) == 0 {
-			r.raw.WriteString("/")
-		} else {
-			r.raw.WriteString(r.URL.Path)
-		}
-		r.raw.WriteString(" HTTP/1.1\r\n")
+		r.genRequestLine()
 	}
 	r.headStart = r.raw.Len()
 
