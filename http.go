@@ -231,24 +231,23 @@ func ParseRequestURIBytes(rawurl []byte) (*URL, error) {
 		return &URL{Path: string(rawurl)}, nil
 	}
 
-	var f [][]byte
 	var rest, scheme []byte
-	f = bytes.SplitN(rawurl, []byte("://"), 2)
-	if len(f) == 1 {
-		rest = f[0]
+	id := bytes.Index(rawurl, []byte("://"))
+	if id == -1 {
+		rest = rawurl
 		scheme = []byte("http") // default to http
 	} else {
-		ASCIIToLowerInplace(f[0]) // it's ok to lower case scheme
-		scheme = f[0]
+		scheme = rawurl[:id]
+		ASCIIToLowerInplace(scheme) // it's ok to lower case scheme
 		if !bytes.Equal(scheme, []byte("http")) && !bytes.Equal(scheme, []byte("https")) {
 			errl.Printf("%s protocol not supported\n", scheme)
 			return nil, errors.New("protocol not supported")
 		}
-		rest = f[1]
+		rest = rawurl[id+3:]
 	}
 
 	var hostport, host, port, path string
-	id := bytes.IndexByte(rest, '/')
+	id = bytes.IndexByte(rest, '/')
 	if id == -1 {
 		hostport = string(rest)
 	} else {
