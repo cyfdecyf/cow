@@ -235,6 +235,9 @@ func (url *URL) String() string {
 
 // Set all fields according to hostPort except Path.
 func (url *URL) ParseHostPort(hostPort string) {
+	if hostPort == "" {
+		return
+	}
 	host, port, err := net.SplitHostPort(hostPort)
 	if err != nil {
 		// Add default 80 and split again. If there's still error this time,

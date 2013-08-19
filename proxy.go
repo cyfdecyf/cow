@@ -184,6 +184,8 @@ var selfListenAddr map[string]bool
 // Called in main, so no need to protect concurrent initialization.
 func initSelfListenAddr() {
 	selfListenAddr = make(map[string]bool)
+	// Add empty host to self listen addr, in case there's no Host header.
+	selfListenAddr[""] = true
 	for _, addr := range config.ListenAddr {
 		// Handle wildcard address.
 		if addr[0] == ':' || strings.HasPrefix(addr, "0.0.0.0") {
@@ -217,7 +219,7 @@ func isSelfRequest(r *Request) bool {
 	if selfListenAddr[r.URL.Host] {
 		return true
 	}
-	debug.Printf("fixed request with no host in request line %s\n%s")
+	debug.Printf("fixed request with no host in request line %s\n", r)
 	return false
 }
 
