@@ -192,7 +192,10 @@ func (c *clientConn) serveSelfURL(r *Request) (err error) {
 		return errPageSent
 	}
 end:
-	sendErrorPage(c, "404 not found", "Page not found", "Serving request to COW proxy.")
+	sendErrorPage(c, "404 not found", "Page not found",
+		genErrMsg(r, nil, "Serving request to COW proxy."))
+	errl.Printf("cli(%s) page not found, serving request to cow %s\n%s",
+		c.RemoteAddr(), r, r.Verbose())
 	return errPageSent
 }
 
