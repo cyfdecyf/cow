@@ -32,6 +32,7 @@ type Header struct {
 	Trailer             bool
 	ConnectionKeepAlive bool
 	ExpectContinue      bool
+	Host                string
 }
 
 type rqState byte
@@ -232,6 +233,23 @@ func (url *URL) String() string {
 	return url.HostPort + url.Path
 }
 
+// Set all fields according to hostPort except Path.
+func (url *URL) ParseHostPort(hostPort string) {
+	host, port, err := net.SplitHostPort(hostPort)
+	if err != nil {
+		// Add default 80 and split again. If there's still error this time,
+		// it's not because lack of port number.
+		host = hostPort
+		port = "80"
+		hostPort = net.JoinHostPort(hostPort, port)
+	}
+
+	url.Host = host
+	url.Port = port
+	url.HostPort = hostPort
+	url.Domain = host2Domain(host)
+}
+
 // net.ParseRequestURI will unescape encoded path, but the proxy doesn't need
 // that. Assumes the input rawurl is valid. Even if rawurl is not valid, net.Dial
 // will check the correctness of the host.
@@ -295,6 +313,8 @@ func ParseRequestURIBytes(rawurl []byte) (*URL, error) {
 const (
 	headerConnection         = "connection"
 	headerContentLength      = "content-length"
+	headerExpect             = "expect"
+	headerHost               = "host"
 	headerKeepAlive          = "keep-alive"
 	headerProxyAuthenticate  = "proxy-authenticate"
 	headerProxyAuthorization = "proxy-authorization"
@@ -304,7 +324,6 @@ const (
 	headerTrailer            = "trailer"
 	headerTransferEncoding   = "transfer-encoding"
 	headerUpgrade            = "upgrade"
-	headerExpect             = "expect"
 
 	fullHeaderConnectionKeepAlive = "Connection: keep-alive\r\n"
 	fullHeaderConnectionClose     = "Connection: close\r\n"
@@ -315,12 +334,13 @@ const (
 var headerParser = map[string]HeaderParserFunc{
 	headerConnection:         (*Header).parseConnection,
 	headerContentLength:      (*Header).parseContentLength,
+	headerExpect:             (*Header).parseExpect,
+	headerHost:               (*Header).parseHost,
 	headerKeepAlive:          (*Header).parseKeepAlive,
 	headerProxyAuthorization: (*Header).parseProxyAuthorization,
 	headerProxyConnection:    (*Header).parseConnection,
 	headerTransferEncoding:   (*Header).parseTransferEncoding,
 	headerTrailer:            (*Header).parseTrailer,
-	headerExpect:             (*Header).parseExpect,
 }
 
 var hopByHopHeader = map[string]bool{
@@ -359,6 +379,13 @@ func (h *Header) parseConnection(s []byte) error {
 func (h *Header) parseContentLength(s []byte) (err error) {
 	h.ContLen, err = ParseIntFromBytes(s, 10)
 	return err
+}
+
+func (h *Header) parseHost(s []byte) (err error) {
+	if h.Host == "" {
+		h.Host = string(s)
+	}
+	return
 }
 
 func (h *Header) parseKeepAlive(s []byte) (err error) {
@@ -579,6 +606,7 @@ func parseRequest(c *clientConn, r *Request) (err error) {
 	if err != nil {
 		return
 	}
+	r.Header.Host = r.URL.HostPort // If Header.Host is set, parseHost will just return.
 	if r.Method == "CONNECT" {
 		r.isConnect = true
 		if bool(dbgRq) && verbose && !config.hasHttpParent {

@@ -45,6 +45,7 @@ func main() {
 	updateConfig(cmdLineConfig)
 	checkConfig()
 
+	initSelfListenAddr()
 	initLog()
 	initAuth()
 	initSiteStat()

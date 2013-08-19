@@ -480,3 +480,20 @@ func IgnoreUTF8BOM(f *os.File) error {
 	_, err = f.Seek(-3, 1)
 	return err
 }
+
+// Return all host IP addresses.
+func hostAddr() (addr []string) {
+	allAddr, err := net.InterfaceAddrs()
+	if err != nil {
+		Fatal("error getting host address", err)
+	}
+	for _, ad := range allAddr {
+		ads := ad.String()
+		id := strings.Index(ads, "/")
+		if id == -1 {
+			panic("internal error, host address invalid: " + ads)
+		}
+		addr = append(addr, ads[:id])
+	}
+	return addr
+}

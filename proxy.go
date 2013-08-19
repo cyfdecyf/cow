@@ -178,8 +178,47 @@ func (c *clientConn) Close() {
 	c.Conn.Close()
 }
 
-func isSelfURL(url string) bool {
-	return url == ""
+// Listen address as key, not including port part.
+var selfListenAddr map[string]bool
+
+// Called in main, so no need to protect concurrent initialization.
+func initSelfListenAddr() {
+	selfListenAddr = make(map[string]bool)
+	for _, addr := range config.ListenAddr {
+		// Handle wildcard address.
+		if addr[0] == ':' || strings.HasPrefix(addr, "0.0.0.0") {
+			for _, ad := range hostAddr() {
+				selfListenAddr[ad] = true
+			}
+			selfListenAddr["localhost"] = true
+			continue
+		}
+
+		host, _, err := net.SplitHostPort(addr)
+		if err != nil {
+			panic("listen addr invalid: " + addr)
+		}
+		selfListenAddr[host] = true
+		if host == "127.0.0.1" {
+			selfListenAddr["localhost"] = true
+		} else if host == "localhost" {
+			selfListenAddr["127.0.0.1"] = true
+		}
+	}
+}
+
+func isSelfRequest(r *Request) bool {
+	if r.URL.HostPort != "" {
+		return false
+	}
+	// Maxthon sometimes sends requests without host in request line,
+	// in that case, get host information from Host header.
+	r.URL.ParseHostPort(r.Header.Host)
+	if selfListenAddr[r.URL.Host] {
+		return true
+	}
+	debug.Printf("fixed request with no host in request line %s\n%s")
+	return false
 }
 
 func (c *clientConn) serveSelfURL(r *Request) (err error) {
@@ -299,7 +338,7 @@ func (c *clientConn) serve() {
 		// PAC may leak frequently visited sites information. But if cow
 		// requires authentication for PAC, some clients may not be able
 		// handle it. (e.g. Proxy SwitchySharp extension on Chrome.)
-		if isSelfURL(r.URL.HostPort) {
+		if isSelfRequest(&r) {
 			if err = c.serveSelfURL(&r); err != nil {
 				return
 			}
