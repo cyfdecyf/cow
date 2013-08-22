@@ -197,9 +197,10 @@ func initPAC() {
 	}()
 }
 
-func sendPAC(c *clientConn) {
-	if _, err := c.Write(genPAC(c)); err != nil {
-		debug.Println("Error sending PAC file")
-		return
+func sendPAC(c *clientConn) error {
+	_, err := c.Write(genPAC(c))
+	if err != nil {
+		debug.Printf("cli(%s) error sending PAC:", c.RemoteAddr(), err)
 	}
+	return err
 }
