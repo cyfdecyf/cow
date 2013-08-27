@@ -7,6 +7,7 @@ install:
   - go get github.com/shadowsocks/shadowsocks-go/shadowsocks
   - go get github.com/cyfdecyf/bufio
   - go get github.com/cyfdecyf/leakybuf
+  - go get github.com/cyfdecyf/color
 script:
   - pushd $TRAVIS_BUILD_DIR
   - go test -v
