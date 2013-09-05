@@ -79,10 +79,10 @@ func main() {
 
 	go sigHandler()
 	go runSSH()
-	if config.estimateTimeout {
+	if config.EstimateTimeout {
 		go runEstimateTimeout()
 	} else {
-		info.Println("estimateTimeout() disabled")
+		info.Println("timeout estimation disabled")
 	}
 
 	done := make(chan byte, 1)

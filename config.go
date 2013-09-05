@@ -61,10 +61,10 @@ type Config struct {
 	DetectSSLErr bool
 
 	// not configurable in config file
-	PrintVer bool
+	PrintVer        bool
+	EstimateTimeout bool // if run estimateTimeout()
 
-	hasHttpParent   bool // not config option
-	estimateTimeout bool // if run estimateTimeout()
+	hasHttpParent bool // not config option
 }
 
 var config Config
@@ -113,7 +113,7 @@ func parseCmdLineConfig() *Config {
 	flag.IntVar(&c.Core, "core", 2, "number of cores to use")
 	flag.StringVar(&c.LogFile, "logFile", "", "write output to file")
 	flag.BoolVar(&c.PrintVer, "version", false, "print version")
-	flag.BoolVar(&c.estimateTimeout, "estimate", true, "enable/disable estimateTimeout")
+	flag.BoolVar(&c.EstimateTimeout, "estimate", true, "enable/disable estimate timeout")
 
 	flag.Parse()
 	if listenAddr != "" {
