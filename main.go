@@ -79,7 +79,11 @@ func main() {
 
 	go sigHandler()
 	go runSSH()
-	go runEstimateTimeout()
+	if config.estimateTimeout {
+		go runEstimateTimeout()
+	} else {
+		info.Println("estimateTimeout() disabled")
+	}
 
 	done := make(chan byte, 1)
 	for i, addr := range config.ListenAddr {
