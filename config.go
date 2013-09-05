@@ -63,7 +63,8 @@ type Config struct {
 	// not configurable in config file
 	PrintVer bool
 
-	hasHttpParent bool // not config option
+	hasHttpParent   bool // not config option
+	estimateTimeout bool // if run estimateTimeout()
 }
 
 var config Config
@@ -112,6 +113,7 @@ func parseCmdLineConfig() *Config {
 	flag.IntVar(&c.Core, "core", 2, "number of cores to use")
 	flag.StringVar(&c.LogFile, "logFile", "", "write output to file")
 	flag.BoolVar(&c.PrintVer, "version", false, "print version")
+	flag.BoolVar(&c.estimateTimeout, "estimate", true, "enable/disable estimateTimeout")
 
 	flag.Parse()
 	if listenAddr != "" {
