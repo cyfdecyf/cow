@@ -6,8 +6,6 @@ import (
 )
 
 func TestGetFromEmptyPool(t *testing.T) {
-	initConnPool()
-
 	// should not block
 	sv := connPool.Get("foo")
 	if sv != nil {
@@ -16,8 +14,6 @@ func TestGetFromEmptyPool(t *testing.T) {
 }
 
 func TestConnPool(t *testing.T) {
-	initConnPool()
-
 	closeOn := time.Now().Add(10 * time.Second)
 	conns := []*serverConn{
 		{hostPort: "example.com:80", willCloseOn: closeOn},
