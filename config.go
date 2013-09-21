@@ -164,7 +164,87 @@ func isUserPasswdValid(val string) bool {
 	return true
 }
 
+// proxyParser provides functions to parse different types of parent proxy
+type proxyParser struct{}
+
+func (p proxyParser) ProxySocks5(val string) {
+	if err := checkServerAddr(val); err != nil {
+		Fatal("parent socks server", err)
+	}
+	addParentProxy(newSocksParent(val))
+}
+
+func (pp proxyParser) ProxyHttp(val string) {
+	var userPasswd, server string
+
+	arr := strings.Split(val, "@")
+	if len(arr) == 1 {
+		server = arr[0]
+	} else if len(arr) == 2 {
+		userPasswd = arr[0]
+		server = arr[1]
+	} else {
+		Fatal("http parent proxy contains more than one @:", val)
+	}
+
+	if err := checkServerAddr(server); err != nil {
+		Fatal("parent http server", err)
+	}
+
+	config.hasHttpParent = true
+
+	parent := newHttpParent(server)
+	parent.initAuth(userPasswd)
+	addParentProxy(parent)
+}
+
+// parse shadowsocks proxy
+func (pp proxyParser) ProxySs(val string) {
+	arr := strings.Split(val, "@")
+	if len(arr) < 2 {
+		Fatal("shadowsocks proxy needs to method and password")
+	} else if len(arr) > 2 {
+		Fatal("shadowsocks proxy contains too many @")
+	}
+
+	methodPasswd := arr[0]
+	server := arr[1]
+
+	arr = strings.Split(methodPasswd, ":")
+	if len(arr) != 2 {
+		Fatal("shadowsocks proxy method password should separate by :")
+	}
+	method := arr[0]
+	passwd := arr[1]
+
+	parent := newShadowsocksParent(server)
+	if err := parent.initCipher(method, passwd); err != nil {
+		Fatal("create shadowsocks cipher:", err)
+	}
+	addParentProxy(parent)
+}
+
+// configParser provides functions to parse options in config file.
 type configParser struct{}
+
+func (p configParser) ParseProxy(val string) {
+	parser := reflect.ValueOf(proxyParser{})
+	zeroMethod := reflect.Value{}
+
+	arr := strings.Split(val, "://")
+	if len(arr) != 2 {
+		Fatal("proxy has no protocol specified:", val)
+	}
+	protocol := arr[0]
+
+	methodName := "Proxy" + strings.ToUpper(protocol[0:1]) + protocol[1:]
+	method := parser.MethodByName(methodName)
+	if method == zeroMethod {
+		Fatalf("no such protocol \"%s\"\n", arr[0])
+	}
+	args := []reflect.Value{reflect.ValueOf(arr[1])}
+	method.Call(args)
+}
 
 func (p configParser) ParseLogFile(val string) {
 	config.LogFile = val
@@ -221,13 +301,9 @@ func (p configParser) ParseTunnelAllowedPort(val string) {
 	}
 }
 
-// error checking is done in check config
-
 func (p configParser) ParseSocksParent(val string) {
-	if err := checkServerAddr(val); err != nil {
-		Fatal("parent socks server", err)
-	}
-	addParentProxy(newSocksParent(val))
+	var pp proxyParser
+	pp.ProxySocks5(val)
 }
 
 func (p configParser) ParseSshServer(val string) {
@@ -309,7 +385,7 @@ func (p configParser) ParseShadowSocks(val string) {
 			shadow.method = ""
 			shadow.methodCnt = shadow.serverCnt
 		}
-		shadow.parent.initCipher(shadow.passwd, shadow.method)
+		shadow.parent.initCipher(shadow.method, shadow.passwd)
 	}
 	if val == "" { // the final call
 		shadow.parent = nil

@@ -83,7 +83,7 @@ func printParentProxy() {
 			debug.Println("\tshadowsocks: ", pc.server)
 		case *httpParent:
 			debug.Println("\thttp parent: ", pc.server)
-		case socksParent:
+		case *socksParent:
 			debug.Println("\tsocks parent: ", pc.server)
 		}
 	}
@@ -109,6 +109,9 @@ func newHttpParent(server string) *httpParent {
 }
 
 func (hp *httpParent) initAuth(userPasswd string) {
+	if userPasswd == "" {
+		return
+	}
 	b64 := base64.StdEncoding.EncodeToString([]byte(userPasswd))
 	hp.authHeader = []byte(headerProxyAuthorization + ": Basic " + b64 + CRLF)
 }
@@ -146,12 +149,16 @@ func newShadowsocksParent(server string) *shadowsocksParent {
 	return &shadowsocksParent{server, nil}
 }
 
-func (sp *shadowsocksParent) initCipher(passwd, method string) {
+func (sp *shadowsocksParent) initCipher(method, passwd string) error {
+	if method == "table" {
+		method = ""
+	}
 	cipher, err := ss.NewCipher(method, passwd)
 	if err != nil {
-		Fatal("creating shadowsocks cipher:", err)
+		return err
 	}
 	sp.cipher = cipher
+	return nil
 }
 
 func (sp *shadowsocksParent) connect(url *URL) (net.Conn, error) {
@@ -194,18 +201,18 @@ type socksParent struct {
 
 type socksConn struct {
 	net.Conn
-	parent socksParent
+	parent *socksParent
 }
 
 func (s socksConn) String() string {
 	return "socks proxy " + s.parent.server
 }
 
-func newSocksParent(server string) socksParent {
-	return socksParent{server}
+func newSocksParent(server string) *socksParent {
+	return &socksParent{server}
 }
 
-func (sp socksParent) connect(url *URL) (net.Conn, error) {
+func (sp *socksParent) connect(url *URL) (net.Conn, error) {
 	c, err := net.Dial("tcp", sp.server)
 	if err != nil {
 		errl.Printf("can't connect to socks server %s for %s: %v\n",
