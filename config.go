@@ -277,25 +277,65 @@ func (p configParser) ParseLogFile(val string) {
 	config.LogFile = val
 }
 
+// listenParser provides functions to parse different types of listen addresses
+type listenParser struct{}
+
+func (lp listenParser) ListenHttp(val string) {
+	// var userPasswd, server string
+	var server string
+
+	arr := strings.Split(val, "@")
+	if len(arr) == 1 {
+		server = arr[0]
+	} else if len(arr) == 2 {
+		// userPasswd = arr[0]
+		server = arr[1]
+	} else {
+		Fatal("http parent proxy contains more than one @:", val)
+	}
+
+	if err := checkServerAddr(server); err != nil {
+		Fatal("parent http server", err)
+	}
+
+	config.ListenAddr = append(config.ListenAddr, server)
+}
+
 func (p configParser) ParseListen(val string) {
 	if cmdHasListenAddr {
 		return
 	}
-	arr := strings.Split(val, ",")
-	for _, s := range arr {
-		s = strings.TrimSpace(s)
-		host, _, err := net.SplitHostPort(s)
-		if err != nil {
-			Fatal("listen address", err)
-		}
-		if host == "" || host == "0.0.0.0" {
-			if len(arr) > 1 {
-				Fatalf("too much listen addresses: "+
-					"%s represents all ip addresses on this host.\n", s)
-			}
-		}
-		config.ListenAddr = append(config.ListenAddr, s)
+
+	parser := reflect.ValueOf(listenParser{})
+	zeroMethod := reflect.Value{}
+
+	arr := strings.Split(val, "://")
+	if len(arr) != 2 {
+		Fatal("listen has no protocol specified:", val)
 	}
+	protocol := arr[0]
+
+	methodName := "Listen" + strings.ToUpper(protocol[0:1]) + protocol[1:]
+	method := parser.MethodByName(methodName)
+	if method == zeroMethod {
+		Fatalf("no such listen protocol \"%s\"\n", arr[0])
+	}
+	args := []reflect.Value{reflect.ValueOf(arr[1])}
+	method.Call(args)
+	// for _, s := range arr {
+	// 	s = strings.TrimSpace(s)
+	// 	host, _, err := net.SplitHostPort(s)
+	// 	if err != nil {
+	// 		Fatal("listen address", err)
+	// 	}
+	// 	if host == "" || host == "0.0.0.0" {
+	// 		if len(arr) > 1 {
+	// 			Fatalf("too much listen addresses: "+
+	// 				"%s represents all ip addresses on this host.\n", s)
+	// 		}
+	// 	}
+	// 	config.ListenAddr = append(config.ListenAddr, s)
+	// }
 }
 
 func (p configParser) ParseAddrInPAC(val string) {
