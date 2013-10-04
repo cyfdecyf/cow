@@ -14,14 +14,43 @@ const maxServerConnCnt = 20
 // connections for different servers can be done in parallel.
 type ConnPool struct {
 	idleConn map[string]chan *serverConn
+	muxConn  chan *serverConn // connections support multiplexing
 	sync.RWMutex
 }
 
-var connPool *ConnPool
+var connPool = &ConnPool{
+	idleConn: map[string]chan *serverConn{},
+	muxConn:  make(chan *serverConn, maxServerConnCnt),
+}
 
-func initConnPool() {
-	connPool = new(ConnPool)
-	connPool.idleConn = make(map[string]chan *serverConn)
+func getConnFromChan(ch chan *serverConn) (sv *serverConn) {
+	for {
+		select {
+		case sv = <-ch:
+			if sv.mayBeClosed() {
+				sv.Close()
+				continue
+			}
+			return sv
+		default:
+			return nil
+		}
+	}
+}
+
+func putConnToChan(sv *serverConn, ch chan *serverConn) {
+	select {
+	case ch <- sv:
+		debug.Printf("connPool channel %s: put back conn\n", sv.hostPort)
+		return
+	default:
+		// Simply close the connection if can't put into channel immediately.
+		// A better solution would remove old connections from the channel and
+		// add the new one. But's it's more complicated and this should happen
+		// rarely.
+		debug.Printf("connPool %s: channel full", sv.hostPort)
+		sv.Close()
+	}
 }
 
 func (cp *ConnPool) Get(hostPort string) *serverConn {
@@ -33,18 +62,17 @@ func (cp *ConnPool) Get(hostPort string) *serverConn {
 		return nil
 	}
 
-	for {
-		select {
-		case sv := <-ch:
-			if sv.mayBeClosed() {
-				sv.Close()
-				continue
-			}
-			return sv
-		default:
-			return nil
-		}
+	// get connection from connections of existing host
+	if sv := getConnFromChan(ch); sv != nil {
+		debug.Printf("connPool get site-specific conn")
+		return sv
 	}
+	// get connection from multiplexing connection pool
+	sv := getConnFromChan(cp.muxConn)
+	if sv != nil {
+		debug.Printf("connPool get mux conn")
+	}
+	return sv
 }
 
 func (cp *ConnPool) Put(sv *serverConn) {
@@ -66,16 +94,15 @@ func (cp *ConnPool) Put(sv *serverConn) {
 		return
 	}
 
-	select {
-	case ch <- sv:
-		return
+	switch sv.Conn.(type) {
+	case httpConn:
+		// multiplexing connections
+		debug.Printf("connPool put back mux conn")
+		putConnToChan(sv, cp.muxConn)
 	default:
-		// Simply close the connection if can't put into channel immediately.
-		// A better solution would remove old connections from the channel and
-		// add the new one. But's it's more complicated and this should happen
-		// rarely.
-		debug.Printf("connPool %s: channel full", sv.hostPort)
-		sv.Close()
+		// site-specific connections
+		debug.Printf("connPool put back site-specific conn")
+		putConnToChan(sv, ch)
 	}
 }
 
