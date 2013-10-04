@@ -20,7 +20,7 @@ type ConnPool struct {
 
 var connPool = &ConnPool{
 	idleConn: map[string]chan *serverConn{},
-	muxConn:  make(chan *serverConn, maxServerConnCnt),
+	muxConn:  make(chan *serverConn, 35),
 }
 
 func getConnFromChan(ch chan *serverConn) (sv *serverConn) {
@@ -38,52 +38,61 @@ func getConnFromChan(ch chan *serverConn) (sv *serverConn) {
 	}
 }
 
-func putConnToChan(sv *serverConn, ch chan *serverConn) {
+func putConnToChan(sv *serverConn, ch chan *serverConn, chname string) {
 	select {
 	case ch <- sv:
-		debug.Printf("connPool channel %s: put back conn\n", sv.hostPort)
+		debug.Printf("connPool channel %s: put conn\n", chname)
 		return
 	default:
 		// Simply close the connection if can't put into channel immediately.
 		// A better solution would remove old connections from the channel and
 		// add the new one. But's it's more complicated and this should happen
 		// rarely.
-		debug.Printf("connPool %s: channel full", sv.hostPort)
+		debug.Printf("connPool channel %s: full", chname)
 		sv.Close()
 	}
 }
 
-func (cp *ConnPool) Get(hostPort string) *serverConn {
+func (cp *ConnPool) Get(hostPort string) (sv *serverConn) {
+	// Get from site specific connection first.
+	// Direct connection are all site specific, so must use site specific
+	// first to avoid using parent proxy for direct sites.
 	cp.RLock()
-	ch, ok := cp.idleConn[hostPort]
+	ch := cp.idleConn[hostPort]
 	cp.RUnlock()
 
-	if !ok {
-		return nil
+	if ch != nil {
+		sv = getConnFromChan(ch)
 	}
-
-	// get connection from connections of existing host
-	if sv := getConnFromChan(ch); sv != nil {
-		debug.Printf("connPool get site-specific conn")
+	if sv != nil {
+		debug.Printf("connPool %s: get conn\n", hostPort)
 		return sv
 	}
-	// get connection from multiplexing connection pool
-	sv := getConnFromChan(cp.muxConn)
-	if sv != nil {
-		debug.Printf("connPool get mux conn")
+
+	// Get connection from multiplexing connection pool.
+	// All mulplexing connections are for blocked sites.
+	sv = getConnFromChan(cp.muxConn)
+	if bool(debug) && sv != nil {
+		debug.Println("connPool mux: get conn", hostPort)
 	}
 	return sv
 }
 
 func (cp *ConnPool) Put(sv *serverConn) {
-	var ch chan *serverConn
+	// Multiplexing connections.
+	switch sv.Conn.(type) {
+	case httpConn:
+		putConnToChan(sv, cp.muxConn, "mux")
+		return
+	}
 
+	// Site specific connections.
 	cp.RLock()
-	ch, ok := cp.idleConn[sv.hostPort]
+	ch := cp.idleConn[sv.hostPort]
 	cp.RUnlock()
 
-	if !ok {
-		debug.Printf("connPool %s: new channel", sv.hostPort)
+	if ch == nil {
+		debug.Printf("connPool %s: new channel\n", sv.hostPort)
 		ch = make(chan *serverConn, maxServerConnCnt)
 		ch <- sv
 		cp.Lock()
@@ -91,18 +100,8 @@ func (cp *ConnPool) Put(sv *serverConn) {
 		cp.Unlock()
 		// start a new goroutine to close stale server connections
 		go closeStaleServerConn(ch, sv.hostPort)
-		return
-	}
-
-	switch sv.Conn.(type) {
-	case httpConn:
-		// multiplexing connections
-		debug.Printf("connPool put back mux conn")
-		putConnToChan(sv, cp.muxConn)
-	default:
-		// site-specific connections
-		debug.Printf("connPool put back site-specific conn")
-		putConnToChan(sv, ch)
+	} else {
+		putConnToChan(sv, ch, sv.hostPort)
 	}
 }
 
