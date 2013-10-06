@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
 	"io"
 	"math/rand"
@@ -49,6 +50,7 @@ func connectByParentProxy(url *URL) (srvconn net.Conn, err error) {
 // proxyConnector is the interface that all parent proxies should support.
 type proxyConnector interface {
 	connect(*URL) (net.Conn, error)
+	genConfig() string // for upgrading config
 }
 
 type ParentProxy struct {
@@ -96,6 +98,7 @@ func printParentProxy() {
 // http parent proxy
 type httpParent struct {
 	server     string
+	userPasswd string // for upgrade config
 	authHeader []byte
 }
 
@@ -112,10 +115,19 @@ func newHttpParent(server string) *httpParent {
 	return &httpParent{server: server}
 }
 
+func (hp *httpParent) genConfig() string {
+	if hp.userPasswd != "" {
+		return fmt.Sprintf("proxy = http://%s@%s", hp.userPasswd, hp.server)
+	} else {
+		return fmt.Sprintf("proxy = http://%s", hp.server)
+	}
+}
+
 func (hp *httpParent) initAuth(userPasswd string) {
 	if userPasswd == "" {
 		return
 	}
+	hp.userPasswd = userPasswd
 	b64 := base64.StdEncoding.EncodeToString([]byte(userPasswd))
 	hp.authHeader = []byte(headerProxyAuthorization + ": Basic " + b64 + CRLF)
 }
@@ -133,6 +145,8 @@ func (hp *httpParent) connect(url *URL) (net.Conn, error) {
 // shadowsocks parent proxy
 type shadowsocksParent struct {
 	server string
+	method string // method and passwd are for upgrade config
+	passwd string
 	cipher *ss.Cipher
 }
 
@@ -150,13 +164,19 @@ func (s shadowsocksConn) String() string {
 // when all its config have been parsed.
 
 func newShadowsocksParent(server string) *shadowsocksParent {
-	return &shadowsocksParent{server, nil}
+	return &shadowsocksParent{server: server}
+}
+
+func (sp *shadowsocksParent) genConfig() string {
+	return fmt.Sprintf("proxy = ss://%s:%s@%s", sp.method, sp.passwd, sp.server)
 }
 
 func (sp *shadowsocksParent) initCipher(method, passwd string) error {
 	if method == "table" {
 		method = ""
 	}
+	sp.method = method
+	sp.passwd = passwd
 	cipher, err := ss.NewCipher(method, passwd)
 	if err != nil {
 		return err
@@ -214,6 +234,10 @@ func (s socksConn) String() string {
 
 func newSocksParent(server string) *socksParent {
 	return &socksParent{server}
+}
+
+func (sp *socksParent) genConfig() string {
+	return fmt.Sprintf("proxy = socks5://%s", sp.server)
 }
 
 func (sp *socksParent) connect(url *URL) (net.Conn, error) {

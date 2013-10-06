@@ -68,6 +68,7 @@ type Config struct {
 }
 
 var config Config
+var configNeedUpgrade bool // whether should upgrade config file
 
 var dsFile struct {
 	dir           string // directory containing config file and blocked site list
@@ -304,6 +305,7 @@ func (p configParser) ParseTunnelAllowedPort(val string) {
 func (p configParser) ParseSocksParent(val string) {
 	var pp proxyParser
 	pp.ProxySocks5(val)
+	configNeedUpgrade = true
 }
 
 func (p configParser) ParseSshServer(val string) {
@@ -336,6 +338,7 @@ func (p configParser) ParseHttpParent(val string) {
 	http.parent = newHttpParent(val)
 	addParentProxy(http.parent)
 	http.serverCnt++
+	configNeedUpgrade = true
 }
 
 func (p configParser) ParseHttpUserPasswd(val string) {
@@ -397,6 +400,7 @@ func (p configParser) ParseShadowSocks(val string) {
 	shadow.parent = newShadowsocksParent(val)
 	addParentProxy(shadow.parent)
 	shadow.serverCnt++
+	configNeedUpgrade = true
 }
 
 func (p configParser) ParseShadowPasswd(val string) {
@@ -476,12 +480,12 @@ func (p configParser) ParseDetectSSLErr(val string) {
 
 // overrideConfig should contain options from command line to override options
 // in config file.
-func parseConfig(path string, override *Config) {
+func parseConfig(rc string, override *Config) {
 	// fmt.Println("rcFile:", path)
-	f, err := os.Open(expandTilde(path))
+	f, err := os.Open(expandTilde(rc))
 	if err != nil {
 		if os.IsNotExist(err) {
-			fmt.Printf("Config file %s not found, using default options\n", path)
+			fmt.Printf("Config file %s not found, using default options\n", rc)
 		} else {
 			fmt.Println("Error opening config file:", err)
 		}
@@ -495,9 +499,12 @@ func parseConfig(path string, override *Config) {
 
 	parser := reflect.ValueOf(configParser{})
 	zeroMethod := reflect.Value{}
+	var lines []string // store lines for upgrade
 
 	var n int
 	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
+
 		n++
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" || line[0] == '#' {
@@ -528,6 +535,60 @@ func parseConfig(path string, override *Config) {
 
 	overrideConfig(&config, override)
 	checkConfig()
+
+	if configNeedUpgrade {
+		upgradeConfig(rc, lines)
+	}
+}
+
+func upgradeConfig(rc string, lines []string) {
+	newrc := rc + ".upgrade"
+	f, err := os.Create(newrc)
+	if err != nil {
+		errl.Println("can't create upgraded config file")
+		return
+	}
+	defer f.Close()
+
+	// Upgrade config.
+	proxyId := 0
+	w := bufio.NewWriter(f)
+	for _, line := range lines {
+		line := strings.TrimSpace(line)
+		if line == "" || line[0] == '#' {
+			w.WriteString(line + newLine)
+			continue
+		}
+
+		v := strings.Split(line, "=")
+		key := strings.TrimSpace(v[0])
+
+		switch key {
+		case "httpParent", "shadowSocks", "socksParent":
+			parent := parentProxy[proxyId]
+			proxyId++
+			// write out new proxy syntax
+			w.WriteString(parent.genConfig() + newLine)
+			// comment out original
+			w.WriteString("#" + line + newLine)
+		case "httpUserPasswd", "shadowPasswd", "shadowMethod":
+			// just comment out
+			w.WriteString("#" + line + newLine)
+		default:
+			w.WriteString(line + newLine)
+		}
+	}
+	w.Flush()
+
+	// Rename new and old config file.
+	if err := os.Rename(rc, rc+version); err != nil {
+		errl.Println("can't backup config file for upgrade")
+		return
+	}
+	if err := os.Rename(newrc, rc); err != nil {
+		errl.Println("can't rename upgraded rc to original name")
+		return
+	}
 }
 
 func overrideConfig(oldconfig, override *Config) {
@@ -553,6 +614,8 @@ func overrideConfig(oldconfig, override *Config) {
 			}
 		}
 	}
+
+	oldconfig.EstimateTimeout = override.EstimateTimeout
 }
 
 // Must call checkConfig before using config.
