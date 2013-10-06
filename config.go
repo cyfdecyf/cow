@@ -474,7 +474,9 @@ func (p configParser) ParseDetectSSLErr(val string) {
 	config.DetectSSLErr = parseBool(val, "detectSSLErr")
 }
 
-func parseConfig(path string) {
+// overrideConfig should contain options from command line to override options
+// in config file.
+func parseConfig(path string, override *Config) {
 	// fmt.Println("rcFile:", path)
 	f, err := os.Open(expandTilde(path))
 	if err != nil {
@@ -523,11 +525,14 @@ func parseConfig(path string) {
 	if scanner.Err() != nil {
 		Fatalf("Error reading rc file: %v\n", scanner.Err())
 	}
+
+	overrideConfig(&config, override)
+	checkConfig()
 }
 
-func updateConfig(nc *Config) {
-	newVal := reflect.ValueOf(nc).Elem()
-	oldVal := reflect.ValueOf(&config).Elem()
+func overrideConfig(oldconfig, override *Config) {
+	newVal := reflect.ValueOf(override).Elem()
+	oldVal := reflect.ValueOf(oldconfig).Elem()
 
 	// typeOfT := newVal.Type()
 	for i := 0; i < newVal.NumField(); i++ {

@@ -58,6 +58,10 @@ type ParentProxy struct {
 
 var parentProxy []ParentProxy
 
+func hasParentProxy() bool {
+	return len(parentProxy) != 0
+}
+
 func addParentProxy(pc proxyConnector) {
 	parentProxy = append(parentProxy, ParentProxy{pc, 0})
 }
