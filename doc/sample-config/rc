@@ -21,49 +21,49 @@ listen = 127.0.0.1:7777
 #loadBalance = backup
 
 #############################
-# SOCKS5 代理
+# 指定二级代理
 #############################
 
-# SOCKS5 代理地址，可重复指定多个
-#socksParent = 127.0.0.1:1080
+# 二级代理统一使用下列语法指定：
+#
+#   proxy = protocol://[authinfo@]server:port
+#
+# 重复使用 proxy 多次指定多个二级代理，backup 策略将按照二级代理出现的顺序来使用。
+#
+# 目前支持的二级代理及配置举例：
+#
+# SOCKS5:
+#   proxy = socks5://127.0.0.1:1080
+#
+# HTTP:
+#   proxy = http://127.0.0.1:8080
+#   proxy = http://user:password@127.0.0.1:8080
+#
+#   用户认证信息为可选项
+#
+# shadowsocks:
+#   proxy = ss://method:password@1.2.3.4:8388
+#
+#   authinof 中指定加密方法和密码，支持的 method 如下：
+#     aes-128-cfb, aes-192-cfb, aes-256-cfb,
+#     bf-cfb, cast5-cfb, des-cfb,
+#     rc4, table
 
-# 下面的选项可以让 COW 执行 ssh 命令创建本地 socks 代理，并在 ssh 断开后重连
-# COW 会自动使用通过 ssh 命令创建的 socks 代理，请不要针对该代理再次指定 socksParent
+#############################
+# 执行 ssh 命令创建 SOCKS5 代理
+#############################
+
+# 下面的选项可以让 COW 执行 ssh 命令创建本地 SOCKS5 代理，并在 ssh 断开后重连
+# COW 会自动使用通过 ssh 命令创建的代理，无需再通过 proxy 选项指定
 # 可重复指定多个
 #
-# 注意这一功能必须使用 ssh public key authentication
+# 注意这一功能需要系统上已有 ssh 命令，且必须使用 ssh public key authentication
 #
 # 若指定该选项，COW 将执行以下命令：
 #     ssh -n -N -D <local_socks_port> -p <server_ssh_port> <user@server>
 # server_ssh_port 端口不指定则默认为 22
 # 如果要指定其他 ssh 选项，请修改 ~/.ssh/config
 #sshServer = user@server:local_socks_port[:server_ssh_port]
-
-#############################
-# shadowsocks 代理
-#############################
-
-# 若有自己的 VPS，推荐使用 shadowsocks，服务器端部署完成后本机无需另外开 socks 代理
-# 按顺序重复下面的配置来指定多个 shadowsocks server
-
-# shadowsocks 服务器地址，一定要指定端口
-#shadowSocks = 1.1.1.1:8388
-# shadowsocks 密码
-#shadowPasswd = barfoo!
-# shadowsocks 加密方法，不指定则使用默认加密方法，可选方法如下
-#   aes-128-cfb, aes-192-cfb, aes-256-cfb, bf-cfb, cast5-cfb, des-cfb, rc4
-#shadowMethod = rc4
-
-#############################
-# HTTP 代理
-#############################
-
-# 类似 shadowsocks，按顺序重复来指定多个二级 HTTP 代理
-
-# 可使用 goagent 等 HTTP 代理作为二级代理翻墙
-#httpParent = 127.0.0.1:8087
-# 支持二级 HTTP 代理的 Basic 认证
-#httpUserPasswd = username:password
 
 #############################
 # 认证
@@ -95,7 +95,7 @@ listen = 127.0.0.1:7777
 #core = 2
 
 # 允许建立隧道连接的端口，多个端口用逗号分隔，可重复多次
-# 默认允许下列服务的端口: ssh, http, https, rsync, imap, pop, jabber, cvs, git
+# 默认总是允许下列服务的端口: ssh, http, https, rsync, imap, pop, jabber, cvs, git, svn
 # 如需允许其他端口，请用该选项添加
 # 限制隧道连接的端口可以防止将运行 COW 的服务器上只监听本机 ip 的服务暴露给外部
 #tunnelAllowedPort = 80, 443

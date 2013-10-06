@@ -651,7 +651,7 @@ func (c *clientConn) connect(r *Request, siteInfo *VisitCnt) (srvconn net.Conn, 
 		errMsg = genErrMsg(r, nil, "Parent proxy connection failed, always use parent proxy.")
 		goto fail
 	}
-	if siteInfo.AsBlocked() && hasParentProxy {
+	if siteInfo.AsBlocked() && hasParentProxy() {
 		// In case of connection error to socks server, fallback to direct connection
 		if srvconn, err = connectByParentProxy(r.URL); err == nil {
 			return
@@ -673,7 +673,7 @@ func (c *clientConn) connect(r *Request, siteInfo *VisitCnt) (srvconn net.Conn, 
 		if srvconn, err = connectDirect(r.URL, siteInfo); err == nil {
 			return
 		}
-		if !hasParentProxy {
+		if !hasParentProxy() {
 			errMsg = genErrMsg(r, nil, "Direct connection failed, no parent proxy.")
 			goto fail
 		}

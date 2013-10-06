@@ -46,3 +46,51 @@ func TestTunnelAllowedPort(t *testing.T) {
 		}
 	}
 }
+
+func TestParseProxy(t *testing.T) {
+	parentProxy = nil
+	var ok bool
+	cnt := -1
+
+	var parser configParser
+	parser.ParseProxy("http://127.0.0.1:8080")
+	cnt++
+
+	hp, ok := parentProxy[cnt].proxyConnector.(*httpParent)
+	if !ok {
+		t.Fatal("1st http proxy parsed not as httpParent")
+	}
+	if hp.server != "127.0.0.1:8080" {
+		t.Error("1st http proxy server address wrong, got:", hp.server)
+	}
+
+	parser.ParseProxy("http://user:passwd@127.0.0.2:9090")
+	cnt++
+	hp, ok = parentProxy[cnt].proxyConnector.(*httpParent)
+	if !ok {
+		t.Fatal("2nd http proxy parsed not as httpParent")
+	}
+	if hp.server != "127.0.0.2:9090" {
+		t.Error("2nd http proxy server address wrong, got:", hp.server)
+	}
+	if hp.authHeader == nil {
+		t.Error("2nd http proxy server user password not parsed")
+	}
+
+	parser.ParseProxy("socks5://127.0.0.1:1080")
+	cnt++
+	sp, ok := parentProxy[cnt].proxyConnector.(*socksParent)
+	if !ok {
+		t.Fatal("socks proxy parsed not as socksParent")
+	}
+	if sp.server != "127.0.0.1:1080" {
+		t.Error("socks server address wrong, got:", sp.server)
+	}
+
+	parser.ParseProxy("ss://aes-256-cfb:foobar!@127.0.0.1:1080")
+	cnt++
+	_, ok = parentProxy[cnt].proxyConnector.(*shadowsocksParent)
+	if !ok {
+		t.Fatal("shadowsocks proxy parsed not as shadowsocksParent")
+	}
+}
