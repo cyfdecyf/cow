@@ -491,7 +491,6 @@ func parseConfig(rc string, override *Config) {
 		}
 		return
 	}
-	defer f.Close()
 
 	IgnoreUTF8BOM(f)
 
@@ -532,6 +531,7 @@ func parseConfig(rc string, override *Config) {
 	if scanner.Err() != nil {
 		Fatalf("Error reading rc file: %v\n", scanner.Err())
 	}
+	f.Close()
 
 	overrideConfig(&config, override)
 	checkConfig()
@@ -545,10 +545,9 @@ func upgradeConfig(rc string, lines []string) {
 	newrc := rc + ".upgrade"
 	f, err := os.Create(newrc)
 	if err != nil {
-		errl.Println("can't create upgraded config file")
+		fmt.Println("can't create upgraded config file")
 		return
 	}
-	defer f.Close()
 
 	// Upgrade config.
 	proxyId := 0
@@ -579,14 +578,15 @@ func upgradeConfig(rc string, lines []string) {
 		}
 	}
 	w.Flush()
+	f.Close() // Must close file before renaming, otherwise will fail on windows.
 
 	// Rename new and old config file.
 	if err := os.Rename(rc, rc+version); err != nil {
-		errl.Println("can't backup config file for upgrade")
+		fmt.Println("can't backup config file for upgrade:", err)
 		return
 	}
 	if err := os.Rename(newrc, rc); err != nil {
-		errl.Println("can't rename upgraded rc to original name")
+		fmt.Println("can't rename upgraded rc to original name:", err)
 		return
 	}
 }

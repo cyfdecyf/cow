@@ -168,7 +168,11 @@ func newShadowsocksParent(server string) *shadowsocksParent {
 }
 
 func (sp *shadowsocksParent) genConfig() string {
-	return fmt.Sprintf("proxy = ss://%s:%s@%s", sp.method, sp.passwd, sp.server)
+	if sp.method == "" {
+		return fmt.Sprintf("proxy = ss://table:%s@%s", sp.passwd, sp.server)
+	} else {
+		return fmt.Sprintf("proxy = ss://%s:%s@%s", sp.method, sp.passwd, sp.server)
+	}
 }
 
 func (sp *shadowsocksParent) initCipher(method, passwd string) error {
