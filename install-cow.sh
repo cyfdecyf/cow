@@ -10,11 +10,8 @@ case $arch in
     "i386" | "i586" | "i486" | "i686")
         arch="32"
         ;;
-    "armv6l")
-        arch="-armv6"
-        ;;
-    "armv5tel")
-        arch="-armv5"
+    "armv5tel" | "armv6l" | "armv7l")
+        arch="-$arch"
         ;;
     *)
         echo "$arch currently has no precompiled binary"
