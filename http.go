@@ -11,6 +11,8 @@ import (
 	"time"
 )
 
+const CRLF = "\r\n"
+
 const (
 	statusCodeContinue = 100
 )
@@ -30,6 +32,7 @@ type Header struct {
 	Trailer             bool
 	ConnectionKeepAlive bool
 	ExpectContinue      bool
+	Host                string
 }
 
 type rqState byte
@@ -149,6 +152,17 @@ func (r *Request) proxyRequestLine() []byte {
 	return r.raw.Bytes()[0:r.reqLnStart]
 }
 
+func (r *Request) genRequestLine() {
+	// Generate normal HTTP request line
+	r.raw.WriteString(r.Method + " ")
+	if len(r.URL.Path) == 0 {
+		r.raw.WriteString("/")
+	} else {
+		r.raw.WriteString(r.URL.Path)
+	}
+	r.raw.WriteString(" HTTP/1.1\r\n")
+}
+
 type Response struct {
 	Status int
 	Reason []byte
@@ -188,13 +202,14 @@ func (rp *Response) rawResponse() []byte {
 	return rp.raw.Bytes()
 }
 
-func (rp *Response) genStatusLine() (res string) {
-	if len(rp.Reason) == 0 {
-		res = strings.Join([]string{"HTTP/1.1", strconv.Itoa(rp.Status)}, " ")
-	} else {
-		res = strings.Join([]string{"HTTP/1.1", strconv.Itoa(rp.Status), string(rp.Reason)}, " ")
+func (rp *Response) genStatusLine() {
+	rp.raw.Write([]byte("HTTP/1.1 "))
+	rp.raw.WriteString(strconv.Itoa(rp.Status))
+	if len(rp.Reason) != 0 {
+		rp.raw.WriteByte(' ')
+		rp.raw.Write(rp.Reason)
 	}
-	res += CRLF
+	rp.raw.Write([]byte(CRLF))
 	return
 }
 
@@ -218,6 +233,26 @@ func (url *URL) String() string {
 	return url.HostPort + url.Path
 }
 
+// Set all fields according to hostPort except Path.
+func (url *URL) ParseHostPort(hostPort string) {
+	if hostPort == "" {
+		return
+	}
+	host, port, err := net.SplitHostPort(hostPort)
+	if err != nil {
+		// Add default 80 and split again. If there's still error this time,
+		// it's not because lack of port number.
+		host = hostPort
+		port = "80"
+		hostPort = net.JoinHostPort(hostPort, port)
+	}
+
+	url.Host = host
+	url.Port = port
+	url.HostPort = hostPort
+	url.Domain = host2Domain(host)
+}
+
 // net.ParseRequestURI will unescape encoded path, but the proxy doesn't need
 // that. Assumes the input rawurl is valid. Even if rawurl is not valid, net.Dial
 // will check the correctness of the host.
@@ -231,24 +266,23 @@ func ParseRequestURIBytes(rawurl []byte) (*URL, error) {
 		return &URL{Path: string(rawurl)}, nil
 	}
 
-	var f [][]byte
 	var rest, scheme []byte
-	f = bytes.SplitN(rawurl, []byte("://"), 2)
-	if len(f) == 1 {
-		rest = f[0]
+	id := bytes.Index(rawurl, []byte("://"))
+	if id == -1 {
+		rest = rawurl
 		scheme = []byte("http") // default to http
 	} else {
-		ASCIIToLowerInplace(f[0]) // it's ok to lower case scheme
-		scheme = f[0]
+		scheme = rawurl[:id]
+		ASCIIToLowerInplace(scheme) // it's ok to lower case scheme
 		if !bytes.Equal(scheme, []byte("http")) && !bytes.Equal(scheme, []byte("https")) {
 			errl.Printf("%s protocol not supported\n", scheme)
 			return nil, errors.New("protocol not supported")
 		}
-		rest = f[1]
+		rest = rawurl[id+3:]
 	}
 
 	var hostport, host, port, path string
-	id := bytes.IndexByte(rest, '/')
+	id = bytes.IndexByte(rest, '/')
 	if id == -1 {
 		hostport = string(rest)
 	} else {
@@ -282,6 +316,8 @@ func ParseRequestURIBytes(rawurl []byte) (*URL, error) {
 const (
 	headerConnection         = "connection"
 	headerContentLength      = "content-length"
+	headerExpect             = "expect"
+	headerHost               = "host"
 	headerKeepAlive          = "keep-alive"
 	headerProxyAuthenticate  = "proxy-authenticate"
 	headerProxyAuthorization = "proxy-authorization"
@@ -291,7 +327,6 @@ const (
 	headerTrailer            = "trailer"
 	headerTransferEncoding   = "transfer-encoding"
 	headerUpgrade            = "upgrade"
-	headerExpect             = "expect"
 
 	fullHeaderConnectionKeepAlive = "Connection: keep-alive\r\n"
 	fullHeaderConnectionClose     = "Connection: close\r\n"
@@ -302,12 +337,13 @@ const (
 var headerParser = map[string]HeaderParserFunc{
 	headerConnection:         (*Header).parseConnection,
 	headerContentLength:      (*Header).parseContentLength,
+	headerExpect:             (*Header).parseExpect,
+	headerHost:               (*Header).parseHost,
 	headerKeepAlive:          (*Header).parseKeepAlive,
 	headerProxyAuthorization: (*Header).parseProxyAuthorization,
 	headerProxyConnection:    (*Header).parseConnection,
 	headerTransferEncoding:   (*Header).parseTransferEncoding,
 	headerTrailer:            (*Header).parseTrailer,
-	headerExpect:             (*Header).parseExpect,
 }
 
 var hopByHopHeader = map[string]bool{
@@ -346,6 +382,13 @@ func (h *Header) parseConnection(s []byte) error {
 func (h *Header) parseContentLength(s []byte) (err error) {
 	h.ContLen, err = ParseIntFromBytes(s, 10)
 	return err
+}
+
+func (h *Header) parseHost(s []byte) (err error) {
+	if h.Host == "" {
+		h.Host = string(s)
+	}
+	return
 }
 
 func (h *Header) parseKeepAlive(s []byte) (err error) {
@@ -566,20 +609,14 @@ func parseRequest(c *clientConn, r *Request) (err error) {
 	if err != nil {
 		return
 	}
+	r.Header.Host = r.URL.HostPort // If Header.Host is set, parseHost will just return.
 	if r.Method == "CONNECT" {
 		r.isConnect = true
 		if bool(dbgRq) && verbose && !config.hasHttpParent {
 			r.raw.Write(s)
 		}
 	} else {
-		// Generate normal HTTP request line
-		r.raw.WriteString(r.Method + " ")
-		if len(r.URL.Path) == 0 {
-			r.raw.WriteString("/")
-		} else {
-			r.raw.WriteString(r.URL.Path)
-		}
-		r.raw.WriteString(" HTTP/1.1\r\n")
+		r.genRequestLine()
 	}
 	r.headStart = r.raw.Len()
 
@@ -660,7 +697,7 @@ func parseResponse(sv *serverConn, r *Request, rp *Response) (err error) {
 	} else if proto[7] == '0' {
 		// Should return HTTP version as 1.1 to client since closed connection
 		// will be converted to chunked encoding
-		rp.raw.WriteString(rp.genStatusLine())
+		rp.genStatusLine()
 	} else {
 		return fmt.Errorf("response protocol not supported: %s", f[0])
 	}

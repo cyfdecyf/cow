@@ -51,3 +51,54 @@ func TestSendBodyChunked(t *testing.T) {
 		}
 	}
 }
+
+func TestInitSelfListenAddr(t *testing.T) {
+	config.ListenAddr = []string{"0.0.0.0:7777"}
+	initSelfListenAddr()
+
+	testData := []struct {
+		r    Request
+		self bool
+	}{
+		{Request{Header: Header{Host: "google.com:443"}, URL: &URL{}}, false},
+		{Request{Header: Header{Host: "localhost"}, URL: &URL{}}, true},
+		{Request{Header: Header{Host: "127.0.0.1:7777"}, URL: &URL{}}, true},
+		{Request{Header: Header{Host: ""}, URL: &URL{HostPort: "google.com"}}, false},
+		{Request{Header: Header{Host: "localhost"}, URL: &URL{HostPort: "google.com"}}, false},
+	}
+
+	for _, td := range testData {
+		if isSelfRequest(&td.r) != td.self {
+			t.Error(td.r.Host, "isSelfRequest should be", td.self)
+		}
+		if td.self && td.r.URL.Host == "" {
+			t.Error("isSelfRequest should set url host", td.r.Header.Host)
+		}
+	}
+
+	// Another set of listen addr.
+	config.ListenAddr = []string{"192.168.1.1:7777", "127.0.0.1:8888"}
+	initSelfListenAddr()
+
+	testData2 := []struct {
+		r    Request
+		self bool
+	}{
+		{Request{Header: Header{Host: "google.com:443"}, URL: &URL{}}, false},
+		{Request{Header: Header{Host: "localhost"}, URL: &URL{}}, true},
+		{Request{Header: Header{Host: "127.0.0.1:8888"}, URL: &URL{}}, true},
+		{Request{Header: Header{Host: "192.168.1.1"}, URL: &URL{}}, true},
+		{Request{Header: Header{Host: "192.168.1.2"}, URL: &URL{}}, false},
+		{Request{Header: Header{Host: ""}, URL: &URL{HostPort: "google.com"}}, false},
+		{Request{Header: Header{Host: "localhost"}, URL: &URL{HostPort: "google.com"}}, false},
+	}
+
+	for _, td := range testData2 {
+		if isSelfRequest(&td.r) != td.self {
+			t.Error(td.r.Host, "isSelfRequest should be", td.self)
+		}
+		if td.self && td.r.URL.Host == "" {
+			t.Error("isSelfRequest should set url host", td.r.Header.Host)
+		}
+	}
+}

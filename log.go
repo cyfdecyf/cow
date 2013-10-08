@@ -6,6 +6,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/cyfdecyf/color"
 	"io"
 	"log"
 	"os"
@@ -26,10 +27,10 @@ var (
 
 	logFile io.Writer
 
-	errorLog    = log.New(os.Stdout, "[ERROR] ", log.LstdFlags)
-	debugLog    = log.New(os.Stdout, "[DEBUG] ", log.LstdFlags)
-	requestLog  = log.New(os.Stdout, "[>>>>>] ", log.LstdFlags)
-	responseLog = log.New(os.Stdout, "[<<<<<] ", log.LstdFlags)
+	errorLog    *log.Logger
+	debugLog    *log.Logger
+	requestLog  *log.Logger
+	responseLog *log.Logger
 )
 
 var (
@@ -59,16 +60,14 @@ func initLog() {
 	}
 	log.SetOutput(logFile)
 	if colorize {
-		errorLog = log.New(logFile, "\033[31m[Error]\033[0m ", log.LstdFlags)
-		debugLog = log.New(logFile, "\033[34m[Debug]\033[0m ", log.LstdFlags)
-		requestLog = log.New(logFile, "\033[32m[>>>>>]\033[0m ", log.LstdFlags)
-		responseLog = log.New(logFile, "\033[33m[<<<<<]\033[0m ", log.LstdFlags)
-	} else if logFile != os.Stdout {
-		errorLog = log.New(logFile, "[ERROR] ", log.LstdFlags)
-		debugLog = log.New(logFile, "[DEBUG] ", log.LstdFlags)
-		requestLog = log.New(logFile, "[>>>>>] ", log.LstdFlags)
-		responseLog = log.New(logFile, "[<<<<<] ", log.LstdFlags)
+		color.SetDefaultColor(color.ANSI)
+	} else {
+		color.SetDefaultColor(color.NoColor)
 	}
+	errorLog = log.New(logFile, color.Red("[ERROR] "), log.LstdFlags)
+	debugLog = log.New(logFile, color.Blue("[DEBUG] "), log.LstdFlags)
+	requestLog = log.New(logFile, color.Green("[>>>>>] "), log.LstdFlags)
+	responseLog = log.New(logFile, color.Yellow("[<<<<<] "), log.LstdFlags)
 }
 
 func (d infoLogging) Printf(format string, args ...interface{}) {

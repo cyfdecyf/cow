@@ -178,8 +178,55 @@ func (c *clientConn) Close() {
 	c.Conn.Close()
 }
 
-func isSelfURL(url string) bool {
-	return url == ""
+// Listen address as key, not including port part.
+var selfListenAddr map[string]bool
+
+// Called in main, so no need to protect concurrent initialization.
+func initSelfListenAddr() {
+	selfListenAddr = make(map[string]bool)
+	// Add empty host to self listen addr, in case there's no Host header.
+	selfListenAddr[""] = true
+	for _, addr := range config.ListenAddr {
+		// Handle wildcard address.
+		if addr[0] == ':' || strings.HasPrefix(addr, "0.0.0.0") {
+			for _, ad := range hostAddr() {
+				selfListenAddr[ad] = true
+			}
+			selfListenAddr["localhost"] = true
+			continue
+		}
+
+		host, _, err := net.SplitHostPort(addr)
+		if err != nil {
+			panic("listen addr invalid: " + addr)
+		}
+		selfListenAddr[host] = true
+		if host == "127.0.0.1" {
+			selfListenAddr["localhost"] = true
+		} else if host == "localhost" {
+			selfListenAddr["127.0.0.1"] = true
+		}
+	}
+}
+
+func isSelfRequest(r *Request) bool {
+	if r.URL.HostPort != "" {
+		return false
+	}
+	// Maxthon sometimes sends requests without host in request line,
+	// in that case, get host information from Host header.
+	// But if client PAC setting is using cow server's DNS name, we can't
+	// decide if the request is for cow itself (need reverse lookup).
+	// So if request path seems like getting PAC, simply return true.
+	if r.URL.Path == "/pac" || strings.HasPrefix(r.URL.Path, "/pac?") {
+		return true
+	}
+	r.URL.ParseHostPort(r.Header.Host)
+	if selfListenAddr[r.URL.Host] {
+		return true
+	}
+	debug.Printf("fixed request with no host in request line %s\n", r)
+	return false
 }
 
 func (c *clientConn) serveSelfURL(r *Request) (err error) {
@@ -188,11 +235,15 @@ func (c *clientConn) serveSelfURL(r *Request) (err error) {
 	}
 	if r.URL.Path == "/pac" || strings.HasPrefix(r.URL.Path, "/pac?") {
 		sendPAC(c)
-		// Send non nil error to close client connection.
+		// PAC header contains connection close, send non nil error to close
+		// client connection.
 		return errPageSent
 	}
 end:
-	sendErrorPage(c, "404 not found", "Page not found", "Serving request to COW proxy.")
+	sendErrorPage(c, "404 not found", "Page not found",
+		genErrMsg(r, nil, "Serving request to COW proxy."))
+	errl.Printf("cli(%s) page not found, serving request to cow %s\n%s",
+		c.RemoteAddr(), r, r.Verbose())
 	return errPageSent
 }
 
@@ -296,7 +347,7 @@ func (c *clientConn) serve() {
 		// PAC may leak frequently visited sites information. But if cow
 		// requires authentication for PAC, some clients may not be able
 		// handle it. (e.g. Proxy SwitchySharp extension on Chrome.)
-		if isSelfURL(r.URL.HostPort) {
+		if isSelfRequest(&r) {
 			if err = c.serveSelfURL(&r); err != nil {
 				return
 			}
@@ -416,9 +467,9 @@ func (c *clientConn) handleBlockedRequest(r *Request, err error) error {
 
 func (c *clientConn) handleServerReadError(r *Request, sv *serverConn, err error, msg string) error {
 	if debug {
-		debug.Printf("cli(%s) server read error %s %v %v\n", c.RemoteAddr(), msg, err, r)
+		debug.Printf("cli(%s) server read error %s %T %v %v\n",
+			c.RemoteAddr(), msg, err, err, r)
 	}
-	var errMsg string
 	if err == io.EOF {
 		return RetryError{err}
 	}
@@ -426,11 +477,10 @@ func (c *clientConn) handleServerReadError(r *Request, sv *serverConn, err error
 		return c.handleBlockedRequest(r, err)
 	}
 	if r.responseNotSent() {
-		errMsg = genErrMsg(r, sv, msg)
-		sendErrorPage(c, "502 read error", err.Error(), errMsg)
+		sendErrorPage(c, "502 read error", err.Error(), genErrMsg(r, sv, msg))
 		return errPageSent
 	}
-	errl.Printf("cli(%s) unhandled server read error %s %v %v\n", c.RemoteAddr(), msg, err, r)
+	errl.Printf("cli(%s) unhandled server read error %s %v %s\n", c.RemoteAddr(), msg, err, r)
 	return err
 }
 
@@ -513,7 +563,7 @@ func (c *clientConn) readResponse(sv *serverConn, r *Request, rp *Response) (err
 			} else if isErrOpRead(err) {
 				return c.handleServerReadError(r, sv, err, "read response body")
 			}
-			// errl.Println("sendBody unknown network op error", reflect.TypeOf(err), r)
+			// errl.Printf("cli(%s) sendBody error %T %v %v", err, err, r)
 			return err
 		}
 	}
@@ -601,7 +651,7 @@ func (c *clientConn) connect(r *Request, siteInfo *VisitCnt) (srvconn net.Conn, 
 		errMsg = genErrMsg(r, nil, "Parent proxy connection failed, always use parent proxy.")
 		goto fail
 	}
-	if siteInfo.AsBlocked() && hasParentProxy {
+	if siteInfo.AsBlocked() && hasParentProxy() {
 		// In case of connection error to socks server, fallback to direct connection
 		if srvconn, err = connectByParentProxy(r.URL); err == nil {
 			return
@@ -623,7 +673,7 @@ func (c *clientConn) connect(r *Request, siteInfo *VisitCnt) (srvconn net.Conn, 
 		if srvconn, err = connectDirect(r.URL, siteInfo); err == nil {
 			return
 		}
-		if !hasParentProxy {
+		if !hasParentProxy() {
 			errMsg = genErrMsg(r, nil, "Direct connection failed, no parent proxy.")
 			goto fail
 		}
@@ -633,7 +683,7 @@ func (c *clientConn) connect(r *Request, siteInfo *VisitCnt) (srvconn net.Conn, 
 		}
 		// net.Dial does two things: DNS lookup and TCP connection.
 		// GFW may cause failure here: make it time out or reset connection.
-		// debug.Printf("type of err %v\n", reflect.TypeOf(err))
+		// debug.Printf("type of err %T %v\n", err, err)
 
 		// RST during TCP handshake is valid and would return as connection
 		// refused error. My observation is that GFW does not use RST to stop
@@ -1184,7 +1234,6 @@ func sendBodyChunked(w io.Writer, r *bufio.Reader, rdSize int) (err error) {
 	}
 }
 
-const CRLF = "\r\n"
 const chunkEnd = "0\r\n\r\n"
 
 func sendBodySplitIntoChunk(w io.Writer, r *bufio.Reader) (err error) {

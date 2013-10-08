@@ -32,8 +32,7 @@ var defaultTunnelAllowedPort = []string{
 	"143", "220", "585", "993", // imap, imap3, imap4-ssl, imaps
 	"109", "110", "473", "995", // pop2, pop3, hybrid-pop, pop3s
 	"5222", "5269", // jabber-client, jabber-server
-	"2401", // cvspserver
-	"9418", // git
+	"2401", "3690", "9418", // cvspserver, svn, git
 }
 
 type Config struct {
@@ -62,12 +61,14 @@ type Config struct {
 	DetectSSLErr bool
 
 	// not configurable in config file
-	PrintVer bool
+	PrintVer        bool
+	EstimateTimeout bool // if run estimateTimeout()
 
 	hasHttpParent bool // not config option
 }
 
 var config Config
+var configNeedUpgrade bool // whether should upgrade config file
 
 var dsFile struct {
 	dir           string // directory containing config file and blocked site list
@@ -113,6 +114,7 @@ func parseCmdLineConfig() *Config {
 	flag.IntVar(&c.Core, "core", 2, "number of cores to use")
 	flag.StringVar(&c.LogFile, "logFile", "", "write output to file")
 	flag.BoolVar(&c.PrintVer, "version", false, "print version")
+	flag.BoolVar(&c.EstimateTimeout, "estimate", true, "enable/disable estimate timeout")
 
 	flag.Parse()
 	if listenAddr != "" {
@@ -163,7 +165,87 @@ func isUserPasswdValid(val string) bool {
 	return true
 }
 
+// proxyParser provides functions to parse different types of parent proxy
+type proxyParser struct{}
+
+func (p proxyParser) ProxySocks5(val string) {
+	if err := checkServerAddr(val); err != nil {
+		Fatal("parent socks server", err)
+	}
+	addParentProxy(newSocksParent(val))
+}
+
+func (pp proxyParser) ProxyHttp(val string) {
+	var userPasswd, server string
+
+	arr := strings.Split(val, "@")
+	if len(arr) == 1 {
+		server = arr[0]
+	} else if len(arr) == 2 {
+		userPasswd = arr[0]
+		server = arr[1]
+	} else {
+		Fatal("http parent proxy contains more than one @:", val)
+	}
+
+	if err := checkServerAddr(server); err != nil {
+		Fatal("parent http server", err)
+	}
+
+	config.hasHttpParent = true
+
+	parent := newHttpParent(server)
+	parent.initAuth(userPasswd)
+	addParentProxy(parent)
+}
+
+// parse shadowsocks proxy
+func (pp proxyParser) ProxySs(val string) {
+	arr := strings.Split(val, "@")
+	if len(arr) < 2 {
+		Fatal("shadowsocks proxy needs to method and password")
+	} else if len(arr) > 2 {
+		Fatal("shadowsocks proxy contains too many @")
+	}
+
+	methodPasswd := arr[0]
+	server := arr[1]
+
+	arr = strings.Split(methodPasswd, ":")
+	if len(arr) != 2 {
+		Fatal("shadowsocks proxy method password should separate by :")
+	}
+	method := arr[0]
+	passwd := arr[1]
+
+	parent := newShadowsocksParent(server)
+	if err := parent.initCipher(method, passwd); err != nil {
+		Fatal("create shadowsocks cipher:", err)
+	}
+	addParentProxy(parent)
+}
+
+// configParser provides functions to parse options in config file.
 type configParser struct{}
+
+func (p configParser) ParseProxy(val string) {
+	parser := reflect.ValueOf(proxyParser{})
+	zeroMethod := reflect.Value{}
+
+	arr := strings.Split(val, "://")
+	if len(arr) != 2 {
+		Fatal("proxy has no protocol specified:", val)
+	}
+	protocol := arr[0]
+
+	methodName := "Proxy" + strings.ToUpper(protocol[0:1]) + protocol[1:]
+	method := parser.MethodByName(methodName)
+	if method == zeroMethod {
+		Fatalf("no such protocol \"%s\"\n", arr[0])
+	}
+	args := []reflect.Value{reflect.ValueOf(arr[1])}
+	method.Call(args)
+}
 
 func (p configParser) ParseLogFile(val string) {
 	config.LogFile = val
@@ -220,13 +302,10 @@ func (p configParser) ParseTunnelAllowedPort(val string) {
 	}
 }
 
-// error checking is done in check config
-
 func (p configParser) ParseSocksParent(val string) {
-	if err := checkServerAddr(val); err != nil {
-		Fatal("parent socks server", err)
-	}
-	addParentProxy(newSocksParent(val))
+	var pp proxyParser
+	pp.ProxySocks5(val)
+	configNeedUpgrade = true
 }
 
 func (p configParser) ParseSshServer(val string) {
@@ -259,6 +338,7 @@ func (p configParser) ParseHttpParent(val string) {
 	http.parent = newHttpParent(val)
 	addParentProxy(http.parent)
 	http.serverCnt++
+	configNeedUpgrade = true
 }
 
 func (p configParser) ParseHttpUserPasswd(val string) {
@@ -308,7 +388,7 @@ func (p configParser) ParseShadowSocks(val string) {
 			shadow.method = ""
 			shadow.methodCnt = shadow.serverCnt
 		}
-		shadow.parent.initCipher(shadow.passwd, shadow.method)
+		shadow.parent.initCipher(shadow.method, shadow.passwd)
 	}
 	if val == "" { // the final call
 		shadow.parent = nil
@@ -320,6 +400,7 @@ func (p configParser) ParseShadowSocks(val string) {
 	shadow.parent = newShadowsocksParent(val)
 	addParentProxy(shadow.parent)
 	shadow.serverCnt++
+	configNeedUpgrade = true
 }
 
 func (p configParser) ParseShadowPasswd(val string) {
@@ -397,12 +478,14 @@ func (p configParser) ParseDetectSSLErr(val string) {
 	config.DetectSSLErr = parseBool(val, "detectSSLErr")
 }
 
-func parseConfig(path string) {
+// overrideConfig should contain options from command line to override options
+// in config file.
+func parseConfig(rc string, override *Config) {
 	// fmt.Println("rcFile:", path)
-	f, err := os.Open(expandTilde(path))
+	f, err := os.Open(expandTilde(rc))
 	if err != nil {
 		if os.IsNotExist(err) {
-			fmt.Printf("Config file %s not found, using default options\n", path)
+			fmt.Printf("Config file %s not found, using default options\n", rc)
 		} else {
 			fmt.Println("Error opening config file:", err)
 		}
@@ -416,9 +499,12 @@ func parseConfig(path string) {
 
 	parser := reflect.ValueOf(configParser{})
 	zeroMethod := reflect.Value{}
+	var lines []string // store lines for upgrade
 
 	var n int
 	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
+
 		n++
 		line := strings.TrimSpace(scanner.Text())
 		if line == "" || line[0] == '#' {
@@ -446,11 +532,68 @@ func parseConfig(path string) {
 	if scanner.Err() != nil {
 		Fatalf("Error reading rc file: %v\n", scanner.Err())
 	}
+
+	overrideConfig(&config, override)
+	checkConfig()
+
+	if configNeedUpgrade {
+		upgradeConfig(rc, lines)
+	}
 }
 
-func updateConfig(nc *Config) {
-	newVal := reflect.ValueOf(nc).Elem()
-	oldVal := reflect.ValueOf(&config).Elem()
+func upgradeConfig(rc string, lines []string) {
+	newrc := rc + ".upgrade"
+	f, err := os.Create(newrc)
+	if err != nil {
+		errl.Println("can't create upgraded config file")
+		return
+	}
+	defer f.Close()
+
+	// Upgrade config.
+	proxyId := 0
+	w := bufio.NewWriter(f)
+	for _, line := range lines {
+		line := strings.TrimSpace(line)
+		if line == "" || line[0] == '#' {
+			w.WriteString(line + newLine)
+			continue
+		}
+
+		v := strings.Split(line, "=")
+		key := strings.TrimSpace(v[0])
+
+		switch key {
+		case "httpParent", "shadowSocks", "socksParent":
+			parent := parentProxy[proxyId]
+			proxyId++
+			// write out new proxy syntax
+			w.WriteString(parent.genConfig() + newLine)
+			// comment out original
+			w.WriteString("#" + line + newLine)
+		case "httpUserPasswd", "shadowPasswd", "shadowMethod":
+			// just comment out
+			w.WriteString("#" + line + newLine)
+		default:
+			w.WriteString(line + newLine)
+		}
+	}
+	w.Flush()
+
+	// Rename new and old config file.
+	if err := os.Rename(rc, rc+version); err != nil {
+		errl.Println("can't backup config file for upgrade")
+		return
+	}
+	if err := os.Rename(newrc, rc); err != nil {
+		errl.Println("can't rename upgraded rc to original name")
+		return
+	}
+}
+
+func overrideConfig(oldconfig, override *Config) {
+	newVal := reflect.ValueOf(override).Elem()
+	oldVal := reflect.ValueOf(oldconfig).Elem()
 
 	// typeOfT := newVal.Type()
 	for i := 0; i < newVal.NumField(); i++ {
@@ -471,6 +614,8 @@ func updateConfig(nc *Config) {
 			}
 		}
 	}
+
+	oldconfig.EstimateTimeout = override.EstimateTimeout
 }
 
 // Must call checkConfig before using config.

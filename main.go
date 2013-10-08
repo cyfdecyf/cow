@@ -31,8 +31,6 @@ func sigHandler() {
 	os.Exit(0)
 }
 
-var hasParentProxy = false
-
 func main() {
 	// Parse flags after load config to allow override options in config
 	cmdLineConfig := parseCmdLineConfig()
@@ -41,25 +39,21 @@ func main() {
 		os.Exit(0)
 	}
 
-	parseConfig(cmdLineConfig.RcFile)
-	updateConfig(cmdLineConfig)
-	checkConfig()
+	parseConfig(cmdLineConfig.RcFile, cmdLineConfig)
 
+	initSelfListenAddr()
 	initLog()
 	initAuth()
 	initSiteStat()
 	initPAC() // initPAC uses siteStat, so must init after site stat
-	initConnPool()
 
 	initStat()
 
-	if len(parentProxy) == 0 {
-		info.Println("no parent proxy server, can't handle blocked sites")
-	} else {
-		hasParentProxy = true
-		if debug {
-			printParentProxy()
-		}
+	if !hasParentProxy() {
+		info.Println("no parent proxy server")
+	}
+	if debug {
+		printParentProxy()
 	}
 
 	/*
@@ -78,7 +72,11 @@ func main() {
 
 	go sigHandler()
 	go runSSH()
-	go runEstimateTimeout()
+	if config.EstimateTimeout {
+		go runEstimateTimeout()
+	} else {
+		info.Println("timeout estimation disabled")
+	}
 
 	done := make(chan byte, 1)
 	for i, addr := range config.ListenAddr {

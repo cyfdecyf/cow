@@ -28,6 +28,7 @@ func TestParseRequestURI(t *testing.T) {
 		{"simplehost", &URL{"simplehost:80", "simplehost", "80", "", ""}},
 		{"simplehost:8080", &URL{"simplehost:8080", "simplehost", "8080", "", ""}},
 		{"192.168.1.1:8080/", &URL{"192.168.1.1:8080", "192.168.1.1", "8080", "", "/"}},
+		{"/helloworld", &URL{"", "", "", "", "/helloworld"}},
 	}
 	for _, td := range testData {
 		url, err := ParseRequestURI(td.rawurl)

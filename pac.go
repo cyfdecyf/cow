@@ -114,6 +114,8 @@ function host2Domain(host) {
 }
 
 function FindProxyForURL(url, host) {
+	if (url.substring(0,4) == "ftp:")
+		return direct;
 	var domain = host2Domain(host);
 	if (host.length == domain.length) {
 		return directAcc[host] ? direct : httpProxy;
@@ -195,9 +197,10 @@ func initPAC() {
 	}()
 }
 
-func sendPAC(c *clientConn) {
-	if _, err := c.Write(genPAC(c)); err != nil {
-		debug.Println("Error sending PAC file")
-		return
+func sendPAC(c *clientConn) error {
+	_, err := c.Write(genPAC(c))
+	if err != nil {
+		debug.Printf("cli(%s) error sending PAC:", c.RemoteAddr(), err)
 	}
+	return err
 }
