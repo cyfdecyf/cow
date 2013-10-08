@@ -107,8 +107,8 @@ type httpConn struct {
 	parent *httpParent
 }
 
-func (hc httpConn) String() string {
-	return "http parent proxy " + hc.parent.server
+func (s httpConn) String() string {
+	return "http parent proxy " + s.parent.server
 }
 
 func newHttpParent(server string) *httpParent {
@@ -135,10 +135,12 @@ func (hp *httpParent) initAuth(userPasswd string) {
 func (hp *httpParent) connect(url *URL) (net.Conn, error) {
 	c, err := net.Dial("tcp", hp.server)
 	if err != nil {
-		errl.Printf("can't connect to http parent proxy %s for %s: %v\n", hp.server, url.HostPort, err)
+		errl.Printf("can't connect to http parent proxy %s for %s: %v\n",
+			hp.server, url.HostPort, err)
 		return nil, err
 	}
-	debug.Println("connected to:", url.HostPort, "via http parent proxy:", hp.server)
+	debug.Printf("connected to: %s via http parent proxy: %s\n",
+		url.HostPort, hp.server)
 	return httpConn{c, hp}, nil
 }
 
@@ -175,18 +177,14 @@ func (sp *shadowsocksParent) genConfig() string {
 	}
 }
 
-func (sp *shadowsocksParent) initCipher(method, passwd string) error {
-	if method == "table" {
-		method = ""
-	}
+func (sp *shadowsocksParent) initCipher(method, passwd string) {
 	sp.method = method
 	sp.passwd = passwd
 	cipher, err := ss.NewCipher(method, passwd)
 	if err != nil {
-		return err
+		Fatal("create shadowsocks cipher:", err)
 	}
 	sp.cipher = cipher
-	return nil
 }
 
 func (sp *shadowsocksParent) connect(url *URL) (net.Conn, error) {
@@ -198,6 +196,46 @@ func (sp *shadowsocksParent) connect(url *URL) (net.Conn, error) {
 	}
 	debug.Println("connected to:", url.HostPort, "via shadowsocks:", sp.server)
 	return shadowsocksConn{c, sp}, nil
+}
+
+// cow parent proxy
+type cowParent struct {
+	server string
+	cipher *ss.Cipher
+}
+
+type cowConn struct {
+	net.Conn
+	parent *cowParent
+}
+
+func (s cowConn) String() string {
+	return "cow proxy " + s.parent.server
+}
+
+func newCowParent(srv, method, passwd string) *cowParent {
+	cipher, err := ss.NewCipher(method, passwd)
+	if err != nil {
+		Fatal("create cow cipher:", err)
+	}
+	return &cowParent{srv, cipher}
+}
+
+func (cp *cowParent) genConfig() string {
+	return "" // no upgrading need
+}
+
+func (cp *cowParent) connect(url *URL) (net.Conn, error) {
+	c, err := net.Dial("tcp", cp.server)
+	if err != nil {
+		errl.Printf("can't connect to cow parent proxy %s for %s: %v\n",
+			cp.server, url.HostPort, err)
+		return nil, err
+	}
+	debug.Printf("connected to: %s via cow parent proxy: %s\n",
+		url.HostPort, cp.server)
+	ssconn := ss.NewConn(c, cp.cipher.Copy())
+	return cowConn{ssconn, cp}, nil
 }
 
 // For socks documentation, refer to rfc 1928 http://www.ietf.org/rfc/rfc1928.txt
@@ -300,12 +338,6 @@ func (sp *socksParent) connect(url *URL) (net.Conn, error) {
 	reqBuf[4] = byte(hostLen)
 	copy(reqBuf[5:], host)
 	binary.BigEndian.PutUint16(reqBuf[5+hostLen:5+hostLen+2], uint16(port))
-
-	/*
-		if debug {
-			debug.Println("Send socks connect request", (url.HostPort))
-		}
-	*/
 
 	if n, err = c.Write(reqBuf); err != nil || n != bufLen {
 		errl.Printf("send socks request err %v n %d\n", err, n)

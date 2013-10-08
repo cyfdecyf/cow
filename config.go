@@ -203,25 +203,51 @@ func (pp proxyParser) ProxyHttp(val string) {
 func (pp proxyParser) ProxySs(val string) {
 	arr := strings.Split(val, "@")
 	if len(arr) < 2 {
-		Fatal("shadowsocks proxy needs to method and password")
+		Fatal("shadowsocks proxy needs encrypt method and password")
 	} else if len(arr) > 2 {
 		Fatal("shadowsocks proxy contains too many @")
 	}
 
 	methodPasswd := arr[0]
 	server := arr[1]
+	if err := checkServerAddr(server); err != nil {
+		Fatal("parent shadowsocks server", err)
+	}
 
 	arr = strings.Split(methodPasswd, ":")
 	if len(arr) != 2 {
-		Fatal("shadowsocks proxy method password should separate by :")
+		Fatal("shadowsocks proxy method password should be separated by :")
 	}
 	method := arr[0]
 	passwd := arr[1]
 
 	parent := newShadowsocksParent(server)
-	if err := parent.initCipher(method, passwd); err != nil {
-		Fatal("create shadowsocks cipher:", err)
+	parent.initCipher(method, passwd)
+	addParentProxy(parent)
+}
+
+func (pp proxyParser) ProxyCow(val string) {
+	arr := strings.Split(val, "@")
+	if len(arr) < 2 {
+		Fatal("cow proxy needs encrypt method and password")
+	} else if len(arr) > 2 {
+		Fatal("cow proxy contains too many @")
 	}
+
+	methodPasswd := arr[0]
+	server := arr[1]
+	if err := checkServerAddr(server); err != nil {
+		Fatal("parent cow server", err)
+	}
+
+	arr = strings.Split(methodPasswd, ":")
+	if len(arr) != 2 {
+		Fatal("cow proxy method password should be separated by :")
+	}
+	method := arr[0]
+	passwd := arr[1]
+
+	parent := newCowParent(server, method, passwd)
 	addParentProxy(parent)
 }
 
