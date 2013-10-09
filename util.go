@@ -491,7 +491,8 @@ func hostAddr() (addr []string) {
 		ads := ad.String()
 		id := strings.Index(ads, "/")
 		if id == -1 {
-			panic("internal error, host address invalid: " + ads)
+			// On windows, no network mask.
+			id = len(ads)
 		}
 		addr = append(addr, ads[:id])
 	}
