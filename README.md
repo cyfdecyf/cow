@@ -41,7 +41,7 @@ bug fix 和新功能在测试后会直接进入 master branch 而不等到发布
 
 # 使用说明
 
-配置文件在 Unix 系统上为 `~/.cow/rc`，Windows 上为 COW 所在目录的 `rc.txt` 文件。 **[样例配置](doc/sample-config/rc) 包含了所有选项以及详细的说明**，建议下载然后修改。
+配置文件在 Unix 系统上为 `~/.cow/rc`，Windows 上为 COW 所在目录的 `rc.txt` 文件。 **[样例配置](https://github.com/cyfdecyf/cow/blob/cf84f5379dd4bbf5091d1c022286c8b552880a74/doc/sample-config/rc) 包含了所有选项以及详细的说明**，建议下载然后修改。
 
 启动 COW：
 
