@@ -5,7 +5,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
+	"github.com/shadowsocks/shadowsocks-go/shadowsocks"
 	"io"
 	"math/rand"
 	"net"
