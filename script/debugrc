@@ -1,2 +1,2 @@
-listen = 127.0.0.1:7788
+listen = http://127.0.0.1:7788
 alwaysProxy = false
