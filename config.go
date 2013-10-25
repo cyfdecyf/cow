@@ -37,7 +37,6 @@ var defaultTunnelAllowedPort = []string{
 
 type Config struct {
 	RcFile      string // config file
-	ListenAddr  []string
 	LogFile     string
 	AlwaysProxy bool
 	LoadBalance LoadBalanceMode
@@ -57,7 +56,7 @@ type Config struct {
 	ReadTimeout time.Duration
 
 	Core         int
-	AddrInPAC    []string
+	AddrInPAC    []string // remove this once upgrade to version 1.0
 	DetectSSLErr bool
 
 	// not configurable in config file
@@ -281,24 +280,22 @@ func (p configParser) ParseLogFile(val string) {
 type listenParser struct{}
 
 func (lp listenParser) ListenHttp(val string) {
-	// var userPasswd, server string
-	var server string
-
-	arr := strings.Split(val, "@")
-	if len(arr) == 1 {
-		server = arr[0]
-	} else if len(arr) == 2 {
-		// userPasswd = arr[0]
-		server = arr[1]
-	} else {
-		Fatal("http parent proxy contains more than one @:", val)
+	arr := strings.Fields(val)
+	if len(arr) > 2 {
+		Fatal("too many fields in listen = http://", val)
 	}
 
-	if err := checkServerAddr(server); err != nil {
-		Fatal("parent http server", err)
+	var addr, addrInPAC string
+	addr = arr[0]
+	if len(arr) == 2 {
+		addrInPAC = arr[1]
 	}
 
-	config.ListenAddr = append(config.ListenAddr, server)
+	if err := checkServerAddr(addr); err != nil {
+		Fatal("listen http server", err)
+	}
+
+	listenProxy = append(listenProxy, newHttpProxy(addr, addrInPAC))
 }
 
 func (p configParser) ParseListen(val string) {
@@ -322,20 +319,6 @@ func (p configParser) ParseListen(val string) {
 	}
 	args := []reflect.Value{reflect.ValueOf(arr[1])}
 	method.Call(args)
-	// for _, s := range arr {
-	// 	s = strings.TrimSpace(s)
-	// 	host, _, err := net.SplitHostPort(s)
-	// 	if err != nil {
-	// 		Fatal("listen address", err)
-	// 	}
-	// 	if host == "" || host == "0.0.0.0" {
-	// 		if len(arr) > 1 {
-	// 			Fatalf("too much listen addresses: "+
-	// 				"%s represents all ip addresses on this host.\n", s)
-	// 		}
-	// 	}
-	// 	config.ListenAddr = append(config.ListenAddr, s)
-	// }
 }
 
 func (p configParser) ParseAddrInPAC(val string) {
@@ -688,16 +671,16 @@ func overrideConfig(oldconfig, override *Config) {
 func checkConfig() {
 	checkShadowsocks()
 	// listenAddr must be handled first, as addrInPAC dependends on this.
-	if config.ListenAddr == nil {
-		config.ListenAddr = []string{defaultListenAddr}
+	if listenProxy == nil {
+		listenProxy = []Proxy{newHttpProxy(defaultListenAddr, "")}
 	}
 	if config.AddrInPAC != nil {
-		if len(config.AddrInPAC) != len(config.ListenAddr) {
-			Fatal("Number of listen addresses and addr in PAC not match.")
+		if len(config.AddrInPAC) != len(listenProxy) {
+			Fatal("number of listen addresses and addr in PAC not match")
 		}
 	} else {
-		// empty string in addrInPac means same as listenAddr
-		config.AddrInPAC = make([]string, len(config.ListenAddr))
+		// empty string in addrInPAC means same as listenAddr
+		config.AddrInPAC = make([]string, len(listenProxy))
 	}
 	if len(parentProxy) <= 1 {
 		config.LoadBalance = loadBalanceBackup

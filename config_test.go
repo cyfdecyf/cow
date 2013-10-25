@@ -6,15 +6,20 @@ import (
 
 func TestParseListen(t *testing.T) {
 	parser := configParser{}
-	parser.ParseListen("127.0.0.1:8888")
-	if config.ListenAddr[0] != "127.0.0.1:8888" {
-		t.Error("single listen address parse error")
+	parser.ParseListen("http://127.0.0.1:8888")
+
+	hp, ok := listenProxy[0].(*httpProxy)
+	if !ok {
+		t.Error("listen http proxy type wrong")
+	}
+	if hp.addr != "127.0.0.1:8888" {
+		t.Error("listen http server address parse error")
 	}
 
-	config.ListenAddr = nil
-	parser.ParseListen("127.0.0.1:8888, 127.0.0.1:7777")
-	if len(config.ListenAddr) != 2 {
-		t.Error("multiple listen address parse error")
+	parser.ParseListen("http://127.0.0.1:8888 1.2.3.4:5678")
+	hp, ok = listenProxy[1].(*httpProxy)
+	if hp.addrInPAC != "1.2.3.4:5678" {
+		t.Error("listen http addrInPAC parse error")
 	}
 }
 

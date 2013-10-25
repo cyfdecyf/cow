@@ -144,7 +144,12 @@ var pacHeader = []byte("HTTP/1.1 200 OK\r\nServer: cow-proxy\r\n" +
 func genPAC(c *clientConn) []byte {
 	buf := new(bytes.Buffer)
 
-	proxyAddr := c.proxy.addrInPAC
+	hproxy, ok := c.proxy.(*httpProxy)
+	if !ok {
+		panic("sendPAC should only be called for http proxy")
+	}
+
+	proxyAddr := hproxy.addrInPAC
 	if proxyAddr == "" {
 		host, _, err := net.SplitHostPort(c.LocalAddr().String())
 		// This is the only check to split host port on tcp addr's string
@@ -153,7 +158,7 @@ func genPAC(c *clientConn) []byte {
 		if err != nil {
 			panic("split host port on local address error")
 		}
-		proxyAddr = net.JoinHostPort(host, c.proxy.port)
+		proxyAddr = net.JoinHostPort(host, hproxy.port)
 	}
 
 	dl := getDirectList()

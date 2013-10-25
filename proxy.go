@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -60,12 +61,6 @@ func isErrRetry(err error) bool {
 	return ok
 }
 
-type Proxy struct {
-	addr      string // listen address, contains port
-	port      string
-	addrInPAC string // proxy server address to use in PAC
-}
-
 var zeroTime time.Time
 
 type directConn struct {
@@ -99,7 +94,7 @@ type clientConn struct {
 	net.Conn // connection to the proxy client
 	bufRd    *bufio.Reader
 	buf      []byte // buffer for the buffered reader
-	proxy    *Proxy
+	proxy    Proxy
 }
 
 var (
@@ -108,30 +103,56 @@ var (
 	errAuthRequired  = errors.New("authentication requried")
 )
 
-func NewProxy(addr, addrInPAC string) *Proxy {
+type Proxy interface {
+	Serve(*sync.WaitGroup)
+	Addr() string
+	genConfig() string // for upgrading config
+}
+
+var listenProxy []Proxy
+
+type httpProxy struct {
+	addr      string // listen address, contains port
+	port      string // for use when generating PAC
+	addrInPAC string // proxy server address to use in PAC
+}
+
+func newHttpProxy(addr, addrInPAC string) *httpProxy {
 	_, port, err := net.SplitHostPort(addr)
 	if err != nil {
 		panic("proxy addr" + err.Error())
 	}
-	return &Proxy{addr: addr, port: port, addrInPAC: addrInPAC}
+	return &httpProxy{addr, port, addrInPAC}
 }
 
-func (py *Proxy) Serve(done chan byte) {
+func (proxy *httpProxy) genConfig() string {
+	if proxy.addrInPAC != "" {
+		return fmt.Sprintf("listen = http://%s %s", proxy.addr, proxy.addrInPAC)
+	} else {
+		return fmt.Sprintf("listen = http://%s", proxy.addr)
+	}
+}
+
+func (proxy *httpProxy) Addr() string {
+	return proxy.addr
+}
+
+func (proxy *httpProxy) Serve(wg *sync.WaitGroup) {
 	defer func() {
-		done <- 1
+		wg.Done()
 	}()
-	ln, err := net.Listen("tcp", py.addr)
+	ln, err := net.Listen("tcp", proxy.addr)
 	if err != nil {
 		fmt.Println("Server creation failed:", err)
 		return
 	}
-	host, _, _ := net.SplitHostPort(py.addr)
+	host, _, _ := net.SplitHostPort(proxy.addr)
 	if host == "" || host == "0.0.0.0" {
-		info.Printf("COW %s proxy address %s, PAC url http://<hostip>:%s/pac\n", version, py.addr, py.port)
-	} else if py.addrInPAC == "" {
-		info.Printf("COW %s proxy address %s, PAC url http://%s/pac\n", version, py.addr, py.addr)
+		info.Printf("COW %s http proxy address %s, PAC url http://<hostip>:%s/pac\n", version, proxy.addr, proxy.port)
+	} else if proxy.addrInPAC == "" {
+		info.Printf("COW %s http proxy address %s, PAC url http://%s/pac\n", version, proxy.addr, proxy.addr)
 	} else {
-		info.Printf("COW %s proxy address %s, PAC url http://%s/pac\n", version, py.addr, py.addrInPAC)
+		info.Printf("COW %s http proxy address %s, PAC url http://%s/pac\n", version, proxy.addr, proxy.addrInPAC)
 	}
 
 	for {
@@ -140,12 +161,12 @@ func (py *Proxy) Serve(done chan byte) {
 			debug.Printf("proxy(%s) accept %v\n", ln.Addr(), err)
 			continue
 		}
-		c := newClientConn(conn, py)
+		c := newClientConn(conn, proxy)
 		go c.serve()
 	}
 }
 
-func newClientConn(cli net.Conn, proxy *Proxy) *clientConn {
+func newClientConn(cli net.Conn, proxy Proxy) *clientConn {
 	buf := httpBuf.Get()
 	c := &clientConn{
 		Conn:  cli,
@@ -186,7 +207,8 @@ func initSelfListenAddr() {
 	selfListenAddr = make(map[string]bool)
 	// Add empty host to self listen addr, in case there's no Host header.
 	selfListenAddr[""] = true
-	for _, addr := range config.ListenAddr {
+	for _, proxy := range listenProxy {
+		addr := proxy.Addr()
 		// Handle wildcard address.
 		if addr[0] == ':' || strings.HasPrefix(addr, "0.0.0.0") {
 			for _, ad := range hostAddr() {
@@ -230,6 +252,9 @@ func isSelfRequest(r *Request) bool {
 }
 
 func (c *clientConn) serveSelfURL(r *Request) (err error) {
+	if _, ok := c.proxy.(*httpProxy); !ok {
+		goto end
+	}
 	if r.Method != "GET" {
 		goto end
 	}
