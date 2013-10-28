@@ -622,6 +622,8 @@ func upgradeConfig(rc string, lines []string) {
 		case "httpUserPasswd", "shadowPasswd", "shadowMethod":
 			// just comment out
 			w.WriteString("#" + line + newLine)
+		case "proxy":
+			proxyId++
 		default:
 			w.WriteString(line + newLine)
 		}
