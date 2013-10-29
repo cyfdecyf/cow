@@ -8,14 +8,19 @@ if ! go build; then
 fi
 
 PROXY_ADDR=127.0.0.1:7788
+COW_ADDR=127.0.0.1:8899
 
 if [[ -z "$TRAVIS" ]]; then
-    ./cow -rc ~/.cow/debugrc -listen=$PROXY_ADDR &
-else
-    # on travis
-    ./cow -rc ./script/debugrc -listen=$PROXY_ADDR &
+    RCDIR=~/.cow/
+else # on travis
+    RCDIR=./script/
 fi
+
+./cow -rc $RCDIR/debugrc -listen=cow://aes-128-cfb:foobar@$COW_ADDR &
+parent_pid=$!
+./cow -rc ./script/httprc -listen=http://$PROXY_ADDR &
 cow_pid=$!
+
 sleep 1
 
 test_get() {
@@ -76,5 +81,6 @@ if [[ -z $TRAVIS ]]; then
     test_get https://www.alipay.com "<html>"
 fi
 
+kill -SIGTERM $parent_pid
 kill -SIGTERM $cow_pid
 exit 0

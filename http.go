@@ -590,8 +590,7 @@ func parseRequest(c *clientConn, r *Request) (err error) {
 	// debug.Printf("Request line %s", s)
 
 	r.reset()
-	// for http parent proxy, store the original request line
-	if config.hasHttpParent {
+	if config.saveReqLine {
 		r.raw.Write(s)
 		r.reqLnStart = len(s)
 	}
@@ -612,7 +611,7 @@ func parseRequest(c *clientConn, r *Request) (err error) {
 	r.Header.Host = r.URL.HostPort // If Header.Host is set, parseHost will just return.
 	if r.Method == "CONNECT" {
 		r.isConnect = true
-		if bool(dbgRq) && verbose && !config.hasHttpParent {
+		if bool(dbgRq) && verbose && !config.saveReqLine {
 			r.raw.Write(s)
 		}
 	} else {

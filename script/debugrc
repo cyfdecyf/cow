@@ -1,2 +1,1 @@
-listen = http://127.0.0.1:7788
-alwaysProxy = false
+listen = cow://aes-128-cfb:foobar@127.0.0.1:8899

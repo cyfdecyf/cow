@@ -91,6 +91,8 @@ func printParentProxy() {
 			debug.Println("\thttp parent: ", pc.server)
 		case *socksParent:
 			debug.Println("\tsocks parent: ", pc.server)
+		case *cowParent:
+			debug.Println("\tcow parent: ", pc.server)
 		}
 	}
 }

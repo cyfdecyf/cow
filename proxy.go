@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/cyfdecyf/bufio"
 	"github.com/cyfdecyf/leakybuf"
+	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
 	"io"
 	"net"
 	"strings"
@@ -111,6 +112,10 @@ type Proxy interface {
 
 var listenProxy []Proxy
 
+func addListenProxy(p Proxy) {
+	listenProxy = append(listenProxy, p)
+}
+
 type httpProxy struct {
 	addr      string // listen address, contains port
 	port      string // for use when generating PAC
@@ -137,31 +142,83 @@ func (proxy *httpProxy) Addr() string {
 	return proxy.addr
 }
 
-func (proxy *httpProxy) Serve(wg *sync.WaitGroup) {
+func (hp *httpProxy) Serve(wg *sync.WaitGroup) {
 	defer func() {
 		wg.Done()
 	}()
-	ln, err := net.Listen("tcp", proxy.addr)
+	ln, err := net.Listen("tcp", hp.addr)
 	if err != nil {
-		fmt.Println("Server creation failed:", err)
+		fmt.Println("listen http failed:", err)
 		return
 	}
-	host, _, _ := net.SplitHostPort(proxy.addr)
+	host, _, _ := net.SplitHostPort(hp.addr)
+	var pacURL string
 	if host == "" || host == "0.0.0.0" {
-		info.Printf("COW %s http proxy address %s, PAC url http://<hostip>:%s/pac\n", version, proxy.addr, proxy.port)
-	} else if proxy.addrInPAC == "" {
-		info.Printf("COW %s http proxy address %s, PAC url http://%s/pac\n", version, proxy.addr, proxy.addr)
+		pacURL = fmt.Sprintf("http://<hostip>:%s/pac", hp.port)
+	} else if hp.addrInPAC == "" {
+		pacURL = fmt.Sprintf("http://%s/pac", hp.addr)
 	} else {
-		info.Printf("COW %s http proxy address %s, PAC url http://%s/pac\n", version, proxy.addr, proxy.addrInPAC)
+		pacURL = fmt.Sprintf("http://%s/pac\n", hp.addrInPAC)
 	}
+	info.Printf("COW %s listen http %s, PAC url %s\n", version, hp.addr, pacURL)
 
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
-			debug.Printf("proxy(%s) accept %v\n", ln.Addr(), err)
+			errl.Printf("http proxy(%s) accept %v\n", ln.Addr(), err)
 			continue
 		}
-		c := newClientConn(conn, proxy)
+		c := newClientConn(conn, hp)
+		go c.serve()
+	}
+}
+
+type cowProxy struct {
+	addr   string
+	method string
+	passwd string
+	cipher *ss.Cipher
+}
+
+func newCowProxy(method, passwd, addr string) *cowProxy {
+	cipher, err := ss.NewCipher(method, passwd)
+	if err != nil {
+		Fatal("can't initialize cow proxy server", err)
+	}
+	return &cowProxy{addr, method, passwd, cipher}
+}
+
+func (cp *cowProxy) genConfig() string {
+	if cp.method == "" {
+		return fmt.Sprintf("listen = cow://table:%s@%s", cp.passwd, cp.addr)
+	} else {
+		return fmt.Sprintf("listen = cow://%s:%s@%s", cp.method, cp.passwd, cp.addr)
+	}
+}
+
+func (cp *cowProxy) Addr() string {
+	return cp.addr
+}
+
+func (cp *cowProxy) Serve(wg *sync.WaitGroup) {
+	defer func() {
+		wg.Done()
+	}()
+	ln, err := net.Listen("tcp", cp.addr)
+	if err != nil {
+		fmt.Println("listen cow failed:", err)
+		return
+	}
+	info.Printf("COW %s cow proxy address %s\n", version, cp.addr)
+
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			errl.Printf("cow proxy(%s) accept %v\n", ln.Addr(), err)
+			continue
+		}
+		ssConn := ss.NewConn(conn, cp.cipher.Copy())
+		c := newClientConn(ssConn, cp)
 		go c.serve()
 	}
 }
@@ -339,6 +396,10 @@ func (c *clientConn) serve() {
 	var err error
 
 	var authed bool
+	// For cow proxy server, authentication is done by matching password.
+	if _, ok := c.proxy.(*cowProxy); ok {
+		authed = true
+	}
 
 	defer func() {
 		r.releaseBuf()
@@ -1085,12 +1146,8 @@ func (sv *serverConn) sendHTTPProxyRequestHeader(r *Request, c *clientConn) (err
 		return c.handleServerWriteError(r, sv, err,
 			"send proxy request line to http parent")
 	}
-	// Add authorization header for parent http proxy
-	hc, ok := sv.Conn.(httpConn)
-	if !ok {
-		panic("must be http parent connection")
-	}
-	if hc.parent.authHeader != nil {
+	if hc, ok := sv.Conn.(httpConn); ok && hc.parent.authHeader != nil {
+		// Add authorization header for parent http proxy
 		if _, err = sv.Write(hc.parent.authHeader); err != nil {
 			return c.handleServerWriteError(r, sv, err,
 				"send proxy authorization header to http parent")
@@ -1111,8 +1168,8 @@ func (sv *serverConn) sendHTTPProxyRequestHeader(r *Request, c *clientConn) (err
 
 func (sv *serverConn) sendRequestHeader(r *Request, c *clientConn) (err error) {
 	// Send request to the server
-	_, isHttpConn := sv.Conn.(httpConn)
-	if isHttpConn {
+	switch sv.Conn.(type) {
+	case httpConn, cowConn:
 		return sv.sendHTTPProxyRequestHeader(r, c)
 	}
 	/*
