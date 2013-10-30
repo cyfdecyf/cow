@@ -57,7 +57,6 @@ type Config struct {
 	ReadTimeout time.Duration
 
 	Core         int
-	AddrInPAC    []string // remove this once upgrade to version 1.0
 	DetectSSLErr bool
 
 	// not configurable in config file
@@ -327,18 +326,23 @@ func (p configParser) ParseListen(val string) {
 	parser := reflect.ValueOf(listenParser{})
 	zeroMethod := reflect.Value{}
 
+	var protocol, server string
 	arr := strings.Split(val, "://")
-	if len(arr) != 2 {
-		Fatal("listen has no protocol specified:", val)
+	if len(arr) == 1 {
+		protocol = "http"
+		server = val
+		configNeedUpgrade = true
+	} else {
+		protocol = arr[0]
+		server = arr[1]
 	}
-	protocol := arr[0]
 
 	methodName := "Listen" + strings.ToUpper(protocol[0:1]) + protocol[1:]
 	method := parser.MethodByName(methodName)
 	if method == zeroMethod {
 		Fatalf("no such listen protocol \"%s\"\n", arr[0])
 	}
-	args := []reflect.Value{reflect.ValueOf(arr[1])}
+	args := []reflect.Value{reflect.ValueOf(server)}
 	method.Call(args)
 }
 
@@ -347,8 +351,8 @@ func (p configParser) ParseLogFile(val string) {
 }
 
 func (p configParser) ParseAddrInPAC(val string) {
+	configNeedUpgrade = true
 	arr := strings.Split(val, ",")
-	config.AddrInPAC = make([]string, len(arr))
 	for i, s := range arr {
 		if s == "" {
 			continue
@@ -361,7 +365,11 @@ func (p configParser) ParseAddrInPAC(val string) {
 		if host == "0.0.0.0" {
 			Fatal("can't use 0.0.0.0 as proxy address in PAC")
 		}
-		config.AddrInPAC[i] = s
+		if hp, ok := listenProxy[i].(*httpProxy); ok {
+			hp.addrInPAC = s
+		} else {
+			Fatal("can't specify address in PAC for non http proxy")
+		}
 	}
 }
 
@@ -625,6 +633,7 @@ func upgradeConfig(rc string, lines []string) {
 
 	// Upgrade config.
 	proxyId := 0
+	listenId := 0
 	w := bufio.NewWriter(f)
 	for _, line := range lines {
 		line := strings.TrimSpace(line)
@@ -637,18 +646,24 @@ func upgradeConfig(rc string, lines []string) {
 		key := strings.TrimSpace(v[0])
 
 		switch key {
+		case "listen":
+			listen := listenProxy[listenId]
+			listenId++
+			w.WriteString(listen.genConfig() + newLine)
+			// comment out original
+			w.WriteString("#" + line + newLine)
 		case "httpParent", "shadowSocks", "socksParent":
 			parent := parentProxy[proxyId]
 			proxyId++
-			// write out new proxy syntax
 			w.WriteString(parent.genConfig() + newLine)
 			// comment out original
 			w.WriteString("#" + line + newLine)
-		case "httpUserPasswd", "shadowPasswd", "shadowMethod":
+		case "httpUserPasswd", "shadowPasswd", "shadowMethod", "addrInPAC":
 			// just comment out
 			w.WriteString("#" + line + newLine)
 		case "proxy":
 			proxyId++
+			w.WriteString(line + newLine)
 		default:
 			w.WriteString(line + newLine)
 		}
@@ -700,14 +715,6 @@ func checkConfig() {
 	// listenAddr must be handled first, as addrInPAC dependends on this.
 	if listenProxy == nil {
 		listenProxy = []Proxy{newHttpProxy(defaultListenAddr, "")}
-	}
-	if config.AddrInPAC != nil {
-		if len(config.AddrInPAC) != len(listenProxy) {
-			Fatal("number of listen addresses and addr in PAC not match")
-		}
-	} else {
-		// empty string in addrInPAC means same as listenAddr
-		config.AddrInPAC = make([]string, len(listenProxy))
 	}
 	if len(parentProxy) <= 1 {
 		config.LoadBalance = loadBalanceBackup
