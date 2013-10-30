@@ -158,7 +158,7 @@ func (hp *httpProxy) Serve(wg *sync.WaitGroup) {
 	} else if hp.addrInPAC == "" {
 		pacURL = fmt.Sprintf("http://%s/pac", hp.addr)
 	} else {
-		pacURL = fmt.Sprintf("http://%s/pac\n", hp.addrInPAC)
+		pacURL = fmt.Sprintf("http://%s/pac", hp.addrInPAC)
 	}
 	info.Printf("COW %s listen http %s, PAC url %s\n", version, hp.addr, pacURL)
 
@@ -1092,24 +1092,21 @@ func (sv *serverConn) doConnect(r *Request, c *clientConn) (err error) {
 	r.state = rsCreated
 
 	_, isHttpConn := sv.Conn.(httpConn)
-	if isHttpConn {
+	_, isCowConn := sv.Conn.(cowConn)
+	if isHttpConn || isCowConn {
 		if debug {
-			debug.Printf("cli(%s) send CONNECT request to http parent\n", c.RemoteAddr())
+			debug.Printf("cli(%s) send CONNECT request to parent\n", c.RemoteAddr())
 		}
 		if err = sv.sendHTTPProxyRequestHeader(r, c); err != nil {
-			if debug {
-				debug.Printf("cli(%s) error send CONNECT request to http proxy server: %v\n",
-					c.RemoteAddr(), err)
-			}
+			debug.Printf("cli(%s) error send CONNECT request to parent: %v\n",
+				c.RemoteAddr(), err)
 			return err
 		}
 	} else if !r.isRetry() {
 		// debug.Printf("send connection confirmation to %s->%s\n", c.RemoteAddr(), r.URL.HostPort)
 		if _, err = c.Write(connEstablished); err != nil {
-			if debug {
-				debug.Printf("cli(%s) error send 200 Connecion established: %v\n",
-					c.RemoteAddr(), err)
-			}
+			debug.Printf("cli(%s) error send 200 Connecion established: %v\n",
+				c.RemoteAddr(), err)
 			return err
 		}
 	}
