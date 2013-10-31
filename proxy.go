@@ -256,6 +256,21 @@ func (c *clientConn) Close() {
 	c.Conn.Close()
 }
 
+func (c *clientConn) setReadTimeout(msg string) {
+	// Always keep connection alive for cow conn from client for more reuse.
+	// For other client connection, close the connection.
+	if _, ok := c.Conn.(cowConn); !ok {
+		// make actual timeout a little longer than keep-alive value sent to client
+		setConnReadTimeout(c.Conn, clientConnTimeout+2*time.Second, msg)
+	}
+}
+
+func (c *clientConn) unsetReadTimeout(msg string) {
+	if _, ok := c.Conn.(cowConn); !ok {
+		unsetConnReadTimeout(c.Conn, msg)
+	}
+}
+
 // Listen address as key, not including port part.
 var selfListenAddr map[string]bool
 
@@ -414,9 +429,7 @@ func (c *clientConn) serve() {
 		}
 
 		if err = parseRequest(c, &r); err != nil {
-			if debug {
-				debug.Printf("cli(%s) parse request %v\n", c.RemoteAddr(), err)
-			}
+			debug.Printf("cli(%s) parse request %v\n", c.RemoteAddr(), err)
 			if err == io.EOF || isErrConnReset(err) {
 				return
 			}
@@ -868,14 +881,14 @@ func (sv *serverConn) maybeFake() bool {
 
 func setConnReadTimeout(cn net.Conn, d time.Duration, msg string) {
 	if err := cn.SetReadDeadline(time.Now().Add(d)); err != nil {
-		errl.Println("Set readtimeout:", msg, err)
+		errl.Println("set readtimeout:", msg, err)
 	}
 }
 
 func unsetConnReadTimeout(cn net.Conn, msg string) {
 	if err := cn.SetReadDeadline(zeroTime); err != nil {
 		// It's possible that conn has been closed, so use debug log.
-		debug.Println("Unset readtimeout:", msg, err)
+		debug.Println("unset readtimeout:", msg, err)
 	}
 }
 
@@ -901,6 +914,10 @@ func (sv *serverConn) maybeSSLErr(cliStart time.Time) bool {
 }
 
 func (sv *serverConn) mayBeClosed() bool {
+	if _, ok := sv.Conn.(cowConn); ok {
+		debug.Println("cow parent would keep alive")
+		return false
+	}
 	return time.Now().After(sv.willCloseOn)
 }
 
