@@ -1,8 +1,28 @@
-# 代理服务器监听地址，用逗号分隔多个地址，或者重复多次来指定多个地址
-# 0.0.0.0 表示监听本机所有 IP 地址
-# PAC url 为 http://<listen>/pac，其中的代理服务器地址会根据 client 访问 ip 正确生成
-# 如果使用端口映射来将 COW 的服务提供到外网，请参考高级选项中的 addrInPAC 选项
-listen = 127.0.0.1:7777
+# 配置文件中 # 开头的行为注释
+#
+# 代理服务器监听地址，重复多次来指定多个监听地址，语法：
+#
+#   listen = protocol://[optional@]server_address:server_port
+#
+# 支持的 protocol 如下：
+#
+# HTTP (提供 http 代理):
+#   listen = http://127.0.0.1:7777
+#
+#   上面的例子中，cow 生成的 PAC url 为 http://127.0.0.1:7777/pac
+#
+# cow (需两个 cow 服务器配合使用):
+#   listen = cow://encrypt_method:password@1.2.3.4:5678
+#
+#   若 1.2.3.4:5678 在国外，位于国内的 cow 配置其为二级代理后，两个 cow 之间可以
+#   通过加密连接传输 http 代理流量。目前的加密采用与 shadowsocks 相同的方式。
+#
+# 其他说明：
+# - 若 server_address 为 0.0.0.0，监听本机所有 IP 地址
+# - 可以用如下语法指定 PAC 中返回的代理服务器地址（当使用端口映射将 http 代理提供给外网时使用）
+#   listen = http://127.0.0.1:7777 1.2.3.4:5678
+#
+listen = http://127.0.0.1:7777
 
 # 日志文件路径，如不指定则输出到 stdout
 #logFile =
@@ -28,7 +48,7 @@ listen = 127.0.0.1:7777
 #
 #   proxy = protocol://[authinfo@]server:port
 #
-# 重复使用 proxy 多次指定多个二级代理，backup 策略将按照二级代理出现的顺序来使用。
+# 重复使用 proxy 多次指定多个二级代理，backup 策略将按照二级代理出现的顺序来使用
 #
 # 目前支持的二级代理及配置举例：
 #
@@ -42,12 +62,18 @@ listen = 127.0.0.1:7777
 #   用户认证信息为可选项
 #
 # shadowsocks:
-#   proxy = ss://method:password@1.2.3.4:8388
+#   proxy = ss://encrypt_method:password@1.2.3.4:8388
 #
-#   authinof 中指定加密方法和密码，支持的 method 如下：
+#   authinfo 中指定加密方法和密码，所有支持的加密方法如下：
 #     aes-128-cfb, aes-192-cfb, aes-256-cfb,
-#     bf-cfb, cast5-cfb, des-cfb,
-#     rc4, table
+#     bf-cfb, cast5-cfb, des-cfb
+#   推荐使用 aes-128-cfb
+#
+# cow:
+#   proxy = cow://method:passwd@1.2.3.4:4321
+#
+#   authinfo 与 shadowsocks 相同
+
 
 #############################
 # 执行 ssh 命令创建 SOCKS5 代理
@@ -112,10 +138,3 @@ listen = 127.0.0.1:7777
 # （Chrome 遇到 SSL 错误会直接关闭连接，而不是让用户选择是否继续）
 # 可能将可直连网站误判为被墙网站，当 GFW 进行 SSL 中间人攻击时可以考虑使用
 #detectSSLErr = false
-
-# 如果使用端口映射，可用下列选项指定对应 listen ip 地址提供的 PAC 中代理服务器的地址
-# 此选项中地址数量需跟 listen 中地址数量一致，可用空字符串表示与 listen ip 一致
-# 例如，下面例子中，访问 192.168.1.1:9999 得到的 PAC 中的代理地址为 2.2.2.2:3456
-#     listen = 192.168.1.1:8888, 192.168.1.1:9999
-#     addrInPAC = , 2.2.2.2:3456
-#addrInPAC = 127.0.0.1:7777

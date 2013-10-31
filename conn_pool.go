@@ -1,4 +1,4 @@
-// Shared server connections between different clients.
+// Share server connections between different clients.
 
 package main
 
@@ -20,7 +20,12 @@ type ConnPool struct {
 
 var connPool = &ConnPool{
 	idleConn: map[string]chan *serverConn{},
-	muxConn:  make(chan *serverConn, 35),
+	muxConn:  make(chan *serverConn, maxServerConnCnt*3),
+}
+
+func init() {
+	// make sure hostPort here won't match any actual hostPort
+	go closeStaleServerConn(connPool.muxConn, "muxConn")
 }
 
 func getConnFromChan(ch chan *serverConn) (sv *serverConn) {
@@ -81,8 +86,8 @@ func (cp *ConnPool) Get(hostPort string) (sv *serverConn) {
 func (cp *ConnPool) Put(sv *serverConn) {
 	// Multiplexing connections.
 	switch sv.Conn.(type) {
-	case httpConn:
-		putConnToChan(sv, cp.muxConn, "mux")
+	case httpConn, cowConn:
+		putConnToChan(sv, cp.muxConn, "muxConn")
 		return
 	}
 
@@ -135,12 +140,15 @@ done:
 					break cleanup
 				}
 			default:
-				// no more connection in this channel
-				// remove the channel from the map
-				connPool.Lock()
-				delete(connPool.idleConn, hostPort)
-				connPool.Unlock()
-				debug.Printf("connPool channel %s: removed\n", hostPort)
+				// No more connection in this channel, remove the channel from the map.
+				// Note: muxConn is not in idleConn, though delete would be a no-op,
+				// it has to acquire the lock.
+				if _, ok := connPool.idleConn[hostPort]; ok {
+					debug.Printf("connPool channel %s: remove\n", hostPort)
+					connPool.Lock()
+					delete(connPool.idleConn, hostPort)
+					connPool.Unlock()
+				}
 				break done
 			}
 		}

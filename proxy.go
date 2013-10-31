@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"github.com/cyfdecyf/bufio"
 	"github.com/cyfdecyf/leakybuf"
+	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
 	"io"
 	"net"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -60,12 +62,6 @@ func isErrRetry(err error) bool {
 	return ok
 }
 
-type Proxy struct {
-	addr      string // listen address, contains port
-	port      string
-	addrInPAC string // proxy server address to use in PAC
-}
-
 var zeroTime time.Time
 
 type directConn struct {
@@ -99,7 +95,7 @@ type clientConn struct {
 	net.Conn // connection to the proxy client
 	bufRd    *bufio.Reader
 	buf      []byte // buffer for the buffered reader
-	proxy    *Proxy
+	proxy    Proxy
 }
 
 var (
@@ -108,44 +104,126 @@ var (
 	errAuthRequired  = errors.New("authentication requried")
 )
 
-func NewProxy(addr, addrInPAC string) *Proxy {
+type Proxy interface {
+	Serve(*sync.WaitGroup)
+	Addr() string
+	genConfig() string // for upgrading config
+}
+
+var listenProxy []Proxy
+
+func addListenProxy(p Proxy) {
+	listenProxy = append(listenProxy, p)
+}
+
+type httpProxy struct {
+	addr      string // listen address, contains port
+	port      string // for use when generating PAC
+	addrInPAC string // proxy server address to use in PAC
+}
+
+func newHttpProxy(addr, addrInPAC string) *httpProxy {
 	_, port, err := net.SplitHostPort(addr)
 	if err != nil {
 		panic("proxy addr" + err.Error())
 	}
-	return &Proxy{addr: addr, port: port, addrInPAC: addrInPAC}
+	return &httpProxy{addr, port, addrInPAC}
 }
 
-func (py *Proxy) Serve(done chan byte) {
+func (proxy *httpProxy) genConfig() string {
+	if proxy.addrInPAC != "" {
+		return fmt.Sprintf("listen = http://%s %s", proxy.addr, proxy.addrInPAC)
+	} else {
+		return fmt.Sprintf("listen = http://%s", proxy.addr)
+	}
+}
+
+func (proxy *httpProxy) Addr() string {
+	return proxy.addr
+}
+
+func (hp *httpProxy) Serve(wg *sync.WaitGroup) {
 	defer func() {
-		done <- 1
+		wg.Done()
 	}()
-	ln, err := net.Listen("tcp", py.addr)
+	ln, err := net.Listen("tcp", hp.addr)
 	if err != nil {
-		fmt.Println("Server creation failed:", err)
+		fmt.Println("listen http failed:", err)
 		return
 	}
-	host, _, _ := net.SplitHostPort(py.addr)
+	host, _, _ := net.SplitHostPort(hp.addr)
+	var pacURL string
 	if host == "" || host == "0.0.0.0" {
-		info.Printf("COW %s proxy address %s, PAC url http://<hostip>:%s/pac\n", version, py.addr, py.port)
-	} else if py.addrInPAC == "" {
-		info.Printf("COW %s proxy address %s, PAC url http://%s/pac\n", version, py.addr, py.addr)
+		pacURL = fmt.Sprintf("http://<hostip>:%s/pac", hp.port)
+	} else if hp.addrInPAC == "" {
+		pacURL = fmt.Sprintf("http://%s/pac", hp.addr)
 	} else {
-		info.Printf("COW %s proxy address %s, PAC url http://%s/pac\n", version, py.addr, py.addrInPAC)
+		pacURL = fmt.Sprintf("http://%s/pac", hp.addrInPAC)
 	}
+	info.Printf("COW %s listen http %s, PAC url %s\n", version, hp.addr, pacURL)
 
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
-			debug.Printf("proxy(%s) accept %v\n", ln.Addr(), err)
+			errl.Printf("http proxy(%s) accept %v\n", ln.Addr(), err)
 			continue
 		}
-		c := newClientConn(conn, py)
+		c := newClientConn(conn, hp)
 		go c.serve()
 	}
 }
 
-func newClientConn(cli net.Conn, proxy *Proxy) *clientConn {
+type cowProxy struct {
+	addr   string
+	method string
+	passwd string
+	cipher *ss.Cipher
+}
+
+func newCowProxy(method, passwd, addr string) *cowProxy {
+	cipher, err := ss.NewCipher(method, passwd)
+	if err != nil {
+		Fatal("can't initialize cow proxy server", err)
+	}
+	return &cowProxy{addr, method, passwd, cipher}
+}
+
+func (cp *cowProxy) genConfig() string {
+	if cp.method == "" {
+		return fmt.Sprintf("listen = cow://table:%s@%s", cp.passwd, cp.addr)
+	} else {
+		return fmt.Sprintf("listen = cow://%s:%s@%s", cp.method, cp.passwd, cp.addr)
+	}
+}
+
+func (cp *cowProxy) Addr() string {
+	return cp.addr
+}
+
+func (cp *cowProxy) Serve(wg *sync.WaitGroup) {
+	defer func() {
+		wg.Done()
+	}()
+	ln, err := net.Listen("tcp", cp.addr)
+	if err != nil {
+		fmt.Println("listen cow failed:", err)
+		return
+	}
+	info.Printf("COW %s cow proxy address %s\n", version, cp.addr)
+
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			errl.Printf("cow proxy(%s) accept %v\n", ln.Addr(), err)
+			continue
+		}
+		ssConn := ss.NewConn(conn, cp.cipher.Copy())
+		c := newClientConn(ssConn, cp)
+		go c.serve()
+	}
+}
+
+func newClientConn(cli net.Conn, proxy Proxy) *clientConn {
 	buf := httpBuf.Get()
 	c := &clientConn{
 		Conn:  cli,
@@ -178,6 +256,21 @@ func (c *clientConn) Close() {
 	c.Conn.Close()
 }
 
+func (c *clientConn) setReadTimeout(msg string) {
+	// Always keep connection alive for cow conn from client for more reuse.
+	// For other client connection, close the connection.
+	if _, ok := c.Conn.(cowConn); !ok {
+		// make actual timeout a little longer than keep-alive value sent to client
+		setConnReadTimeout(c.Conn, clientConnTimeout+2*time.Second, msg)
+	}
+}
+
+func (c *clientConn) unsetReadTimeout(msg string) {
+	if _, ok := c.Conn.(cowConn); !ok {
+		unsetConnReadTimeout(c.Conn, msg)
+	}
+}
+
 // Listen address as key, not including port part.
 var selfListenAddr map[string]bool
 
@@ -186,7 +279,8 @@ func initSelfListenAddr() {
 	selfListenAddr = make(map[string]bool)
 	// Add empty host to self listen addr, in case there's no Host header.
 	selfListenAddr[""] = true
-	for _, addr := range config.ListenAddr {
+	for _, proxy := range listenProxy {
+		addr := proxy.Addr()
 		// Handle wildcard address.
 		if addr[0] == ':' || strings.HasPrefix(addr, "0.0.0.0") {
 			for _, ad := range hostAddr() {
@@ -230,6 +324,9 @@ func isSelfRequest(r *Request) bool {
 }
 
 func (c *clientConn) serveSelfURL(r *Request) (err error) {
+	if _, ok := c.proxy.(*httpProxy); !ok {
+		goto end
+	}
 	if r.Method != "GET" {
 		goto end
 	}
@@ -314,6 +411,10 @@ func (c *clientConn) serve() {
 	var err error
 
 	var authed bool
+	// For cow proxy server, authentication is done by matching password.
+	if _, ok := c.proxy.(*cowProxy); ok {
+		authed = true
+	}
 
 	defer func() {
 		r.releaseBuf()
@@ -328,9 +429,7 @@ func (c *clientConn) serve() {
 		}
 
 		if err = parseRequest(c, &r); err != nil {
-			if debug {
-				debug.Printf("cli(%s) parse request %v\n", c.RemoteAddr(), err)
-			}
+			debug.Printf("cli(%s) parse request %v\n", c.RemoteAddr(), err)
 			if err == io.EOF || isErrConnReset(err) {
 				return
 			}
@@ -782,14 +881,14 @@ func (sv *serverConn) maybeFake() bool {
 
 func setConnReadTimeout(cn net.Conn, d time.Duration, msg string) {
 	if err := cn.SetReadDeadline(time.Now().Add(d)); err != nil {
-		errl.Println("Set readtimeout:", msg, err)
+		errl.Println("set readtimeout:", msg, err)
 	}
 }
 
 func unsetConnReadTimeout(cn net.Conn, msg string) {
 	if err := cn.SetReadDeadline(zeroTime); err != nil {
 		// It's possible that conn has been closed, so use debug log.
-		debug.Println("Unset readtimeout:", msg, err)
+		debug.Println("unset readtimeout:", msg, err)
 	}
 }
 
@@ -815,6 +914,10 @@ func (sv *serverConn) maybeSSLErr(cliStart time.Time) bool {
 }
 
 func (sv *serverConn) mayBeClosed() bool {
+	if _, ok := sv.Conn.(cowConn); ok {
+		debug.Println("cow parent would keep alive")
+		return false
+	}
 	return time.Now().After(sv.willCloseOn)
 }
 
@@ -1006,24 +1109,21 @@ func (sv *serverConn) doConnect(r *Request, c *clientConn) (err error) {
 	r.state = rsCreated
 
 	_, isHttpConn := sv.Conn.(httpConn)
-	if isHttpConn {
+	_, isCowConn := sv.Conn.(cowConn)
+	if isHttpConn || isCowConn {
 		if debug {
-			debug.Printf("cli(%s) send CONNECT request to http parent\n", c.RemoteAddr())
+			debug.Printf("cli(%s) send CONNECT request to parent\n", c.RemoteAddr())
 		}
 		if err = sv.sendHTTPProxyRequestHeader(r, c); err != nil {
-			if debug {
-				debug.Printf("cli(%s) error send CONNECT request to http proxy server: %v\n",
-					c.RemoteAddr(), err)
-			}
+			debug.Printf("cli(%s) error send CONNECT request to parent: %v\n",
+				c.RemoteAddr(), err)
 			return err
 		}
 	} else if !r.isRetry() {
 		// debug.Printf("send connection confirmation to %s->%s\n", c.RemoteAddr(), r.URL.HostPort)
 		if _, err = c.Write(connEstablished); err != nil {
-			if debug {
-				debug.Printf("cli(%s) error send 200 Connecion established: %v\n",
-					c.RemoteAddr(), err)
-			}
+			debug.Printf("cli(%s) error send 200 Connecion established: %v\n",
+				c.RemoteAddr(), err)
 			return err
 		}
 	}
@@ -1060,12 +1160,8 @@ func (sv *serverConn) sendHTTPProxyRequestHeader(r *Request, c *clientConn) (err
 		return c.handleServerWriteError(r, sv, err,
 			"send proxy request line to http parent")
 	}
-	// Add authorization header for parent http proxy
-	hc, ok := sv.Conn.(httpConn)
-	if !ok {
-		panic("must be http parent connection")
-	}
-	if hc.parent.authHeader != nil {
+	if hc, ok := sv.Conn.(httpConn); ok && hc.parent.authHeader != nil {
+		// Add authorization header for parent http proxy
 		if _, err = sv.Write(hc.parent.authHeader); err != nil {
 			return c.handleServerWriteError(r, sv, err,
 				"send proxy authorization header to http parent")
@@ -1086,8 +1182,8 @@ func (sv *serverConn) sendHTTPProxyRequestHeader(r *Request, c *clientConn) (err
 
 func (sv *serverConn) sendRequestHeader(r *Request, c *clientConn) (err error) {
 	// Send request to the server
-	_, isHttpConn := sv.Conn.(httpConn)
-	if isHttpConn {
+	switch sv.Conn.(type) {
+	case httpConn, cowConn:
 		return sv.sendHTTPProxyRequestHeader(r, c)
 	}
 	/*

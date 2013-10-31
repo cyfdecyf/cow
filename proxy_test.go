@@ -53,7 +53,7 @@ func TestSendBodyChunked(t *testing.T) {
 }
 
 func TestInitSelfListenAddr(t *testing.T) {
-	config.ListenAddr = []string{"0.0.0.0:7777"}
+	listenProxy = []Proxy{newHttpProxy("0.0.0.0:7777", "")}
 	initSelfListenAddr()
 
 	testData := []struct {
@@ -77,7 +77,10 @@ func TestInitSelfListenAddr(t *testing.T) {
 	}
 
 	// Another set of listen addr.
-	config.ListenAddr = []string{"192.168.1.1:7777", "127.0.0.1:8888"}
+	listenProxy = []Proxy{
+		newHttpProxy("192.168.1.1:7777", ""),
+		newHttpProxy("127.0.0.1:8888", ""),
+	}
 	initSelfListenAddr()
 
 	testData2 := []struct {
