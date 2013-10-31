@@ -20,7 +20,7 @@ type ConnPool struct {
 
 var connPool = &ConnPool{
 	idleConn: map[string]chan *serverConn{},
-	muxConn:  make(chan *serverConn, maxServerConnCnt*3),
+	muxConn:  make(chan *serverConn, maxServerConnCnt*2),
 }
 
 func init() {
@@ -58,7 +58,7 @@ func putConnToChan(sv *serverConn, ch chan *serverConn, chname string) {
 	}
 }
 
-func (cp *ConnPool) Get(hostPort string) (sv *serverConn) {
+func (cp *ConnPool) Get(hostPort string, asDirect bool) (sv *serverConn) {
 	// Get from site specific connection first.
 	// Direct connection are all site specific, so must use site specific
 	// first to avoid using parent proxy for direct sites.
@@ -74,8 +74,12 @@ func (cp *ConnPool) Get(hostPort string) (sv *serverConn) {
 		return sv
 	}
 
-	// Get connection from multiplexing connection pool.
-	// All mulplexing connections are for blocked sites.
+	// All mulplexing connections are for blocked sites,
+	// so for direct sites we should stop here.
+	if asDirect {
+		return nil
+	}
+
 	sv = getConnFromChan(cp.muxConn)
 	if bool(debug) && sv != nil {
 		debug.Println("connPool mux: get conn", hostPort)

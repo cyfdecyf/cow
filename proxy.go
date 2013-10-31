@@ -684,12 +684,12 @@ func (c *clientConn) readResponse(sv *serverConn, r *Request, rp *Response) (err
 }
 
 func (c *clientConn) getServerConn(r *Request) (*serverConn, error) {
+	siteInfo := siteStat.GetVisitCnt(r.URL)
 	// For CONNECT method, always create new connection.
 	if r.isConnect {
-		return c.createServerConn(r)
+		return c.createServerConn(r, siteInfo)
 	}
-
-	sv := connPool.Get(r.URL.HostPort)
+	sv := connPool.Get(r.URL.HostPort, siteInfo.AsDirect())
 	if sv != nil {
 		if debug {
 			debug.Printf("cli(%s) connPool get %s\n", c.RemoteAddr(), r.URL.HostPort)
@@ -699,7 +699,7 @@ func (c *clientConn) getServerConn(r *Request) (*serverConn, error) {
 	if debug {
 		debug.Printf("cli(%s) connPool no conn %s", c.RemoteAddr(), r.URL.HostPort)
 	}
-	return c.createServerConn(r)
+	return c.createServerConn(r, siteInfo)
 }
 
 func connectDirect(url *URL, siteInfo *VisitCnt) (net.Conn, error) {
@@ -807,8 +807,7 @@ fail:
 	return nil, errPageSent
 }
 
-func (c *clientConn) createServerConn(r *Request) (*serverConn, error) {
-	siteInfo := siteStat.GetVisitCnt(r.URL)
+func (c *clientConn) createServerConn(r *Request, siteInfo *VisitCnt) (*serverConn, error) {
 	srvconn, err := c.connect(r, siteInfo)
 	if err != nil {
 		return nil, err
