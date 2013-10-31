@@ -257,16 +257,17 @@ func (c *clientConn) Close() {
 }
 
 func (c *clientConn) setReadTimeout(msg string) {
-	// Always keep connection alive for cow conn from client for more reuse.
-	// For other client connection, close the connection.
-	if _, ok := c.Conn.(cowConn); !ok {
+	// Always keep connections alive for cow conn from client for more reuse.
+	// For other client connections, set read timeout so we can close the
+	// connection after a period of idle to reduce number of open connections.
+	if _, ok := c.Conn.(*ss.Conn); !ok {
 		// make actual timeout a little longer than keep-alive value sent to client
 		setConnReadTimeout(c.Conn, clientConnTimeout+2*time.Second, msg)
 	}
 }
 
 func (c *clientConn) unsetReadTimeout(msg string) {
-	if _, ok := c.Conn.(cowConn); !ok {
+	if _, ok := c.Conn.(*ss.Conn); !ok {
 		unsetConnReadTimeout(c.Conn, msg)
 	}
 }
