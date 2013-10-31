@@ -92,7 +92,7 @@ func (vc *VisitCnt) AsTempBlocked() bool {
 }
 
 func (vc *VisitCnt) AsDirect() bool {
-	return (vc.Direct == userCnt) || (vc.Direct-vc.Blocked >= directDelta && vc.Blocked == 0)
+	return (vc.Blocked == 0) || (vc.Direct-vc.Blocked >= directDelta) || vc.AlwaysDirect()
 }
 
 func (vc *VisitCnt) AsBlocked() bool {
