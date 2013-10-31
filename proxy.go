@@ -528,7 +528,8 @@ func (c *clientConn) serve() {
 			return
 		}
 		// Put server connection to pool, so other clients can use it.
-		if rp.ConnectionKeepAlive {
+		_, isCowConn := sv.Conn.(cowConn)
+		if rp.ConnectionKeepAlive || isCowConn {
 			if debug {
 				debug.Printf("cli(%s) connPool put %s", c.RemoteAddr(), sv.hostPort)
 			}
@@ -737,6 +738,9 @@ func isErrTimeout(err error) bool {
 }
 
 func maybeBlocked(err error) bool {
+	if !hasParentProxy() {
+		return false
+	}
 	return isErrTimeout(err) || isErrConnReset(err)
 }
 
@@ -1074,7 +1078,8 @@ func copyClient2Server(c *clientConn, sv *serverConn, r *Request, srvStopped not
 			deadlineIsSet = false
 		}
 		if n, err = c.Read(buf); err != nil {
-			if config.DetectSSLErr && (isErrConnReset(err) || err == io.EOF) && sv.maybeSSLErr(start) {
+			if config.DetectSSLErr && sv.maybeFake() && (isErrConnReset(err) || err == io.EOF) &&
+				sv.maybeSSLErr(start) {
 				debug.Println("client connection closed very soon, taken as SSL error:", r)
 				siteStat.TempBlocked(r.URL)
 			} else if isErrTimeout(err) && !srvStopped.hasNotified() {

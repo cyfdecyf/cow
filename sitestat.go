@@ -232,6 +232,9 @@ func (ss *SiteStat) TempBlocked(url *URL) {
 var alwaysDirectVisitCnt = newVisitCnt(userCnt, 0)
 
 func (ss *SiteStat) GetVisitCnt(url *URL) (vcnt *VisitCnt) {
+	if !hasParentProxy() { // no way to retry, so always visit directly
+		return alwaysDirectVisitCnt
+	}
 	if url.Domain == "" { // simple host or private ip
 		return alwaysDirectVisitCnt
 	}
