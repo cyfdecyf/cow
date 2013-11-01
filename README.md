@@ -1,51 +1,66 @@
 # COW (Climb Over the Wall) proxy
 
-COW 是一个利用二级代理自动化穿越防火墙的 HTTP 代理服务器。它能自动检测被墙网站，仅对这些网站使用二级代理。
+COW 是一个简化穿墙的 HTTP 代理服务器。它能自动检测被墙网站，仅对这些网站使用二级代理。
 
-当前版本：0.8 [CHANGELOG](CHANGELOG)
+当前版本：0.9-rc1 [CHANGELOG](CHANGELOG)
 [![Build Status](https://travis-ci.org/cyfdecyf/cow.png?branch=develop)](https://travis-ci.org/cyfdecyf/cow)
 
 **欢迎在 develop branch 进行开发并发送 pull request :)**
 
 ## 功能
 
-COW 的设计目标是自动化，理想情况下用户无需关心哪些网站被封锁，可直连网站也不会因为使用二级代理而降低访问速度。作为 HTTP 代理，可以提供给移动设备使用；若部署在国内服务器上，可作为 APN 代理。
+COW 的设计目标是自动化，理想情况下用户无需关心哪些网站无法访问，可直连网站也不会因为使用二级代理而降低访问速度。
 
-- 支持 HTTP, SOCKS5 和 [shadowsocks](https://github.com/clowwindy/shadowsocks/wiki/Shadowsocks-%E4%BD%BF%E7%94%A8%E8%AF%B4%E6%98%8E) 作为二级代理
-  - 可同时指定多个二级代理，支持简单的负载均衡
+- 作为 HTTP 代理，可提供给移动设备使用；若部署在国内服务器上，可作为 APN 代理
+- 支持 HTTP, SOCKS5, [shadowsocks](https://github.com/clowwindy/shadowsocks/wiki/Shadowsocks-%E4%BD%BF%E7%94%A8%E8%AF%B4%E6%98%8E) 和 cow 自身作为二级代理
+  - 可使用多个二级代理，支持简单的负载均衡
 - 自动检测网站是否被墙，仅对被墙网站使用二级代理
-  - **对未知网站，先尝试直接连接，失败后使用二级代理重试请求，2 分钟后再尝试直接**
-  - 内置[常见被墙网站](site_blocked.go)，减少检测被墙所需时间（可手工添加）
-- 自动记录经常访问网站能否直连
-- 提供 PAC 文件，直连网站绕过 COW
+- 自动生成包含直连网站的 PAC，访问这些网站时可绕过 COW
   - 内置[常见可直连网站](site_direct.go)，如国内社交、视频、银行、电商等网站（可手工添加）
 
-# 安装
+# Quick Start
 
-- **OS X, Linux:** 执行以下命令（也可用于更新）
+安装：
+
+- **OS X, Linux (x86, ARM):** 执行以下命令（也可用于更新）
 
         curl -L git.io/cow | bash
 
-  - 该安装脚本在 OS X 上可将 COW 设置为登录时启动
-  - [Linux 启动脚本](doc/init.d/cow)，如何使用请参考注释（Debian 测试通过，其他 Linux 发行版应该也可使用）
-- **Windows:** 访问[这个网页](http://dl.chenyufei.info/cow/)下载
-- 如需其他平台二进制文件，请从源码安装
+- **Windows:** [点此下载](http://dl.chenyufei.info/cow/)
+- 熟悉 Go 的用户可用 `go get` 从源码安装
 
-bug fix 和新功能在测试后会直接进入 master branch 而不等到发布下一个版本，因此二进制版本可能缺少一些新功能。
+编辑 `~/.cow/rc` (Linux) 或 `rc.txt` (Windows)，简单的配置例子如下：
 
-## 从源码安装
+    #开头的行是注释，会被忽略
+    # 本地 HTTP 代理地址
+    # 配置 HTTP 和 HTTPS 代理时请填入该地址
+    # 或者在自动代理配置中填入 http://127.0.0.1:7777/pac
+    listen = http://127.0.0.1:7777
 
-仅推荐熟悉 Go 的用户从源码安装。安装 Go，设置好 `GOPATH`，执行以下命令（`go get -u` 来更新）：
+    # SOCKS5 二级代理
+    proxy = socks5://127.0.0.1:1080
+    # HTTP 二级代理
+    proxy = http://127.0.0.1:8080
+    proxy = http://user:password@127.0.0.1:8080
+    # shadowsocks 二级代理
+    proxy = ss://aes-128-cfb:password@1.2.3.4:8388
+    # cow 二级代理
+    proxy = cow://aes-128-cfb:password@1.2.3.4:8388
 
-    go get github.com/cyfdecyf/cow
+使用 cow 协议的二级代理需要在国外服务器上安装 COW，并使用如下配置：
 
-# 使用说明
+    listen = cow://aes-128-cfb:password@0.0.0.0:8388
+
+完成配置后启动 COW 并配置好代理即可使用。
+
+# 详细使用说明
 
 配置文件在 Unix 系统上为 `~/.cow/rc`，Windows 上为 COW 所在目录的 `rc.txt` 文件。 **[样例配置](doc/sample-config/rc) 包含了所有选项以及详细的说明**，建议下载然后修改。
 
 启动 COW：
 
 - Unix 系统在命令行上执行 `cow &`
+  - [Linux 启动脚本](doc/init.d/cow)，如何使用请参考注释（Debian 测试通过，其他 Linux 发行版应该也可使用）
 - Windows
   - 双击 `cow-taskbar.exe`，隐藏到托盘执行
   - 双击 `cow-hide.exe`，隐藏为后台程序执行
@@ -76,6 +91,8 @@ PAC url 为 `http://<listen address>/pac`，也可将浏览器的 HTTP/HTTPS 代
 
 COW 在 `~/.cow/stat` json 文件中记录经常访问网站被墙和直连访问的次数。
 
+- **对未知网站，先尝试直接连接，失败后使用二级代理重试请求，2 分钟后再尝试直接**
+  - 内置[常见被墙网站](site_blocked.go)，减少检测被墙所需时间（可手工添加）
 - 直连访问成功一定次数后相应的 host 会添加到 PAC
 - host 被墙一定次数后会直接用二级代理访问
   - 为避免误判，会以一定概率再次尝试直连访问
