@@ -191,8 +191,11 @@ func TestSiteStatGetVisitCnt(t *testing.T) {
 
 	g, _ := ParseRequestURI("gtemp.com")
 	si := ss.GetVisitCnt(g)
-	if si.AsBlocked() || si.AsDirect() || si.AsTempBlocked() {
-		t.Error("never visited site should not be considered as blocked/direct/temp blocked")
+	if !si.AsDirect() {
+		t.Error("never visited site should be considered as direct")
+	}
+	if si.AsBlocked() || si.AsTempBlocked() {
+		t.Error("never visited site should not be considered as blocked/temp blocked")
 	}
 	si.DirectVisit()
 	gw, _ := ParseRequestURI("www.gtemp.com")
@@ -242,15 +245,6 @@ func TestSiteStatGetVisitCnt(t *testing.T) {
 	}
 
 	g1, _ := ParseRequestURI("www.shoulddirect.com")
-	si = ss.GetVisitCnt(g1)
-	if si.AsBlocked() || si.AsDirect() || si.AsTempBlocked() {
-		t.Errorf("%s not visited, should return unknow visit method\n", g1.Host)
-	}
-	si.DirectVisit()
-	si = ss.GetVisitCnt(g1)
-	if si.AsDirect() || si.AsBlocked() || si.AsTempBlocked() {
-		t.Errorf("%s visited only once, should still return unknow visit method\n", g1.Host)
-	}
 	for i := 0; i < directDelta; i++ {
 		si.DirectVisit()
 	}

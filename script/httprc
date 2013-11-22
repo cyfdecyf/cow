@@ -1,0 +1,3 @@
+listen = http://127.0.0.1:7788
+proxy = cow://aes-128-cfb:foobar@127.0.0.1:8899
+alwaysProxy = true

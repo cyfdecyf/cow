@@ -7,7 +7,7 @@ import (
 
 func TestGetFromEmptyPool(t *testing.T) {
 	// should not block
-	sv := connPool.Get("foo")
+	sv := connPool.Get("foo", true)
 	if sv != nil {
 		t.Error("get non nil server conn from empty conn pool")
 	}
@@ -41,7 +41,7 @@ func TestConnPool(t *testing.T) {
 	}
 
 	for _, td := range testData {
-		sv := connPool.Get(td.hostPort)
+		sv := connPool.Get(td.hostPort, true)
 		if td.found {
 			if sv == nil {
 				t.Error("should find conn for", td.hostPort)

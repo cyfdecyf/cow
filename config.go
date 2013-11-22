@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"github.com/cyfdecyf/bufio"
@@ -14,7 +15,7 @@ import (
 )
 
 const (
-	version           = "0.8"
+	version           = "0.9-rc1"
 	defaultListenAddr = "127.0.0.1:7777"
 )
 
@@ -37,7 +38,6 @@ var defaultTunnelAllowedPort = []string{
 
 type Config struct {
 	RcFile      string // config file
-	ListenAddr  []string
 	LogFile     string
 	AlwaysProxy bool
 	LoadBalance LoadBalanceMode
@@ -57,14 +57,14 @@ type Config struct {
 	ReadTimeout time.Duration
 
 	Core         int
-	AddrInPAC    []string
 	DetectSSLErr bool
 
 	// not configurable in config file
 	PrintVer        bool
 	EstimateTimeout bool // if run estimateTimeout()
 
-	hasHttpParent bool // not config option
+	// not config option
+	saveReqLine bool // for http and cow parent, should save request line from client
 }
 
 var config Config
@@ -108,9 +108,10 @@ var cmdHasListenAddr bool
 func parseCmdLineConfig() *Config {
 	var c Config
 	var listenAddr string
+
 	flag.StringVar(&c.RcFile, "rc", path.Join(dsFile.dir, rcFname), "configuration file")
 	// Specifying listen default value to StringVar would override config file options
-	flag.StringVar(&listenAddr, "listen", "", "proxy server listen address, default to "+defaultListenAddr)
+	flag.StringVar(&listenAddr, "listen", "", "listen address, disables listen in config")
 	flag.IntVar(&c.Core, "core", 2, "number of cores to use")
 	flag.StringVar(&c.LogFile, "logFile", "", "write output to file")
 	flag.BoolVar(&c.PrintVer, "version", false, "print version")
@@ -119,7 +120,7 @@ func parseCmdLineConfig() *Config {
 	flag.Parse()
 	if listenAddr != "" {
 		configParser{}.ParseListen(listenAddr)
-		cmdHasListenAddr = true // must come after ParseListen
+		cmdHasListenAddr = true // must come after parse
 	}
 	return &c
 }
@@ -192,37 +193,107 @@ func (pp proxyParser) ProxyHttp(val string) {
 		Fatal("parent http server", err)
 	}
 
-	config.hasHttpParent = true
+	config.saveReqLine = true
 
 	parent := newHttpParent(server)
 	parent.initAuth(userPasswd)
 	addParentProxy(parent)
 }
 
-// parse shadowsocks proxy
-func (pp proxyParser) ProxySs(val string) {
+// Parse method:passwd@server:port
+func parseMethodPasswdServer(val string) (method, passwd, server string, err error) {
 	arr := strings.Split(val, "@")
 	if len(arr) < 2 {
-		Fatal("shadowsocks proxy needs to method and password")
+		err = errors.New("requires both encrypt method and password")
+		return
 	} else if len(arr) > 2 {
-		Fatal("shadowsocks proxy contains too many @")
+		err = errors.New("contains too many @")
+		return
+	}
+
+	methodPasswd := arr[0]
+	server = arr[1]
+	if err = checkServerAddr(server); err != nil {
+		return
+	}
+
+	arr = strings.Split(methodPasswd, ":")
+	if len(arr) != 2 {
+		err = errors.New("method and password should be separated by :")
+		return
+	}
+	method = arr[0]
+	passwd = arr[1]
+	return
+}
+
+// parse shadowsocks proxy
+func (pp proxyParser) ProxySs(val string) {
+	method, passwd, server, err := parseMethodPasswdServer(val)
+	if err != nil {
+		Fatal("shadowsocks parent", err)
+	}
+	parent := newShadowsocksParent(server)
+	parent.initCipher(method, passwd)
+	addParentProxy(parent)
+}
+
+func (pp proxyParser) ProxyCow(val string) {
+	arr := strings.Split(val, "@")
+	if len(arr) < 2 {
+		Fatal("cow parent needs encrypt method and password")
+	} else if len(arr) > 2 {
+		Fatal("cow parent contains too many @")
 	}
 
 	methodPasswd := arr[0]
 	server := arr[1]
+	if err := checkServerAddr(server); err != nil {
+		Fatal("parent cow server", err)
+	}
 
 	arr = strings.Split(methodPasswd, ":")
 	if len(arr) != 2 {
-		Fatal("shadowsocks proxy method password should separate by :")
+		Fatal("cow parent method password should be separated by :")
 	}
-	method := arr[0]
-	passwd := arr[1]
-
-	parent := newShadowsocksParent(server)
-	if err := parent.initCipher(method, passwd); err != nil {
-		Fatal("create shadowsocks cipher:", err)
-	}
+	config.saveReqLine = true
+	parent := newCowParent(server, arr[0], arr[1])
 	addParentProxy(parent)
+}
+
+// listenParser provides functions to parse different types of listen addresses
+type listenParser struct{}
+
+func (lp listenParser) ListenHttp(val string) {
+	if cmdHasListenAddr {
+		return
+	}
+	arr := strings.Fields(val)
+	if len(arr) > 2 {
+		Fatal("too many fields in listen = http://", val)
+	}
+
+	var addr, addrInPAC string
+	addr = arr[0]
+	if len(arr) == 2 {
+		addrInPAC = arr[1]
+	}
+
+	if err := checkServerAddr(addr); err != nil {
+		Fatal("listen http server", err)
+	}
+	addListenProxy(newHttpProxy(addr, addrInPAC))
+}
+
+func (lp listenParser) ListenCow(val string) {
+	if cmdHasListenAddr {
+		return
+	}
+	method, passwd, addr, err := parseMethodPasswdServer(val)
+	if err != nil {
+		Fatal("listen cow", err)
+	}
+	addListenProxy(newCowProxy(method, passwd, addr))
 }
 
 // configParser provides functions to parse options in config file.
@@ -247,34 +318,41 @@ func (p configParser) ParseProxy(val string) {
 	method.Call(args)
 }
 
-func (p configParser) ParseLogFile(val string) {
-	config.LogFile = val
-}
-
 func (p configParser) ParseListen(val string) {
 	if cmdHasListenAddr {
 		return
 	}
-	arr := strings.Split(val, ",")
-	for _, s := range arr {
-		s = strings.TrimSpace(s)
-		host, _, err := net.SplitHostPort(s)
-		if err != nil {
-			Fatal("listen address", err)
-		}
-		if host == "" || host == "0.0.0.0" {
-			if len(arr) > 1 {
-				Fatalf("too much listen addresses: "+
-					"%s represents all ip addresses on this host.\n", s)
-			}
-		}
-		config.ListenAddr = append(config.ListenAddr, s)
+
+	parser := reflect.ValueOf(listenParser{})
+	zeroMethod := reflect.Value{}
+
+	var protocol, server string
+	arr := strings.Split(val, "://")
+	if len(arr) == 1 {
+		protocol = "http"
+		server = val
+		configNeedUpgrade = true
+	} else {
+		protocol = arr[0]
+		server = arr[1]
 	}
+
+	methodName := "Listen" + strings.ToUpper(protocol[0:1]) + protocol[1:]
+	method := parser.MethodByName(methodName)
+	if method == zeroMethod {
+		Fatalf("no such listen protocol \"%s\"\n", arr[0])
+	}
+	args := []reflect.Value{reflect.ValueOf(server)}
+	method.Call(args)
+}
+
+func (p configParser) ParseLogFile(val string) {
+	config.LogFile = val
 }
 
 func (p configParser) ParseAddrInPAC(val string) {
+	configNeedUpgrade = true
 	arr := strings.Split(val, ",")
-	config.AddrInPAC = make([]string, len(arr))
 	for i, s := range arr {
 		if s == "" {
 			continue
@@ -287,7 +365,11 @@ func (p configParser) ParseAddrInPAC(val string) {
 		if host == "0.0.0.0" {
 			Fatal("can't use 0.0.0.0 as proxy address in PAC")
 		}
-		config.AddrInPAC[i] = s
+		if hp, ok := listenProxy[i].(*httpProxy); ok {
+			hp.addrInPAC = s
+		} else {
+			Fatal("can't specify address in PAC for non http proxy")
+		}
 	}
 }
 
@@ -334,7 +416,7 @@ func (p configParser) ParseHttpParent(val string) {
 	if err := checkServerAddr(val); err != nil {
 		Fatal("parent http server", err)
 	}
-	config.hasHttpParent = true
+	config.saveReqLine = true
 	http.parent = newHttpParent(val)
 	addParentProxy(http.parent)
 	http.serverCnt++
@@ -491,7 +573,6 @@ func parseConfig(rc string, override *Config) {
 		}
 		return
 	}
-	defer f.Close()
 
 	IgnoreUTF8BOM(f)
 
@@ -532,6 +613,7 @@ func parseConfig(rc string, override *Config) {
 	if scanner.Err() != nil {
 		Fatalf("Error reading rc file: %v\n", scanner.Err())
 	}
+	f.Close()
 
 	overrideConfig(&config, override)
 	checkConfig()
@@ -545,13 +627,13 @@ func upgradeConfig(rc string, lines []string) {
 	newrc := rc + ".upgrade"
 	f, err := os.Create(newrc)
 	if err != nil {
-		errl.Println("can't create upgraded config file")
+		fmt.Println("can't create upgraded config file")
 		return
 	}
-	defer f.Close()
 
 	// Upgrade config.
 	proxyId := 0
+	listenId := 0
 	w := bufio.NewWriter(f)
 	for _, line := range lines {
 		line := strings.TrimSpace(line)
@@ -564,29 +646,38 @@ func upgradeConfig(rc string, lines []string) {
 		key := strings.TrimSpace(v[0])
 
 		switch key {
+		case "listen":
+			listen := listenProxy[listenId]
+			listenId++
+			w.WriteString(listen.genConfig() + newLine)
+			// comment out original
+			w.WriteString("#" + line + newLine)
 		case "httpParent", "shadowSocks", "socksParent":
 			parent := parentProxy[proxyId]
 			proxyId++
-			// write out new proxy syntax
 			w.WriteString(parent.genConfig() + newLine)
 			// comment out original
 			w.WriteString("#" + line + newLine)
-		case "httpUserPasswd", "shadowPasswd", "shadowMethod":
+		case "httpUserPasswd", "shadowPasswd", "shadowMethod", "addrInPAC":
 			// just comment out
 			w.WriteString("#" + line + newLine)
+		case "proxy":
+			proxyId++
+			w.WriteString(line + newLine)
 		default:
 			w.WriteString(line + newLine)
 		}
 	}
 	w.Flush()
+	f.Close() // Must close file before renaming, otherwise will fail on windows.
 
 	// Rename new and old config file.
-	if err := os.Rename(rc, rc+version); err != nil {
-		errl.Println("can't backup config file for upgrade")
+	if err := os.Rename(rc, rc+"0.8"); err != nil {
+		fmt.Println("can't backup config file for upgrade:", err)
 		return
 	}
 	if err := os.Rename(newrc, rc); err != nil {
-		errl.Println("can't rename upgraded rc to original name")
+		fmt.Println("can't rename upgraded rc to original name:", err)
 		return
 	}
 }
@@ -622,16 +713,8 @@ func overrideConfig(oldconfig, override *Config) {
 func checkConfig() {
 	checkShadowsocks()
 	// listenAddr must be handled first, as addrInPAC dependends on this.
-	if config.ListenAddr == nil {
-		config.ListenAddr = []string{defaultListenAddr}
-	}
-	if config.AddrInPAC != nil {
-		if len(config.AddrInPAC) != len(config.ListenAddr) {
-			Fatal("Number of listen addresses and addr in PAC not match.")
-		}
-	} else {
-		// empty string in addrInPac means same as listenAddr
-		config.AddrInPAC = make([]string, len(config.ListenAddr))
+	if listenProxy == nil {
+		listenProxy = []Proxy{newHttpProxy(defaultListenAddr, "")}
 	}
 	if len(parentProxy) <= 1 {
 		config.LoadBalance = loadBalanceBackup

@@ -27,13 +27,12 @@ var (
 
 	logFile io.Writer
 
-	errorLog    *log.Logger
-	debugLog    *log.Logger
-	requestLog  *log.Logger
-	responseLog *log.Logger
-)
+	// make sure logger can be called before initLog
+	errorLog    = log.New(os.Stdout, "", log.LstdFlags)
+	debugLog    = errorLog
+	requestLog  = errorLog
+	responseLog = errorLog
 
-var (
 	verbose  bool
 	colorize bool
 )

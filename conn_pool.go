@@ -1,4 +1,4 @@
-// Shared server connections between different clients.
+// Share server connections between different clients.
 
 package main
 
@@ -20,7 +20,12 @@ type ConnPool struct {
 
 var connPool = &ConnPool{
 	idleConn: map[string]chan *serverConn{},
-	muxConn:  make(chan *serverConn, 35),
+	muxConn:  make(chan *serverConn, maxServerConnCnt*2),
+}
+
+func init() {
+	// make sure hostPort here won't match any actual hostPort
+	go closeStaleServerConn(connPool.muxConn, "muxConn")
 }
 
 func getConnFromChan(ch chan *serverConn) (sv *serverConn) {
@@ -53,7 +58,7 @@ func putConnToChan(sv *serverConn, ch chan *serverConn, chname string) {
 	}
 }
 
-func (cp *ConnPool) Get(hostPort string) (sv *serverConn) {
+func (cp *ConnPool) Get(hostPort string, asDirect bool) (sv *serverConn) {
 	// Get from site specific connection first.
 	// Direct connection are all site specific, so must use site specific
 	// first to avoid using parent proxy for direct sites.
@@ -69,8 +74,12 @@ func (cp *ConnPool) Get(hostPort string) (sv *serverConn) {
 		return sv
 	}
 
-	// Get connection from multiplexing connection pool.
-	// All mulplexing connections are for blocked sites.
+	// All mulplexing connections are for blocked sites,
+	// so for direct sites we should stop here.
+	if asDirect {
+		return nil
+	}
+
 	sv = getConnFromChan(cp.muxConn)
 	if bool(debug) && sv != nil {
 		debug.Println("connPool mux: get conn", hostPort)
@@ -81,8 +90,8 @@ func (cp *ConnPool) Get(hostPort string) (sv *serverConn) {
 func (cp *ConnPool) Put(sv *serverConn) {
 	// Multiplexing connections.
 	switch sv.Conn.(type) {
-	case httpConn:
-		putConnToChan(sv, cp.muxConn, "mux")
+	case httpConn, cowConn:
+		putConnToChan(sv, cp.muxConn, "muxConn")
 		return
 	}
 
@@ -135,12 +144,15 @@ done:
 					break cleanup
 				}
 			default:
-				// no more connection in this channel
-				// remove the channel from the map
-				connPool.Lock()
-				delete(connPool.idleConn, hostPort)
-				connPool.Unlock()
-				debug.Printf("connPool channel %s: removed\n", hostPort)
+				// No more connection in this channel, remove the channel from the map.
+				// Note: muxConn is not in idleConn, though delete would be a no-op,
+				// it has to acquire the lock.
+				if _, ok := connPool.idleConn[hostPort]; ok {
+					debug.Printf("connPool channel %s: remove\n", hostPort)
+					connPool.Lock()
+					delete(connPool.idleConn, hostPort)
+					connPool.Unlock()
+				}
 				break done
 			}
 		}

@@ -92,7 +92,7 @@ func (vc *VisitCnt) AsTempBlocked() bool {
 }
 
 func (vc *VisitCnt) AsDirect() bool {
-	return (vc.Direct == userCnt) || (vc.Direct-vc.Blocked >= directDelta && vc.Blocked == 0)
+	return (vc.Blocked == 0) || (vc.Direct-vc.Blocked >= directDelta) || vc.AlwaysDirect()
 }
 
 func (vc *VisitCnt) AsBlocked() bool {
@@ -232,6 +232,9 @@ func (ss *SiteStat) TempBlocked(url *URL) {
 var alwaysDirectVisitCnt = newVisitCnt(userCnt, 0)
 
 func (ss *SiteStat) GetVisitCnt(url *URL) (vcnt *VisitCnt) {
+	if !hasParentProxy() { // no way to retry, so always visit directly
+		return alwaysDirectVisitCnt
+	}
 	if url.Domain == "" { // simple host or private ip
 		return alwaysDirectVisitCnt
 	}

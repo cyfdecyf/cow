@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"github.com/cyfdecyf/bufio"
@@ -239,10 +240,49 @@ func checkProxyAuthorization(conn *clientConn, r *Request) error {
 	if len(arr) != 2 {
 		return errors.New("auth: malformed ProxyAuthorization header: " + r.ProxyAuthorization)
 	}
-	if strings.ToLower(strings.TrimSpace(arr[0])) != "digest" {
-		return errors.New("auth: method " + arr[0] + " unsupported, must use digest")
+	authMethod := strings.ToLower(strings.TrimSpace(arr[0]))
+	if authMethod == "digest" {
+		return authDigest(conn, r, arr[1])
+	} else if authMethod == "basic" {
+		return authBasic(conn, arr[1])
 	}
-	authHeader := parseKeyValueList(arr[1])
+	return errors.New("auth: method " + arr[0] + " unsupported, must use digest")
+}
+
+func authPort(conn *clientConn, user string, au *authUser) error {
+	if au.port == 0 {
+		return nil
+	}
+	_, portStr, _ := net.SplitHostPort(conn.LocalAddr().String())
+	port, _ := strconv.Atoi(portStr)
+	if uint16(port) != au.port {
+		errl.Printf("cli(%s) auth: user %s port not match\n", conn.RemoteAddr(), user)
+		return errAuthRequired
+	}
+	return nil
+}
+
+func authBasic(conn *clientConn, userPasswd string) error {
+	b64, err := base64.StdEncoding.DecodeString(userPasswd)
+	if err != nil {
+		return errors.New("auth:" + err.Error())
+	}
+	arr := strings.Split(string(b64), ":")
+	if len(arr) != 2 {
+		return errors.New("auth: malformed basic auth user:passwd")
+	}
+	user := arr[0]
+	passwd := arr[1]
+
+	au, ok := auth.user[user]
+	if !ok || au.passwd != passwd {
+		return errAuthRequired
+	}
+	return authPort(conn, user, au)
+}
+
+func authDigest(conn *clientConn, r *Request, keyVal string) error {
+	authHeader := parseKeyValueList(keyVal)
 	if len(authHeader) == 0 {
 		return errors.New("auth: empty authorization list")
 	}
@@ -263,20 +303,12 @@ func checkProxyAuthorization(conn *clientConn, r *Request) error {
 		return errAuthRequired
 	}
 
-	if au.port != 0 {
-		// check port
-		_, portStr, _ := net.SplitHostPort(conn.LocalAddr().String())
-		port, _ := strconv.Atoi(portStr)
-		if uint16(port) != au.port {
-			errl.Printf("cli(%s) auth: user %s port not match\n", conn.RemoteAddr(), user)
-			return errAuthRequired
-		}
+	if err = authPort(conn, user, au); err != nil {
+		return err
 	}
-
 	if authHeader["qop"] != "auth" {
 		return errors.New("auth: qop wrong: " + authHeader["qop"])
 	}
-
 	response, ok := authHeader["response"]
 	if !ok {
 		return errors.New("auth: no request-digest response")
@@ -284,11 +316,11 @@ func checkProxyAuthorization(conn *clientConn, r *Request) error {
 
 	au.initHA1(user)
 	digest := calcRequestDigest(authHeader, au.ha1, r.Method)
-	if response == digest {
-		return nil
+	if response != digest {
+		errl.Printf("cli(%s) auth: digest not match, maybe password wrong", conn.RemoteAddr())
+		return errAuthRequired
 	}
-	errl.Printf("cli(%s) auth: digest not match, maybe password wrong", conn.RemoteAddr())
-	return errAuthRequired
+	return nil
 }
 
 func authUserPasswd(conn *clientConn, r *Request) (err error) {
