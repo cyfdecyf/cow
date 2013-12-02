@@ -191,12 +191,12 @@ func genPAC(c *clientConn) []byte {
 }
 
 func initPAC() {
-	// we can't control goroutine scheduling, this is to make sure when
+	// we can't control goroutine scheduling, make sure when
 	// initPAC is done, direct list is updated
 	updateDirectList()
 	go func() {
 		for {
-			time.Sleep(5 * time.Minute)
+			time.Sleep(time.Minute)
 			updateDirectList()
 		}
 	}()

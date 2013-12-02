@@ -693,6 +693,10 @@ func (c *clientConn) getServerConn(r *Request) (*serverConn, error) {
 	}
 	sv := connPool.Get(r.URL.HostPort, siteInfo.AsDirect())
 	if sv != nil {
+		// For websites like feedly, the site itself is not blocked, but the
+		// content it loads may result reset. So we should reset server
+		// connection state to just connected.
+		sv.state = svConnected
 		if debug {
 			debug.Printf("cli(%s) connPool get %s\n", c.RemoteAddr(), r.URL.HostPort)
 		}
