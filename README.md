@@ -2,7 +2,7 @@
 
 COW 是一个简化穿墙的 HTTP 代理服务器。它能自动检测被墙网站，仅对这些网站使用二级代理。
 
-当前版本：0.9-rc1 [CHANGELOG](CHANGELOG)
+当前版本：0.9 [CHANGELOG](CHANGELOG)
 [![Build Status](https://travis-ci.org/cyfdecyf/cow.png?branch=develop)](https://travis-ci.org/cyfdecyf/cow)
 
 **欢迎在 develop branch 进行开发并发送 pull request :)**
@@ -18,7 +18,7 @@ COW 的设计目标是自动化，理想情况下用户无需关心哪些网站�
 - 自动生成包含直连网站的 PAC，访问这些网站时可绕过 COW
   - 内置[常见可直连网站](site_direct.go)，如国内社交、视频、银行、电商等网站（可手工添加）
 
-# Quick Start
+# 快速开始
 
 安装：
 
@@ -27,7 +27,7 @@ COW 的设计目标是自动化，理想情况下用户无需关心哪些网站�
         curl -L git.io/cow | bash
 
 - **Windows:** [点此下载](http://dl.chenyufei.info/cow/)
-- 熟悉 Go 的用户可用 `go get` 从源码安装
+- 熟悉 Go 的用户可用 `go get github.com/cyfdecyf/cow` 从源码安装
 
 编辑 `~/.cow/rc` (Linux) 或 `rc.txt` (Windows)，简单的配置例子如下：
 

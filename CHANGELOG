@@ -1,10 +1,12 @@
-0.9 (Not released)
+0.9 (2013-12-02)
     * New feature: two COW servers can be connected using encrypted
       connection, thus we have an encrypted HTTP proxy chain that can
       be used to bypass the firewall
     * Allow client to use HTTP basic authentication
-    * Simplified configuration syntax
+    * Simplify configuration syntax
     * Better reuse for HTTP parent connections
+    * Reduce direct/blocked delta
+    * Generate new PAC every minute
 
 0.8 (2013-08-10)
     * Share server connections between different clients
