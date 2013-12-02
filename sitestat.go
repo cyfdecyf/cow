@@ -22,8 +22,8 @@ func init() {
 // judging whether a site is blocked or not is more reliable.
 
 const (
-	directDelta  = 15
-	blockedDelta = 10
+	directDelta  = 5
+	blockedDelta = 5
 	maxCnt       = 100 // no protect to update visit cnt, smaller value is unlikely to overflow
 	userCnt      = -1  // this represents user specified host or domain
 )
