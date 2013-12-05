@@ -65,7 +65,7 @@ do_start() {
   fi
   echo "starting cow"
   # sudo will set the group to the primary group of $USER
-  sudo -u $USER $BIN &
+  sudo -u $USER -H $BIN &
   PID=$!
   echo $PID > $PID_FILE
   sleep 0.3
