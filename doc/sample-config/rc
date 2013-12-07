@@ -65,6 +65,26 @@ listen = 127.0.0.1:7777
 # 如果要指定其他 ssh 选项，请修改 ~/.ssh/config
 #sshServer = user@server:local_socks_port[:server_ssh_port]
 
+#################################
+# 执行 plonk 命令创建 SOCKS5 代理
+#################################
+# 下面的选项可以让 COW 执行 plonk 命令创建本地 SOCKS5 代理，并在 plonk 断开后重连
+# COW 会自动使用通过 plonk 命令创建的代理，无需再通过 proxy 选项指定
+# 可重复指定多个
+#
+# 注意:这一功能需要系统上已有 plonk 命令
+#
+# plonk 是 Putty 中提供的命令行组件plink的改进版，可以支持混淆加密
+#
+# Windows   用户可以在 http://www.mrhinkydink.com/potty.htm 下载
+# Linux/Mac 用户可以在 https://www.github.com/athurg/potty 下载
+plonkUsername = user
+plonkPassword = password
+plonkHost = www.test.com
+plonkPort = 22
+plonkListenPort = 7070
+plonkOfcKeyword = ofc_keyword
+
 #############################
 # 认证
 #############################
