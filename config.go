@@ -46,6 +46,13 @@ type Config struct {
 
 	SshServer []string
 
+	PlonkUsername string
+	PlonkPassword string
+	PlonkHost string
+	PlonkPort string
+	PlonkListenPort string
+	PlonkOfcKeyword string
+
 	// authenticate client
 	UserPasswd     string
 	UserPasswdFile string // file that contains user:passwd:[port] pairs
@@ -322,6 +329,30 @@ func (p configParser) ParseSshServer(val string) {
 	// add created socks server
 	p.ParseSocksParent("127.0.0.1:" + arr[1])
 	config.SshServer = append(config.SshServer, val)
+}
+
+func (p configParser) ParsePlonkUsername(val string) {
+	config.PlonkUsername = val
+}
+
+func (p configParser) ParsePlonkPassword(val string) {
+	config.PlonkPassword = val
+}
+
+func (p configParser) ParsePlonkHost(val string) {
+	config.PlonkHost = val
+}
+
+func (p configParser) ParsePlonkPort(val string) {
+	config.PlonkPort = val
+}
+
+func (p configParser) ParsePlonkListenPort(val string) {
+	config.PlonkListenPort = val
+}
+
+func (p configParser) ParsePlonkOfcKeyword(val string) {
+	config.PlonkOfcKeyword = val
 }
 
 var http struct {
