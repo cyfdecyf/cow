@@ -1,3 +1,7 @@
+0.9.1 (2013-12-20)
+    * Fix can't save site stat bug
+    * Improve install and startup script
+
 0.9 (2013-12-02)
     * New feature: two COW servers can be connected using encrypted
       connection, thus we have an encrypted HTTP proxy chain that can
