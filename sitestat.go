@@ -292,7 +292,7 @@ func (ss *SiteStat) store(statPath string) (err error) {
 	// Ensures atomic update to stat file to avoid file damage.
 
 	// Create tmp file inside config firectory to avoid cross FS rename.
-	f, err := ioutil.TempFile(dsFile.dir, "stat")
+	f, err := ioutil.TempFile(configPath.dir, "stat")
 	if err != nil {
 		errl.Println("create tmp file to store stat", err)
 		return
@@ -326,10 +326,10 @@ func (ss *SiteStat) loadBuiltinList() {
 }
 
 func (ss *SiteStat) loadUserList() {
-	if directList, err := loadSiteList(dsFile.alwaysDirect); err == nil {
+	if directList, err := loadSiteList(configPath.alwaysDirect); err == nil {
 		ss.loadList(directList, userCnt, 0)
 	}
-	if blockedList, err := loadSiteList(dsFile.alwaysBlocked); err == nil {
+	if blockedList, err := loadSiteList(configPath.alwaysBlocked); err == nil {
 		ss.loadList(blockedList, 0, userCnt)
 	}
 }
@@ -425,7 +425,7 @@ func (ss *SiteStat) GetDirectList() []string {
 var siteStat = newSiteStat()
 
 func initSiteStat() {
-	if err := siteStat.load(dsFile.stat); err != nil {
+	if err := siteStat.load(configPath.stat); err != nil {
 		os.Exit(1)
 	}
 	// Dump site stat while running, so we don't always need to close cow to
@@ -455,7 +455,7 @@ func storeSiteStat(cont byte) {
 	if siteStatFini {
 		return
 	}
-	siteStat.store(dsFile.stat)
+	siteStat.store(configPath.stat)
 	if cont == siteStatExit {
 		siteStatFini = true
 	}

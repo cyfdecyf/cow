@@ -70,7 +70,7 @@ type Config struct {
 var config Config
 var configNeedUpgrade bool // whether should upgrade config file
 
-var dsFile struct {
+var configPath struct {
 	dir           string // directory containing config file and blocked site list
 	alwaysBlocked string // blocked sites specified by user
 	alwaysDirect  string // direct sites specified by user
@@ -85,9 +85,9 @@ func init() {
 	initConfigDir()
 	// fmt.Println("home dir:", homeDir)
 
-	dsFile.alwaysBlocked = path.Join(dsFile.dir, alwaysBlockedFname)
-	dsFile.alwaysDirect = path.Join(dsFile.dir, alwaysDirectFname)
-	dsFile.stat = path.Join(dsFile.dir, statFname)
+	configPath.alwaysBlocked = path.Join(configPath.dir, alwaysBlockedFname)
+	configPath.alwaysDirect = path.Join(configPath.dir, alwaysDirectFname)
+	configPath.stat = path.Join(configPath.dir, statFname)
 
 	config.DetectSSLErr = false
 	config.AlwaysProxy = false
@@ -109,7 +109,7 @@ func parseCmdLineConfig() *Config {
 	var c Config
 	var listenAddr string
 
-	flag.StringVar(&c.RcFile, "rc", path.Join(dsFile.dir, rcFname), "configuration file")
+	flag.StringVar(&c.RcFile, "rc", path.Join(configPath.dir, rcFname), "configuration file")
 	// Specifying listen default value to StringVar would override config file options
 	flag.StringVar(&listenAddr, "listen", "", "listen address, disables listen in config")
 	flag.IntVar(&c.Core, "core", 2, "number of cores to use")
@@ -722,10 +722,10 @@ func checkConfig() {
 }
 
 func mkConfigDir() (err error) {
-	if dsFile.dir == "" {
+	if configPath.dir == "" {
 		return os.ErrNotExist
 	}
-	exists, err := isDirExists(dsFile.dir)
+	exists, err := isDirExists(configPath.dir)
 	if err != nil {
 		errl.Printf("Error checking config directory: %v\n", err)
 		return
@@ -733,8 +733,8 @@ func mkConfigDir() (err error) {
 	if exists {
 		return
 	}
-	if err = os.Mkdir(dsFile.dir, 0755); err != nil {
-		errl.Printf("Error create config directory %s: %v\n", dsFile.dir, err)
+	if err = os.Mkdir(configPath.dir, 0755); err != nil {
+		errl.Printf("Error create config directory %s: %v\n", configPath.dir, err)
 	}
 	return
 }
