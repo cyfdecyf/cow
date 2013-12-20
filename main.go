@@ -20,8 +20,9 @@ func sigHandler() {
 		syscall.SIGHUP)
 
 	for sig := range sigChan {
+		// May handle other signals in the future.
 		info.Printf("%v caught, exit\n", sig)
-		storeSiteStat()
+		storeSiteStat(siteStatExit)
 		break
 	}
 	/*
