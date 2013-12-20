@@ -552,7 +552,7 @@ func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, url *URL) 
 			return
 		}
 		if name, val, err = splitHeader(line); err != nil {
-			errl.Printf("%v raw header:\n%s\n", err, raw.Bytes())
+			errl.Printf("split header %v\nline: %s\nraw header:\n%s\n", err, line, raw.Bytes())
 			return
 		}
 		// Wait Go to solve/provide the string<->[]byte optimization
@@ -562,6 +562,7 @@ func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, url *URL) 
 				continue
 			}
 			if err = parseFunc(h, val); err != nil {
+				errl.Printf("parse header %v\nline: %s\nraw header:\n%s\n", err, line, raw.Bytes())
 				return
 			}
 		}
@@ -701,7 +702,7 @@ func parseResponse(sv *serverConn, r *Request, rp *Response) (err error) {
 	}
 
 	if err = rp.parseHeader(reader, rp.raw, r.URL); err != nil {
-		errl.Printf("parse response header: %v %s\n%s", err, rp, rp.Verbose())
+		errl.Printf("parse response header: %v %s\n%s", err, r, rp.Verbose())
 		return err
 	}
 
