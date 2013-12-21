@@ -251,7 +251,7 @@ func (ss *SiteStat) GetVisitCnt(url *URL) (vcnt *VisitCnt) {
 	return ss.create(url.Host)
 }
 
-func (ss *SiteStat) store(file string) (err error) {
+func (ss *SiteStat) store(statPath string) (err error) {
 	if err = mkConfigDir(); err != nil {
 		return
 	}
@@ -289,10 +289,10 @@ func (ss *SiteStat) store(file string) (err error) {
 	}
 
 	// Store stat into temp file first and then rename.
-	// This avoids problem if SIGINT causes program to exit but stat writing
-	// is half done.
+	// Ensures atomic update to stat file to avoid file damage.
 
-	f, err := ioutil.TempFile("", "stat")
+	// Create tmp file inside config firectory to avoid cross FS rename.
+	f, err := ioutil.TempFile(configPath.dir, "stat")
 	if err != nil {
 		errl.Println("create tmp file to store stat", err)
 		return
@@ -305,9 +305,9 @@ func (ss *SiteStat) store(file string) (err error) {
 	f.Close()
 
 	// Windows don't allow rename to existing file.
-	os.Remove(file + ".bak")
-	os.Rename(file, file+".bak") // original stat may not exist
-	if err = os.Rename(f.Name(), file); err != nil {
+	os.Remove(statPath + ".bak")
+	os.Rename(statPath, statPath+".bak")
+	if err = os.Rename(f.Name(), statPath); err != nil {
 		errl.Println("can't rename newly created stat file", err)
 		return
 	}
@@ -326,10 +326,10 @@ func (ss *SiteStat) loadBuiltinList() {
 }
 
 func (ss *SiteStat) loadUserList() {
-	if directList, err := loadSiteList(dsFile.alwaysDirect); err == nil {
+	if directList, err := loadSiteList(configPath.alwaysDirect); err == nil {
 		ss.loadList(directList, userCnt, 0)
 	}
-	if blockedList, err := loadSiteList(dsFile.alwaysBlocked); err == nil {
+	if blockedList, err := loadSiteList(configPath.alwaysBlocked); err == nil {
 		ss.loadList(blockedList, 0, userCnt)
 	}
 }
@@ -425,25 +425,40 @@ func (ss *SiteStat) GetDirectList() []string {
 var siteStat = newSiteStat()
 
 func initSiteStat() {
-	if err := siteStat.load(dsFile.stat); err != nil {
+	if err := siteStat.load(configPath.stat); err != nil {
 		os.Exit(1)
 	}
-	// dump site stat once every hour, so we don't always need to close cow to
-	// get updated stat
+	// Dump site stat while running, so we don't always need to close cow to
+	// get updated stat.
 	go func() {
 		for {
-			time.Sleep(time.Hour)
-			storeSiteStat()
+			time.Sleep(5 * time.Minute)
+			storeSiteStat(siteStatCont)
 		}
 	}()
 }
 
-var storeLock sync.Mutex
+const (
+	siteStatExit = iota
+	siteStatCont
+)
 
-func storeSiteStat() {
+// Lock ensures only one goroutine calling store.
+// siteStatFini ensures no more calls after going to exit.
+var storeLock sync.Mutex
+var siteStatFini bool
+
+func storeSiteStat(cont byte) {
 	storeLock.Lock()
-	siteStat.store(dsFile.stat)
-	storeLock.Unlock()
+	defer storeLock.Unlock()
+
+	if siteStatFini {
+		return
+	}
+	siteStat.store(configPath.stat)
+	if cont == siteStatExit {
+		siteStatFini = true
+	}
 }
 
 func loadSiteList(fpath string) (lst []string, err error) {

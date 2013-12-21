@@ -19,6 +19,7 @@ USER=usr
 GROUP=grp
 PID_DIR=/var/run
 PID_FILE=$PID_DIR/cow.pid
+LOG_FILE=/var/log/cow
 
 RET_VAL=0
 
@@ -65,7 +66,7 @@ do_start() {
   fi
   echo "starting cow"
   # sudo will set the group to the primary group of $USER
-  sudo -u $USER $BIN &
+  sudo -u $USER -H -- $BIN >$LOG_FILE 2>&1 &
   PID=$!
   echo $PID > $PID_FILE
   sleep 0.3

@@ -17,5 +17,5 @@ const (
 
 func initConfigDir() {
 	home := getUserHomeDir()
-	dsFile.dir = path.Join(home, ".cow")
+	configPath.dir = path.Join(home, ".cow")
 }

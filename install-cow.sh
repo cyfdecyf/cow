@@ -1,6 +1,6 @@
 #!/bin/bash
 
-version=0.9
+version=0.9.1
 
 arch=`uname -m`
 case $arch in
@@ -86,7 +86,7 @@ chmod +x $tmpbin ||
     exit_on_fail "Can't chmod for $tmpbin"
 
 # Download sample config file if no configuration directory present
-doc_base="https://github.com/cyfdecyf/cow/raw/master/doc"
+doc_base="https://raw.github.com/cyfdecyf/cow/$version/doc"
 config_dir="$HOME/.cow"
 is_update=true
 if [ ! -e $config_dir ]; then
