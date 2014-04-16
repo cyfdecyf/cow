@@ -76,7 +76,7 @@ func (cp *ConnPool) Get(hostPort string, asDirect bool) (sv *serverConn) {
 
 	// All mulplexing connections are for blocked sites,
 	// so for direct sites we should stop here.
-	if asDirect {
+	if asDirect && !config.AlwaysProxy {
 		return nil
 	}
 
