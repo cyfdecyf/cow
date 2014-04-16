@@ -592,7 +592,7 @@ func parseConfig(rc string, override *Config) {
 			continue
 		}
 
-		v := strings.Split(line, "=")
+		v := strings.SplitN(line, "=", 2)
 		if len(v) != 2 {
 			Fatal("config syntax error on line", n)
 		}
