@@ -59,7 +59,7 @@ COW 的设计目标是自动化，理想情况下用户无需关心哪些网站�
 
 启动 COW：
 
-- Unix 系统在命令行上执行 `cow &`
+- Unix 系统在命令行上执行 `cow &` (若 COW 不在 `PATH` 所在目录，请执行 `./cow &`)
   - [Linux 启动脚本](doc/init.d/cow)，如何使用请参考注释（Debian 测试通过，其他 Linux 发行版应该也可使用）
 - Windows
   - 双击 `cow-taskbar.exe`，隐藏到托盘执行
