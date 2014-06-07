@@ -6,12 +6,11 @@
     <string>info.chenyufei.cow</string>
     <key>ProgramArguments</key>
     <array>
-	<string>COWBINARY</string>
+      <string>/usr/local/bin/cow</string>
     </array>
     <key>KeepAlive</key>
-    <dict>
-      <key>NetworkState</key>
-      <true/>
-    </dict>
+    <true/>
+    <key>RunAtLoad</key>
+    <true/>
   </dict>
 </plist>
