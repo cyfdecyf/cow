@@ -2,6 +2,8 @@
 
 COW 是一个简化穿墙的 HTTP 代理服务器。它能自动检测被墙网站，仅对这些网站使用二级代理。
 
+[English README](README-en.md).
+
 当前版本：0.9.1 [CHANGELOG](CHANGELOG)
 [![Build Status](https://travis-ci.org/cyfdecyf/cow.png?branch=develop)](https://travis-ci.org/cyfdecyf/cow)
 
@@ -82,8 +84,6 @@ PAC url 为 `http://<listen address>/pac`，也可将浏览器的 HTTP/HTTPS 代
   - 二级域名如 `google.com` 相当于 `*.google.com`
   - `com.hk`, `edu.cn` 等二级域名下的三级域名，作为二级域名处理。如 `google.com.hk` 相当于 `*.google.com.hk`
   - 其他三级及以上域名/主机名做精确匹配，例如 `plus.google.com`
-
-注意：对私有 IPv4 地址及 simple host name，COW 总是直接连接，生成的 PAC 也让浏览器直接访问。（因此访问 localhost 和局域网内机器会绕过 COW。）
 
 # 技术细节
 
