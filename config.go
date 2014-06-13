@@ -59,6 +59,8 @@ type Config struct {
 	Core         int
 	DetectSSLErr bool
 
+	HttpErrorCode int
+
 	// not configurable in config file
 	PrintVer        bool
 	EstimateTimeout bool // if run estimateTimeout()
@@ -546,6 +548,10 @@ func (p configParser) ParseAuthTimeout(val string) {
 
 func (p configParser) ParseCore(val string) {
 	config.Core = parseInt(val, "core")
+}
+
+func (p configParser) ParseHttpErrorCode(val string) {
+	config.HttpErrorCode = parseInt(val, "httpErrorCode")
 }
 
 func (p configParser) ParseReadTimeout(val string) {
