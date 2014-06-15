@@ -741,11 +741,21 @@ func isErrTimeout(err error) bool {
 	return false
 }
 
+func isHttpErrCode(err error) bool {
+	if config.HttpErrorCode <= 0 {
+		return false
+	}
+	if err == CustomHttpErr {
+		return true
+	}
+	return false
+}
+
 func maybeBlocked(err error) bool {
 	if !hasParentProxy() {
 		return false
 	}
-	return isErrTimeout(err) || isErrConnReset(err)
+	return isErrTimeout(err) || isErrConnReset(err) || isHttpErrCode(err)
 }
 
 // Connect to requested server according to whether it's visit count.
