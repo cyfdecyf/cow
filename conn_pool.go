@@ -8,7 +8,7 @@ import (
 )
 
 // Maximum number of connections to a server.
-const maxServerConnCnt = 20
+const maxServerConnCnt = 5
 
 // Store each server's connections in separate channels, getting
 // connections for different servers can be done in parallel.
