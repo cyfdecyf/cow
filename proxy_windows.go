@@ -51,3 +51,8 @@ func isErrOpRead(err error) bool {
 	}
 	return ne.Op == "WSARecv"
 }
+
+func isErrTooManyOpenFd(err error) bool {
+	// TODO implement this.
+	return false
+}

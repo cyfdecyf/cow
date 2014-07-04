@@ -166,6 +166,9 @@ func (hp *httpProxy) Serve(wg *sync.WaitGroup) {
 		conn, err := ln.Accept()
 		if err != nil {
 			errl.Printf("http proxy(%s) accept %v\n", ln.Addr(), err)
+			if isErrTooManyOpenFd(err) {
+				connPool.CloseAll()
+			}
 			continue
 		}
 		c := newClientConn(conn, hp)
@@ -215,6 +218,9 @@ func (cp *cowProxy) Serve(wg *sync.WaitGroup) {
 		conn, err := ln.Accept()
 		if err != nil {
 			errl.Printf("cow proxy(%s) accept %v\n", ln.Addr(), err)
+			if isErrTooManyOpenFd(err) {
+				connPool.CloseAll()
+			}
 			continue
 		}
 		ssConn := ss.NewConn(conn, cp.cipher.Copy())
@@ -708,7 +714,7 @@ func (c *clientConn) getServerConn(r *Request) (*serverConn, error) {
 	return c.createServerConn(r, siteInfo)
 }
 
-func connectDirect(url *URL, siteInfo *VisitCnt) (net.Conn, error) {
+func connectDirect2(url *URL, siteInfo *VisitCnt, recursive bool) (net.Conn, error) {
 	var c net.Conn
 	var err error
 	if siteInfo.AlwaysDirect() {
@@ -726,12 +732,18 @@ func connectDirect(url *URL, siteInfo *VisitCnt) (net.Conn, error) {
 		c, err = net.DialTimeout("tcp", url.HostPort, to)
 	}
 	if err != nil {
-		// Time out is very likely to be caused by GFW
 		debug.Printf("error direct connect to: %s %v\n", url.HostPort, err)
+		if isErrTooManyOpenFd(err) && !recursive {
+			return connectDirect2(url, siteInfo, true)
+		}
 		return nil, err
 	}
 	// debug.Println("directly connected to", url.HostPort)
 	return directConn{c}, nil
+}
+
+func connectDirect(url *URL, siteInfo *VisitCnt) (net.Conn, error) {
+	return connectDirect2(url, siteInfo, false)
 }
 
 func isErrTimeout(err error) bool {
