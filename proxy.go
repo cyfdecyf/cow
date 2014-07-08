@@ -192,11 +192,11 @@ func newCowProxy(method, passwd, addr string) *cowProxy {
 }
 
 func (cp *cowProxy) genConfig() string {
-	if cp.method == "" {
-		return fmt.Sprintf("listen = cow://table:%s@%s", cp.passwd, cp.addr)
-	} else {
-		return fmt.Sprintf("listen = cow://%s:%s@%s", cp.method, cp.passwd, cp.addr)
+	method := cp.method
+	if method == "" {
+		method = "table"
 	}
+	return fmt.Sprintf("listen = cow://%s:%s@%s", method, cp.passwd, cp.addr)
 }
 
 func (cp *cowProxy) Addr() string {
@@ -1333,12 +1333,14 @@ func sendBodyChunked(w io.Writer, r *bufio.Reader, rdSize int) (err error) {
 			errl.Println("chunk size invalid:", err)
 			return
 		}
-		if debug {
-			// To debug getting malformed response status line with "0\r\n".
-			if c, ok := w.(*clientConn); ok {
-				debug.Printf("cli(%s) chunk size %d %#v\n", c.RemoteAddr(), size, string(s))
+		/*
+			if debug {
+				// To debug getting malformed response status line with "0\r\n".
+				if c, ok := w.(*clientConn); ok {
+					debug.Printf("cli(%s) chunk size %d %#v\n", c.RemoteAddr(), size, string(s))
+				}
 			}
-		}
+		*/
 		if size == 0 {
 			r.Skip(len(s))
 			if err = skipCRLF(r); err != nil {
