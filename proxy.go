@@ -764,7 +764,7 @@ func isHttpErrCode(err error) bool {
 }
 
 func maybeBlocked(err error) bool {
-	if !hasParentProxy() {
+	if parentProxy.empty() {
 		return false
 	}
 	return isErrTimeout(err) || isErrConnReset(err) || isHttpErrCode(err)
@@ -775,15 +775,15 @@ func maybeBlocked(err error) bool {
 func (c *clientConn) connect(r *Request, siteInfo *VisitCnt) (srvconn net.Conn, err error) {
 	var errMsg string
 	if config.AlwaysProxy {
-		if srvconn, err = connectByParentProxy(r.URL); err == nil {
+		if srvconn, err = parentProxy.connect(r.URL); err == nil {
 			return
 		}
 		errMsg = genErrMsg(r, nil, "Parent proxy connection failed, always use parent proxy.")
 		goto fail
 	}
-	if siteInfo.AsBlocked() && hasParentProxy() {
+	if siteInfo.AsBlocked() && !parentProxy.empty() {
 		// In case of connection error to socks server, fallback to direct connection
-		if srvconn, err = connectByParentProxy(r.URL); err == nil {
+		if srvconn, err = parentProxy.connect(r.URL); err == nil {
 			return
 		}
 		if siteInfo.AlwaysBlocked() {
@@ -803,7 +803,7 @@ func (c *clientConn) connect(r *Request, siteInfo *VisitCnt) (srvconn net.Conn, 
 		if srvconn, err = connectDirect(r.URL, siteInfo); err == nil {
 			return
 		}
-		if !hasParentProxy() {
+		if parentProxy.empty() {
 			errMsg = genErrMsg(r, nil, "Direct connection failed, no parent proxy.")
 			goto fail
 		}
@@ -821,7 +821,7 @@ func (c *clientConn) connect(r *Request, siteInfo *VisitCnt) (srvconn net.Conn, 
 		// To simplify things and avoid error in my observation, always try
 		// parent proxy in case of Dial error.
 		var socksErr error
-		if srvconn, socksErr = connectByParentProxy(r.URL); socksErr == nil {
+		if srvconn, socksErr = parentProxy.connect(r.URL); socksErr == nil {
 			c.handleBlockedRequest(r, err)
 			if debug {
 				debug.Printf("cli(%s) direct connection failed, use parent proxy for %v\n",

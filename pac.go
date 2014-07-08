@@ -205,7 +205,7 @@ func initPAC() {
 func sendPAC(c *clientConn) error {
 	_, err := c.Write(genPAC(c))
 	if err != nil {
-		debug.Printf("cli(%s) error sending PAC:", c.RemoteAddr(), err)
+		debug.Printf("cli(%s) error sending PAC: %s", c.RemoteAddr(), err)
 	}
 	return err
 }

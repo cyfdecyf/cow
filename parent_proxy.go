@@ -12,79 +12,53 @@ import (
 	"strconv"
 )
 
-func connectByParentProxy(url *URL) (srvconn net.Conn, err error) {
-	const baseFailCnt = 9
-	var skipped []int
-	nproxy := len(parentProxy)
-
-	firstId := 0
-	if config.LoadBalance == loadBalanceHash {
-		firstId = int(stringHash(url.Host) % uint64(nproxy))
-		debug.Println("use proxy", firstId)
-	}
-
-	for i := 0; i < nproxy; i++ {
-		proxyId := (firstId + i) % nproxy
-		pp := &parentProxy[proxyId]
-		// skip failed server, but try it with some probability
-		if pp.failCnt > 0 && rand.Intn(pp.failCnt+baseFailCnt) != 0 {
-			skipped = append(skipped, proxyId)
-			continue
-		}
-		if srvconn, err = pp.connect(url); err == nil {
-			return
-		}
-	}
-	// last resort, try skipped one, not likely to succeed
-	for _, skippedId := range skipped {
-		if srvconn, err = parentProxy[skippedId].connect(url); err == nil {
-			return
-		}
-	}
-	if len(parentProxy) != 0 {
-		return
-	}
-	return nil, errors.New("no parent proxy")
-}
-
-// proxyConnector is the interface that all parent proxies should support.
-type proxyConnector interface {
+// Interface that all types of parent proxies should support.
+type ParentProxy interface {
 	connect(*URL) (net.Conn, error)
 	genConfig() string // for upgrading config
 }
 
-type ParentProxy struct {
-	proxyConnector
-	failCnt int
+// Interface for different proxy selection strategy.
+type ParentPool interface {
+	add(ParentProxy)
+	empty() bool
+	// Select a proxy from the pool and connect. May try several proxies until
+	// one that succees, return nil and error if all parent proxies fail.
+	connect(*URL) (net.Conn, error)
 }
 
-var parentProxy []ParentProxy
+// Init parentProxy to be backup pool. So config parsing have a pool to add
+// parent proxies.
+var parentProxy ParentPool = &backupParentPool{}
 
-func hasParentProxy() bool {
-	return len(parentProxy) != 0
-}
-
-func addParentProxy(pc proxyConnector) {
-	parentProxy = append(parentProxy, ParentProxy{pc, 0})
-}
-
-func (pp *ParentProxy) connect(url *URL) (srvconn net.Conn, err error) {
-	const maxFailCnt = 30
-	srvconn, err = pp.proxyConnector.connect(url)
-	if err != nil {
-		if pp.failCnt < maxFailCnt && !networkBad() {
-			pp.failCnt++
-		}
+func initParentPool() {
+	backPool, ok := parentProxy.(*backupParentPool)
+	if !ok {
+		panic("initial parent pool should be backup pool")
+	}
+	if debug {
+		printParentProxy(backPool.parent)
+	}
+	if len(backPool.parent) == 0 {
+		info.Println("no parent proxy server")
 		return
 	}
-	pp.failCnt = 0
-	return
+	if len(backPool.parent) == 1 && config.LoadBalance != loadBalanceBackup {
+		debug.Println("only 1 parent, no need for load balance")
+		config.LoadBalance = loadBalanceBackup
+	}
+
+	switch config.LoadBalance {
+	case loadBalanceHash:
+		debug.Println("hash parent pool", len(backPool.parent))
+		parentProxy = &hashParentPool{*backPool}
+	}
 }
 
-func printParentProxy() {
+func printParentProxy(parent []ParentWithFail) {
 	debug.Println("avaiable parent proxies:")
-	for _, pp := range parentProxy {
-		switch pc := pp.proxyConnector.(type) {
+	for _, pp := range parent {
+		switch pc := pp.ParentProxy.(type) {
 		case *shadowsocksParent:
 			debug.Println("\tshadowsocks: ", pc.server)
 		case *httpParent:
@@ -95,6 +69,84 @@ func printParentProxy() {
 			debug.Println("\tcow parent: ", pc.server)
 		}
 	}
+}
+
+type ParentWithFail struct {
+	ParentProxy
+	fail int
+}
+
+// Backup load balance strategy:
+// Select proxy in the order they appear in config.
+type backupParentPool struct {
+	parent []ParentWithFail
+}
+
+func (pp *backupParentPool) empty() bool {
+	return len(pp.parent) == 0
+}
+
+func (pp *backupParentPool) add(parent ParentProxy) {
+	pp.parent = append(pp.parent, ParentWithFail{parent, 0})
+}
+
+func (pp *backupParentPool) connect(url *URL) (srvconn net.Conn, err error) {
+	return connectInOrder(url, pp.parent, 0)
+}
+
+// Hash load balance strategy:
+// Each host will use a proxy based on a hash value.
+type hashParentPool struct {
+	backupParentPool
+}
+
+func (pp *hashParentPool) connect(url *URL) (srvconn net.Conn, err error) {
+	start := int(stringHash(url.Host) % uint64(len(pp.parent)))
+	debug.Printf("hash host %s try %d parent first", url.Host, start)
+	return connectInOrder(url, pp.parent, start)
+}
+
+func (parent *ParentWithFail) connect(url *URL) (srvconn net.Conn, err error) {
+	const maxFailCnt = 30
+	srvconn, err = parent.ParentProxy.connect(url)
+	if err != nil {
+		if parent.fail < maxFailCnt && !networkBad() {
+			parent.fail++
+		}
+		return
+	}
+	parent.fail = 0
+	return
+}
+
+func connectInOrder(url *URL, pp []ParentWithFail, start int) (srvconn net.Conn, err error) {
+	const baseFailCnt = 9
+	var skipped []int
+	nproxy := len(pp)
+
+	if nproxy == 0 {
+		return nil, errors.New("no parent proxy")
+	}
+
+	for i := 0; i < nproxy; i++ {
+		proxyId := (start + i) % nproxy
+		parent := &pp[proxyId]
+		// skip failed server, but try it with some probability
+		if parent.fail > 0 && rand.Intn(parent.fail+baseFailCnt) != 0 {
+			skipped = append(skipped, proxyId)
+			continue
+		}
+		if srvconn, err = parent.connect(url); err == nil {
+			return
+		}
+	}
+	// last resort, try skipped one, not likely to succeed
+	for _, skippedId := range skipped {
+		if srvconn, err = pp[skippedId].connect(url); err == nil {
+			return
+		}
+	}
+	return nil, err
 }
 
 // http parent proxy
