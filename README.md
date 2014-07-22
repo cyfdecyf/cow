@@ -28,6 +28,7 @@ COW 的设计目标是自动化，理想情况下用户无需关心哪些网站�
 
         curl -L git.io/cow | bash
 
+  - 环境变量 `COW_INSTALLDIR` 可以指定安装的路径，若该环境变量不是目录则询问用户
 - **Windows:** [点此下载](http://dl.chenyufei.info/cow/)
 - 熟悉 Go 的用户可用 `go get github.com/cyfdecyf/cow` 从源码安装
 

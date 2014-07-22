@@ -38,8 +38,14 @@ exit_on_fail() {
     fi
 }
 
-# Get installation directory from user
 while true; do
+    # Get install directory from environment variable.
+    if [[ -n $COW_INSTALLDIR && -d $COW_INSTALLDIR ]]; then
+        install_dir=$COW_INSTALLDIR
+        break
+    fi
+
+    # Get installation directory from user
     echo -n "Install cow binary to which directory (absolute path, defaults to current dir): "
     read install_dir </dev/tty
     if [ -z $install_dir ]; then
