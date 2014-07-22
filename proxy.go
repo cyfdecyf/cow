@@ -169,6 +169,7 @@ func (hp *httpProxy) Serve(wg *sync.WaitGroup) {
 			if isErrTooManyOpenFd(err) {
 				connPool.CloseAll()
 			}
+			time.Sleep(time.Millisecond)
 			continue
 		}
 		c := newClientConn(conn, hp)
@@ -221,6 +222,7 @@ func (cp *cowProxy) Serve(wg *sync.WaitGroup) {
 			if isErrTooManyOpenFd(err) {
 				connPool.CloseAll()
 			}
+			time.Sleep(time.Millisecond)
 			continue
 		}
 		ssConn := ss.NewConn(conn, cp.cipher.Copy())
