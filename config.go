@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	version           = "0.9.1"
+	version           = "0.9.2"
 	defaultListenAddr = "127.0.0.1:7777"
 )
 
@@ -24,6 +24,7 @@ type LoadBalanceMode byte
 const (
 	loadBalanceBackup LoadBalanceMode = iota
 	loadBalanceHash
+	loadBalanceLatency
 )
 
 // allow the same tunnel ports as polipo
@@ -58,6 +59,8 @@ type Config struct {
 
 	Core         int
 	DetectSSLErr bool
+
+	HttpErrorCode int
 
 	// not configurable in config file
 	PrintVer        bool
@@ -173,7 +176,7 @@ func (p proxyParser) ProxySocks5(val string) {
 	if err := checkServerAddr(val); err != nil {
 		Fatal("parent socks server", err)
 	}
-	addParentProxy(newSocksParent(val))
+	parentProxy.add(newSocksParent(val))
 }
 
 func (pp proxyParser) ProxyHttp(val string) {
@@ -197,7 +200,7 @@ func (pp proxyParser) ProxyHttp(val string) {
 
 	parent := newHttpParent(server)
 	parent.initAuth(userPasswd)
-	addParentProxy(parent)
+	parentProxy.add(parent)
 }
 
 // Parse method:passwd@server:port
@@ -235,7 +238,7 @@ func (pp proxyParser) ProxySs(val string) {
 	}
 	parent := newShadowsocksParent(server)
 	parent.initCipher(method, passwd)
-	addParentProxy(parent)
+	parentProxy.add(parent)
 }
 
 func (pp proxyParser) ProxyCow(val string) {
@@ -258,7 +261,7 @@ func (pp proxyParser) ProxyCow(val string) {
 	}
 	config.saveReqLine = true
 	parent := newCowParent(server, arr[0], arr[1])
-	addParentProxy(parent)
+	parentProxy.add(parent)
 }
 
 // listenParser provides functions to parse different types of listen addresses
@@ -418,7 +421,7 @@ func (p configParser) ParseHttpParent(val string) {
 	}
 	config.saveReqLine = true
 	http.parent = newHttpParent(val)
-	addParentProxy(http.parent)
+	parentProxy.add(http.parent)
 	http.serverCnt++
 	configNeedUpgrade = true
 }
@@ -444,6 +447,8 @@ func (p configParser) ParseLoadBalance(val string) {
 		config.LoadBalance = loadBalanceBackup
 	case "hash":
 		config.LoadBalance = loadBalanceHash
+	case "latency":
+		config.LoadBalance = loadBalanceLatency
 	default:
 		Fatalf("invalid loadBalance mode: %s\n", val)
 	}
@@ -480,7 +485,7 @@ func (p configParser) ParseShadowSocks(val string) {
 		Fatal("shadowsocks server", err)
 	}
 	shadow.parent = newShadowsocksParent(val)
-	addParentProxy(shadow.parent)
+	parentProxy.add(shadow.parent)
 	shadow.serverCnt++
 	configNeedUpgrade = true
 }
@@ -548,6 +553,10 @@ func (p configParser) ParseCore(val string) {
 	config.Core = parseInt(val, "core")
 }
 
+func (p configParser) ParseHttpErrorCode(val string) {
+	config.HttpErrorCode = parseInt(val, "httpErrorCode")
+}
+
 func (p configParser) ParseReadTimeout(val string) {
 	config.ReadTimeout = parseDuration(val, "readTimeout")
 }
@@ -592,7 +601,7 @@ func parseConfig(rc string, override *Config) {
 			continue
 		}
 
-		v := strings.Split(line, "=")
+		v := strings.SplitN(line, "=", 2)
 		if len(v) != 2 {
 			Fatal("config syntax error on line", n)
 		}
@@ -653,7 +662,11 @@ func upgradeConfig(rc string, lines []string) {
 			// comment out original
 			w.WriteString("#" + line + newLine)
 		case "httpParent", "shadowSocks", "socksParent":
-			parent := parentProxy[proxyId]
+			backPool, ok := parentProxy.(*backupParentPool)
+			if !ok {
+				panic("initial parent pool should be backup pool")
+			}
+			parent := backPool.parent[proxyId]
 			proxyId++
 			w.WriteString(parent.genConfig() + newLine)
 			// comment out original
@@ -715,9 +728,6 @@ func checkConfig() {
 	// listenAddr must be handled first, as addrInPAC dependends on this.
 	if listenProxy == nil {
 		listenProxy = []Proxy{newHttpProxy(defaultListenAddr, "")}
-	}
-	if len(parentProxy) <= 1 {
-		config.LoadBalance = loadBalanceBackup
 	}
 }
 

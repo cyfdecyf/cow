@@ -51,12 +51,7 @@ func main() {
 
 	initStat()
 
-	if !hasParentProxy() {
-		info.Println("no parent proxy server")
-	}
-	if debug {
-		printParentProxy()
-	}
+	initParentPool()
 
 	/*
 		if *cpuprofile != "" {

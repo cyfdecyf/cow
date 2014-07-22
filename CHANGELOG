@@ -1,3 +1,9 @@
+0.9.2 (2014-07-23)
+    * Reduce the possibility of encountering too many open file error
+    * New connection latency based load balancing
+    * Fix auto load plist for OS X
+    * Identify blocked site by HTTP error code
+
 0.9.1 (2013-12-20)
     * Fix can't save site stat bug
     * Improve install and startup script

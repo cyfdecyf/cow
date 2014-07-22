@@ -8,7 +8,7 @@ import (
 )
 
 // Maximum number of connections to a server.
-const maxServerConnCnt = 20
+const maxServerConnCnt = 5
 
 // Store each server's connections in separate channels, getting
 // connections for different servers can be done in parallel.
@@ -23,9 +23,11 @@ var connPool = &ConnPool{
 	muxConn:  make(chan *serverConn, maxServerConnCnt*2),
 }
 
+const muxConnHostPort = "@muxConn"
+
 func init() {
 	// make sure hostPort here won't match any actual hostPort
-	go closeStaleServerConn(connPool.muxConn, "muxConn")
+	go closeStaleServerConn(connPool.muxConn, muxConnHostPort)
 }
 
 func getConnFromChan(ch chan *serverConn) (sv *serverConn) {
@@ -76,7 +78,7 @@ func (cp *ConnPool) Get(hostPort string, asDirect bool) (sv *serverConn) {
 
 	// All mulplexing connections are for blocked sites,
 	// so for direct sites we should stop here.
-	if asDirect {
+	if asDirect && !config.AlwaysProxy {
 		return nil
 	}
 
@@ -114,6 +116,63 @@ func (cp *ConnPool) Put(sv *serverConn) {
 	}
 }
 
+type chanInPool struct {
+	hostPort string
+	ch       chan *serverConn
+}
+
+func (cp *ConnPool) CloseAll() {
+	debug.Println("connPool: close all server connections")
+
+	// Because closeServerConn may acquire connPool.Lock, we first collect all
+	// channel, and close server connection for each one.
+	var connCh []chanInPool
+	cp.RLock()
+	for hostPort, ch := range cp.idleConn {
+		connCh = append(connCh, chanInPool{hostPort, ch})
+	}
+	cp.RUnlock()
+
+	for _, hc := range connCh {
+		closeServerConn(hc.ch, hc.hostPort, true)
+	}
+
+	closeServerConn(cp.muxConn, muxConnHostPort, true)
+}
+
+func closeServerConn(ch chan *serverConn, hostPort string, force bool) (done bool) {
+	// If force is true, close all idle connection even if it maybe open.
+	lcnt := len(ch)
+	if lcnt == 0 {
+		// Execute the loop at least once.
+		lcnt = 1
+	}
+	for i := 0; i < lcnt; i++ {
+		select {
+		case sv := <-ch:
+			if force || sv.mayBeClosed() {
+				debug.Printf("connPool channel %s: close one conn\n", hostPort)
+				sv.Close()
+			} else {
+				// Put it back and wait.
+				debug.Printf("connPool channel %s: put back conn\n", hostPort)
+				ch <- sv
+			}
+		default:
+			if hostPort != muxConnHostPort {
+				// No more connection in this channel, remove the channel from
+				// the map.
+				debug.Printf("connPool channel %s: remove\n", hostPort)
+				connPool.Lock()
+				delete(connPool.idleConn, hostPort)
+				connPool.Unlock()
+			}
+			return true
+		}
+	}
+	return false
+}
+
 func closeStaleServerConn(ch chan *serverConn, hostPort string) {
 	// Tricky here. When removing a channel from the map, there maybe
 	// goroutines doing Put and Get using that channel.
@@ -127,34 +186,10 @@ func closeStaleServerConn(ch chan *serverConn, hostPort string) {
 	// It's possible that Put add the connection after the final wait, but
 	// that should not happen in practice, and the worst result is just lost
 	// some memory and open fd.
-done:
 	for {
-		time.Sleep(defaultServerConnTimeout)
-	cleanup:
-		for {
-			select {
-			case sv := <-ch:
-				if sv.mayBeClosed() {
-					debug.Printf("connPool channel %s: close one conn\n", hostPort)
-					sv.Close()
-				} else {
-					// Put it back and wait.
-					debug.Printf("connPool channel %s: put back conn\n", hostPort)
-					ch <- sv
-					break cleanup
-				}
-			default:
-				// No more connection in this channel, remove the channel from the map.
-				// Note: muxConn is not in idleConn, though delete would be a no-op,
-				// it has to acquire the lock.
-				if _, ok := connPool.idleConn[hostPort]; ok {
-					debug.Printf("connPool channel %s: remove\n", hostPort)
-					connPool.Lock()
-					delete(connPool.idleConn, hostPort)
-					connPool.Unlock()
-				}
-				break done
-			}
+		time.Sleep(5 * time.Second)
+		if done := closeServerConn(ch, hostPort, false); done {
+			break
 		}
 	}
 	// Final wait and then close all left connections. In practice, there

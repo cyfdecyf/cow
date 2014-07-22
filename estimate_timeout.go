@@ -88,8 +88,8 @@ func estimateTimeout() {
 	}
 	return
 onErr:
-	dialTimeout += 2
-	readTimeout += 2
+	dialTimeout += 2 * time.Second
+	readTimeout += 2 * time.Second
 }
 
 func runEstimateTimeout() {

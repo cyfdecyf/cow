@@ -36,3 +36,11 @@ func isErrOpRead(err error) bool {
 	}
 	return ne.Op == "read"
 }
+
+func isErrTooManyOpenFd(err error) bool {
+	if ne, ok := err.(*net.OpError); ok && (ne.Err == syscall.EMFILE || ne.Err == syscall.ENFILE) {
+		errl.Println("too many open fd")
+		return true
+	}
+	return false
+}

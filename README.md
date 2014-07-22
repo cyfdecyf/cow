@@ -2,7 +2,9 @@
 
 COW 是一个简化穿墙的 HTTP 代理服务器。它能自动检测被墙网站，仅对这些网站使用二级代理。
 
-当前版本：0.9.1 [CHANGELOG](CHANGELOG)
+[English README](README-en.md).
+
+当前版本：0.9.2 [CHANGELOG](CHANGELOG)
 [![Build Status](https://travis-ci.org/cyfdecyf/cow.png?branch=master)](https://travis-ci.org/cyfdecyf/cow)
 
 **欢迎在 develop branch 进行开发并发送 pull request :)**
@@ -26,6 +28,7 @@ COW 的设计目标是自动化，理想情况下用户无需关心哪些网站�
 
         curl -L git.io/cow | bash
 
+  - 环境变量 `COW_INSTALLDIR` 可以指定安装的路径，若该环境变量不是目录则询问用户
 - **Windows:** [点此下载](http://dl.chenyufei.info/cow/)
 - 熟悉 Go 的用户可用 `go get github.com/cyfdecyf/cow` 从源码安装
 
@@ -59,7 +62,7 @@ COW 的设计目标是自动化，理想情况下用户无需关心哪些网站�
 
 启动 COW：
 
-- Unix 系统在命令行上执行 `cow &`
+- Unix 系统在命令行上执行 `cow &` (若 COW 不在 `PATH` 所在目录，请执行 `./cow &`)
   - [Linux 启动脚本](doc/init.d/cow)，如何使用请参考注释（Debian 测试通过，其他 Linux 发行版应该也可使用）
 - Windows
   - 双击 `cow-taskbar.exe`，隐藏到托盘执行
@@ -82,8 +85,6 @@ PAC url 为 `http://<listen address>/pac`，也可将浏览器的 HTTP/HTTPS 代
   - 二级域名如 `google.com` 相当于 `*.google.com`
   - `com.hk`, `edu.cn` 等二级域名下的三级域名，作为二级域名处理。如 `google.com.hk` 相当于 `*.google.com.hk`
   - 其他三级及以上域名/主机名做精确匹配，例如 `plus.google.com`
-
-注意：对私有 IPv4 地址及 simple host name，COW 总是直接连接，生成的 PAC 也让浏览器直接访问。（因此访问 localhost 和局域网内机器会绕过 COW。）
 
 # 技术细节
 
@@ -126,10 +127,11 @@ COW 默认配置下检测到被墙后，过两分钟再次尝试直连也是为�
 - @tevino: http parent proxy basic authentication
 - @xupefei: 提供 cow-hide.exe 以在 windows 上在后台执行 cow.exe
 - @sunteya: 改进启动和安装脚本
+- @fzerorubigd: identify blocked site by HTTP error code
 
 Bug reporter:
 
-- GitHub users: glacjay, trawor, Blaskyy, lucifer9, zellux, xream, hieixu, fantasticfears, perrywky, JayXon, graminc, WingGao, polong, dallascao
+- GitHub users: glacjay, trawor, Blaskyy, lucifer9, zellux, xream, hieixu, fantasticfears, perrywky, JayXon, graminc, WingGao, polong, dallascao, luosheng
 - Twitter users: 特别感谢 @shao222 多次帮助测试新版并报告了不少 bug, @xixitalk
 
 @glacjay 对 0.3 版本的 COW 提出了让它更加自动化的建议，使我重新考虑 COW 的设计目标并且改进成 0.5 版本之后的工作方式。

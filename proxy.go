@@ -166,6 +166,10 @@ func (hp *httpProxy) Serve(wg *sync.WaitGroup) {
 		conn, err := ln.Accept()
 		if err != nil {
 			errl.Printf("http proxy(%s) accept %v\n", ln.Addr(), err)
+			if isErrTooManyOpenFd(err) {
+				connPool.CloseAll()
+			}
+			time.Sleep(time.Millisecond)
 			continue
 		}
 		c := newClientConn(conn, hp)
@@ -189,11 +193,11 @@ func newCowProxy(method, passwd, addr string) *cowProxy {
 }
 
 func (cp *cowProxy) genConfig() string {
-	if cp.method == "" {
-		return fmt.Sprintf("listen = cow://table:%s@%s", cp.passwd, cp.addr)
-	} else {
-		return fmt.Sprintf("listen = cow://%s:%s@%s", cp.method, cp.passwd, cp.addr)
+	method := cp.method
+	if method == "" {
+		method = "table"
 	}
+	return fmt.Sprintf("listen = cow://%s:%s@%s", method, cp.passwd, cp.addr)
 }
 
 func (cp *cowProxy) Addr() string {
@@ -215,6 +219,10 @@ func (cp *cowProxy) Serve(wg *sync.WaitGroup) {
 		conn, err := ln.Accept()
 		if err != nil {
 			errl.Printf("cow proxy(%s) accept %v\n", ln.Addr(), err)
+			if isErrTooManyOpenFd(err) {
+				connPool.CloseAll()
+			}
+			time.Sleep(time.Millisecond)
 			continue
 		}
 		ssConn := ss.NewConn(conn, cp.cipher.Copy())
@@ -708,7 +716,7 @@ func (c *clientConn) getServerConn(r *Request) (*serverConn, error) {
 	return c.createServerConn(r, siteInfo)
 }
 
-func connectDirect(url *URL, siteInfo *VisitCnt) (net.Conn, error) {
+func connectDirect2(url *URL, siteInfo *VisitCnt, recursive bool) (net.Conn, error) {
 	var c net.Conn
 	var err error
 	if siteInfo.AlwaysDirect() {
@@ -726,12 +734,18 @@ func connectDirect(url *URL, siteInfo *VisitCnt) (net.Conn, error) {
 		c, err = net.DialTimeout("tcp", url.HostPort, to)
 	}
 	if err != nil {
-		// Time out is very likely to be caused by GFW
 		debug.Printf("error direct connect to: %s %v\n", url.HostPort, err)
+		if isErrTooManyOpenFd(err) && !recursive {
+			return connectDirect2(url, siteInfo, true)
+		}
 		return nil, err
 	}
 	// debug.Println("directly connected to", url.HostPort)
 	return directConn{c}, nil
+}
+
+func connectDirect(url *URL, siteInfo *VisitCnt) (net.Conn, error) {
+	return connectDirect2(url, siteInfo, false)
 }
 
 func isErrTimeout(err error) bool {
@@ -741,11 +755,21 @@ func isErrTimeout(err error) bool {
 	return false
 }
 
-func maybeBlocked(err error) bool {
-	if !hasParentProxy() {
+func isHttpErrCode(err error) bool {
+	if config.HttpErrorCode <= 0 {
 		return false
 	}
-	return isErrTimeout(err) || isErrConnReset(err)
+	if err == CustomHttpErr {
+		return true
+	}
+	return false
+}
+
+func maybeBlocked(err error) bool {
+	if parentProxy.empty() {
+		return false
+	}
+	return isErrTimeout(err) || isErrConnReset(err) || isHttpErrCode(err)
 }
 
 // Connect to requested server according to whether it's visit count.
@@ -753,15 +777,15 @@ func maybeBlocked(err error) bool {
 func (c *clientConn) connect(r *Request, siteInfo *VisitCnt) (srvconn net.Conn, err error) {
 	var errMsg string
 	if config.AlwaysProxy {
-		if srvconn, err = connectByParentProxy(r.URL); err == nil {
+		if srvconn, err = parentProxy.connect(r.URL); err == nil {
 			return
 		}
 		errMsg = genErrMsg(r, nil, "Parent proxy connection failed, always use parent proxy.")
 		goto fail
 	}
-	if siteInfo.AsBlocked() && hasParentProxy() {
+	if siteInfo.AsBlocked() && !parentProxy.empty() {
 		// In case of connection error to socks server, fallback to direct connection
-		if srvconn, err = connectByParentProxy(r.URL); err == nil {
+		if srvconn, err = parentProxy.connect(r.URL); err == nil {
 			return
 		}
 		if siteInfo.AlwaysBlocked() {
@@ -781,7 +805,7 @@ func (c *clientConn) connect(r *Request, siteInfo *VisitCnt) (srvconn net.Conn, 
 		if srvconn, err = connectDirect(r.URL, siteInfo); err == nil {
 			return
 		}
-		if !hasParentProxy() {
+		if parentProxy.empty() {
 			errMsg = genErrMsg(r, nil, "Direct connection failed, no parent proxy.")
 			goto fail
 		}
@@ -799,7 +823,7 @@ func (c *clientConn) connect(r *Request, siteInfo *VisitCnt) (srvconn net.Conn, 
 		// To simplify things and avoid error in my observation, always try
 		// parent proxy in case of Dial error.
 		var socksErr error
-		if srvconn, socksErr = connectByParentProxy(r.URL); socksErr == nil {
+		if srvconn, socksErr = parentProxy.connect(r.URL); socksErr == nil {
 			c.handleBlockedRequest(r, err)
 			if debug {
 				debug.Printf("cli(%s) direct connection failed, use parent proxy for %v\n",
@@ -1311,12 +1335,14 @@ func sendBodyChunked(w io.Writer, r *bufio.Reader, rdSize int) (err error) {
 			errl.Println("chunk size invalid:", err)
 			return
 		}
-		if debug {
-			// To debug getting malformed response status line with "0\r\n".
-			if c, ok := w.(*clientConn); ok {
-				debug.Printf("cli(%s) chunk size %d %#v\n", c.RemoteAddr(), size, string(s))
+		/*
+			if debug {
+				// To debug getting malformed response status line with "0\r\n".
+				if c, ok := w.(*clientConn); ok {
+					debug.Printf("cli(%s) chunk size %d %#v\n", c.RemoteAddr(), size, string(s))
+				}
 			}
-		}
+		*/
 		if size == 0 {
 			r.Skip(len(s))
 			if err = skipCRLF(r); err != nil {

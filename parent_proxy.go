@@ -9,82 +9,64 @@ import (
 	"io"
 	"math/rand"
 	"net"
+	"sort"
 	"strconv"
+	"sync"
+	"time"
 )
 
-func connectByParentProxy(url *URL) (srvconn net.Conn, err error) {
-	const baseFailCnt = 9
-	var skipped []int
-	nproxy := len(parentProxy)
-
-	firstId := 0
-	if config.LoadBalance == loadBalanceHash {
-		firstId = int(stringHash(url.Host) % uint64(nproxy))
-		debug.Println("use proxy", firstId)
-	}
-
-	for i := 0; i < nproxy; i++ {
-		proxyId := (firstId + i) % nproxy
-		pp := &parentProxy[proxyId]
-		// skip failed server, but try it with some probability
-		if pp.failCnt > 0 && rand.Intn(pp.failCnt+baseFailCnt) != 0 {
-			skipped = append(skipped, proxyId)
-			continue
-		}
-		if srvconn, err = pp.connect(url); err == nil {
-			return
-		}
-	}
-	// last resort, try skipped one, not likely to succeed
-	for _, skippedId := range skipped {
-		if srvconn, err = parentProxy[skippedId].connect(url); err == nil {
-			return
-		}
-	}
-	if len(parentProxy) != 0 {
-		return
-	}
-	return nil, errors.New("no parent proxy")
-}
-
-// proxyConnector is the interface that all parent proxies should support.
-type proxyConnector interface {
+// Interface that all types of parent proxies should support.
+type ParentProxy interface {
 	connect(*URL) (net.Conn, error)
+	getServer() string // for use in updating server latency
 	genConfig() string // for upgrading config
 }
 
-type ParentProxy struct {
-	proxyConnector
-	failCnt int
+// Interface for different proxy selection strategy.
+type ParentPool interface {
+	add(ParentProxy)
+	empty() bool
+	// Select a proxy from the pool and connect. May try several proxies until
+	// one that succees, return nil and error if all parent proxies fail.
+	connect(*URL) (net.Conn, error)
 }
 
-var parentProxy []ParentProxy
+// Init parentProxy to be backup pool. So config parsing have a pool to add
+// parent proxies.
+var parentProxy ParentPool = &backupParentPool{}
 
-func hasParentProxy() bool {
-	return len(parentProxy) != 0
-}
-
-func addParentProxy(pc proxyConnector) {
-	parentProxy = append(parentProxy, ParentProxy{pc, 0})
-}
-
-func (pp *ParentProxy) connect(url *URL) (srvconn net.Conn, err error) {
-	const maxFailCnt = 30
-	srvconn, err = pp.proxyConnector.connect(url)
-	if err != nil {
-		if pp.failCnt < maxFailCnt && !networkBad() {
-			pp.failCnt++
-		}
+func initParentPool() {
+	backPool, ok := parentProxy.(*backupParentPool)
+	if !ok {
+		panic("initial parent pool should be backup pool")
+	}
+	if debug {
+		printParentProxy(backPool.parent)
+	}
+	if len(backPool.parent) == 0 {
+		info.Println("no parent proxy server")
 		return
 	}
-	pp.failCnt = 0
-	return
+	if len(backPool.parent) == 1 && config.LoadBalance != loadBalanceBackup {
+		debug.Println("only 1 parent, no need for load balance")
+		config.LoadBalance = loadBalanceBackup
+	}
+
+	switch config.LoadBalance {
+	case loadBalanceHash:
+		debug.Println("hash parent pool", len(backPool.parent))
+		parentProxy = &hashParentPool{*backPool}
+	case loadBalanceLatency:
+		debug.Println("latency parent pool", len(backPool.parent))
+		go updateParentProxyLatency()
+		parentProxy = newLatencyParentPool(backPool.parent)
+	}
 }
 
-func printParentProxy() {
+func printParentProxy(parent []ParentWithFail) {
 	debug.Println("avaiable parent proxies:")
-	for _, pp := range parentProxy {
-		switch pc := pp.proxyConnector.(type) {
+	for _, pp := range parent {
+		switch pc := pp.ParentProxy.(type) {
 		case *shadowsocksParent:
 			debug.Println("\tshadowsocks: ", pc.server)
 		case *httpParent:
@@ -94,6 +76,235 @@ func printParentProxy() {
 		case *cowParent:
 			debug.Println("\tcow parent: ", pc.server)
 		}
+	}
+}
+
+type ParentWithFail struct {
+	ParentProxy
+	fail int
+}
+
+// Backup load balance strategy:
+// Select proxy in the order they appear in config.
+type backupParentPool struct {
+	parent []ParentWithFail
+}
+
+func (pp *backupParentPool) empty() bool {
+	return len(pp.parent) == 0
+}
+
+func (pp *backupParentPool) add(parent ParentProxy) {
+	pp.parent = append(pp.parent, ParentWithFail{parent, 0})
+}
+
+func (pp *backupParentPool) connect(url *URL) (srvconn net.Conn, err error) {
+	return connectInOrder(url, pp.parent, 0)
+}
+
+// Hash load balance strategy:
+// Each host will use a proxy based on a hash value.
+type hashParentPool struct {
+	backupParentPool
+}
+
+func (pp *hashParentPool) connect(url *URL) (srvconn net.Conn, err error) {
+	start := int(stringHash(url.Host) % uint64(len(pp.parent)))
+	debug.Printf("hash host %s try %d parent first", url.Host, start)
+	return connectInOrder(url, pp.parent, start)
+}
+
+func (parent *ParentWithFail) connect(url *URL) (srvconn net.Conn, err error) {
+	const maxFailCnt = 30
+	srvconn, err = parent.ParentProxy.connect(url)
+	if err != nil {
+		if parent.fail < maxFailCnt && !networkBad() {
+			parent.fail++
+		}
+		return
+	}
+	parent.fail = 0
+	return
+}
+
+func connectInOrder(url *URL, pp []ParentWithFail, start int) (srvconn net.Conn, err error) {
+	const baseFailCnt = 9
+	var skipped []int
+	nproxy := len(pp)
+
+	if nproxy == 0 {
+		return nil, errors.New("no parent proxy")
+	}
+
+	for i := 0; i < nproxy; i++ {
+		proxyId := (start + i) % nproxy
+		parent := &pp[proxyId]
+		// skip failed server, but try it with some probability
+		if parent.fail > 0 && rand.Intn(parent.fail+baseFailCnt) != 0 {
+			skipped = append(skipped, proxyId)
+			continue
+		}
+		if srvconn, err = parent.connect(url); err == nil {
+			return
+		}
+	}
+	// last resort, try skipped one, not likely to succeed
+	for _, skippedId := range skipped {
+		if srvconn, err = pp[skippedId].connect(url); err == nil {
+			return
+		}
+	}
+	return nil, err
+}
+
+type ParentWithLatency struct {
+	ParentProxy
+	latency time.Duration
+}
+
+type latencyParentPool struct {
+	parent []ParentWithLatency
+}
+
+func newLatencyParentPool(parent []ParentWithFail) *latencyParentPool {
+	lp := &latencyParentPool{}
+	for _, p := range parent {
+		lp.add(p.ParentProxy)
+	}
+	return lp
+}
+
+func (pp *latencyParentPool) empty() bool {
+	return len(pp.parent) == 0
+}
+
+func (pp *latencyParentPool) add(parent ParentProxy) {
+	pp.parent = append(pp.parent, ParentWithLatency{parent, 0})
+}
+
+// Sort interface.
+func (pp *latencyParentPool) Len() int {
+	return len(pp.parent)
+}
+
+func (pp *latencyParentPool) Swap(i, j int) {
+	p := pp.parent
+	p[i], p[j] = p[j], p[i]
+}
+
+func (pp *latencyParentPool) Less(i, j int) bool {
+	p := pp.parent
+	return p[i].latency < p[j].latency
+}
+
+const latencyMax = time.Hour
+
+var latencyMutex sync.RWMutex
+
+func (pp *latencyParentPool) connect(url *URL) (srvconn net.Conn, err error) {
+	var lp []ParentWithLatency
+	// Read slice first.
+	latencyMutex.RLock()
+	lp = pp.parent
+	latencyMutex.RUnlock()
+
+	var skipped []int
+	nproxy := len(lp)
+	if nproxy == 0 {
+		return nil, errors.New("no parent proxy")
+	}
+
+	for i := 0; i < nproxy; i++ {
+		parent := lp[i]
+		if parent.latency >= latencyMax {
+			skipped = append(skipped, i)
+			continue
+		}
+		if srvconn, err = parent.connect(url); err == nil {
+			debug.Println("lowest latency proxy", parent.getServer())
+			return
+		}
+		parent.latency = latencyMax
+	}
+	// last resort, try skipped one, not likely to succeed
+	for _, skippedId := range skipped {
+		if srvconn, err = lp[skippedId].connect(url); err == nil {
+			return
+		}
+	}
+	return nil, err
+}
+
+func (parent *ParentWithLatency) updateLatency(wg *sync.WaitGroup) {
+	defer wg.Done()
+	proxy := parent.ParentProxy
+	server := proxy.getServer()
+
+	host, port, err := net.SplitHostPort(server)
+	if err != nil {
+		panic("split host port parent server error" + err.Error())
+	}
+
+	// Resolve host name first, so latency does not include resolve time.
+	ip, err := net.LookupHost(host)
+	if err != nil {
+		parent.latency = latencyMax
+		return
+	}
+	ipPort := net.JoinHostPort(ip[0], port)
+
+	const N = 3
+	var total time.Duration
+	for i := 0; i < N; i++ {
+		now := time.Now()
+		cn, err := net.DialTimeout("tcp", ipPort, dialTimeout)
+		if err != nil {
+			debug.Println("latency update dial:", err)
+			total += time.Minute // 1 minute as penalty
+			continue
+		}
+		total += time.Now().Sub(now)
+		cn.Close()
+
+		time.Sleep(5 * time.Millisecond)
+	}
+	parent.latency = total / N
+	debug.Println("latency", server, parent.latency)
+}
+
+func (pp *latencyParentPool) updateLatency() {
+	// Create a copy, update latency for the copy.
+	var cp latencyParentPool
+	cp.parent = append(cp.parent, pp.parent...)
+
+	// cp.parent is value instead of pointer, if we use `_, p := range cp.parent`,
+	// the value in cp.parent will not be updated.
+	var wg sync.WaitGroup
+	wg.Add(len(cp.parent))
+	for i, _ := range cp.parent {
+		cp.parent[i].updateLatency(&wg)
+	}
+	wg.Wait()
+
+	// Sort according to latency.
+	sort.Stable(&cp)
+	debug.Println("lantency lowest proxy", cp.parent[0].getServer())
+
+	// Update parent slice.
+	latencyMutex.Lock()
+	pp.parent = cp.parent
+	latencyMutex.Unlock()
+}
+
+func updateParentProxyLatency() {
+	lp, ok := parentProxy.(*latencyParentPool)
+	if !ok {
+		return
+	}
+
+	for {
+		lp.updateLatency()
+		time.Sleep(60 * time.Second)
 	}
 }
 
@@ -115,6 +326,10 @@ func (s httpConn) String() string {
 
 func newHttpParent(server string) *httpParent {
 	return &httpParent{server: server}
+}
+
+func (hp *httpParent) getServer() string {
+	return hp.server
 }
 
 func (hp *httpParent) genConfig() string {
@@ -171,12 +386,16 @@ func newShadowsocksParent(server string) *shadowsocksParent {
 	return &shadowsocksParent{server: server}
 }
 
+func (sp *shadowsocksParent) getServer() string {
+	return sp.server
+}
+
 func (sp *shadowsocksParent) genConfig() string {
-	if sp.method == "" {
-		return fmt.Sprintf("proxy = ss://table:%s@%s", sp.passwd, sp.server)
-	} else {
-		return fmt.Sprintf("proxy = ss://%s:%s@%s", sp.method, sp.passwd, sp.server)
+	method := sp.method
+	if method == "" {
+		method = "table"
 	}
+	return fmt.Sprintf("proxy = ss://%s:%s@%s", method, sp.passwd, sp.server)
 }
 
 func (sp *shadowsocksParent) initCipher(method, passwd string) {
@@ -203,6 +422,8 @@ func (sp *shadowsocksParent) connect(url *URL) (net.Conn, error) {
 // cow parent proxy
 type cowParent struct {
 	server string
+	method string
+	passwd string
 	cipher *ss.Cipher
 }
 
@@ -220,11 +441,19 @@ func newCowParent(srv, method, passwd string) *cowParent {
 	if err != nil {
 		Fatal("create cow cipher:", err)
 	}
-	return &cowParent{srv, cipher}
+	return &cowParent{srv, method, passwd, cipher}
+}
+
+func (cp *cowParent) getServer() string {
+	return cp.server
 }
 
 func (cp *cowParent) genConfig() string {
-	return "" // no upgrading need
+	method := cp.method
+	if method == "" {
+		method = "table"
+	}
+	return fmt.Sprintf("proxy = cow://%s:%s@%s", method, cp.passwd, cp.server)
 }
 
 func (cp *cowParent) connect(url *URL) (net.Conn, error) {
@@ -278,6 +507,10 @@ func (s socksConn) String() string {
 
 func newSocksParent(server string) *socksParent {
 	return &socksParent{server}
+}
+
+func (sp *socksParent) getServer() string {
+	return sp.server
 }
 
 func (sp *socksParent) genConfig() string {

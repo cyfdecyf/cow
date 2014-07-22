@@ -24,6 +24,8 @@ const (
 	statusRequestTimeout = "408 Request Timeout"
 )
 
+var CustomHttpErr = errors.New("CustomHttpErr")
+
 type Header struct {
 	ContLen             int64
 	KeepAlive           time.Duration
@@ -704,6 +706,12 @@ func parseResponse(sv *serverConn, r *Request, rp *Response) (err error) {
 	if err = rp.parseHeader(reader, rp.raw, r.URL); err != nil {
 		errl.Printf("parse response header: %v %s\n%s", err, r, rp.Verbose())
 		return err
+	}
+
+	//Check for http error code from config file
+	if config.HttpErrorCode > 0 && rp.Status == config.HttpErrorCode {
+		errl.Println("Requested http code is raised")
+		return CustomHttpErr
 	}
 
 	if rp.Status == statusCodeContinue && !r.ExpectContinue {
