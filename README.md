@@ -4,7 +4,7 @@ COW 是一个简化穿墙的 HTTP 代理服务器。它能自动检测被墙网�
 
 [English README](README-en.md).
 
-当前版本：0.9.1 [CHANGELOG](CHANGELOG)
+当前版本：0.9.2 [CHANGELOG](CHANGELOG)
 [![Build Status](https://travis-ci.org/cyfdecyf/cow.png?branch=develop)](https://travis-ci.org/cyfdecyf/cow)
 
 **欢迎在 develop branch 进行开发并发送 pull request :)**
@@ -127,10 +127,11 @@ COW 默认配置下检测到被墙后，过两分钟再次尝试直连也是为�
 - @tevino: http parent proxy basic authentication
 - @xupefei: 提供 cow-hide.exe 以在 windows 上在后台执行 cow.exe
 - @sunteya: 改进启动和安装脚本
+- @fzerorubigd: identify blocked site by HTTP error code
 
 Bug reporter:
 
-- GitHub users: glacjay, trawor, Blaskyy, lucifer9, zellux, xream, hieixu, fantasticfears, perrywky, JayXon, graminc, WingGao, polong, dallascao
+- GitHub users: glacjay, trawor, Blaskyy, lucifer9, zellux, xream, hieixu, fantasticfears, perrywky, JayXon, graminc, WingGao, polong, dallascao, luosheng
 - Twitter users: 特别感谢 @shao222 多次帮助测试新版并报告了不少 bug, @xixitalk
 
 @glacjay 对 0.3 版本的 COW 提出了让它更加自动化的建议，使我重新考虑 COW 的设计目标并且改进成 0.5 版本之后的工作方式。
