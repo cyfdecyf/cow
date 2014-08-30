@@ -205,22 +205,21 @@ func (pp proxyParser) ProxyHttp(val string) {
 
 // Parse method:passwd@server:port
 func parseMethodPasswdServer(val string) (method, passwd, server string, err error) {
-	arr := strings.Split(val, "@")
-	if len(arr) < 2 {
+	// Use the right-most @ symbol to seperate method:passwd and server:port.
+	idx := strings.LastIndex(val, "@")
+	if idx == -1 {
 		err = errors.New("requires both encrypt method and password")
-		return
-	} else if len(arr) > 2 {
-		err = errors.New("contains too many @")
 		return
 	}
 
-	methodPasswd := arr[0]
-	server = arr[1]
+	methodPasswd := val[:idx]
+	server = val[idx+1:]
 	if err = checkServerAddr(server); err != nil {
 		return
 	}
 
-	arr = strings.Split(methodPasswd, ":")
+	// Password can have : inside, but I don't recommend this.
+	arr := strings.SplitN(methodPasswd, ":", 2)
 	if len(arr) != 2 {
 		err = errors.New("method and password should be separated by :")
 		return
@@ -242,25 +241,17 @@ func (pp proxyParser) ProxySs(val string) {
 }
 
 func (pp proxyParser) ProxyCow(val string) {
-	arr := strings.Split(val, "@")
-	if len(arr) < 2 {
-		Fatal("cow parent needs encrypt method and password")
-	} else if len(arr) > 2 {
-		Fatal("cow parent contains too many @")
+	method, passwd, server, err := parseMethodPasswdServer(val)
+	if err != nil {
+		Fatal("cow parent", err)
 	}
 
-	methodPasswd := arr[0]
-	server := arr[1]
 	if err := checkServerAddr(server); err != nil {
 		Fatal("parent cow server", err)
 	}
 
-	arr = strings.Split(methodPasswd, ":")
-	if len(arr) != 2 {
-		Fatal("cow parent method password should be separated by :")
-	}
 	config.saveReqLine = true
-	parent := newCowParent(server, arr[0], arr[1])
+	parent := newCowParent(server, method, passwd)
 	parentProxy.add(parent)
 }
 
