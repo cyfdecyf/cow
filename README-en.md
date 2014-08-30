@@ -25,9 +25,7 @@ Install:
 - **Windows:** [download](http://dl.chenyufei.info/cow/)
 - If you are familiar with Go, run `go get github.com/cyfdecyf/cow` to install from source.
 
-Modify configuration file `~/.cow/rc` (Linux) or `rc.txt` (Windows). A simple example:
-
-Here's an example with the most important options:
+Modify configuration file `~/.cow/rc` (OS X or Linux) or `rc.txt` (Windows). A simple example with the most important options:
 
     # Line starting with # is comment and will be ignored
     # Local proxy listen address
@@ -42,6 +40,8 @@ Here's an example with the most important options:
     proxy = ss://aes-128-cfb:password@1.2.3.4:8388
     # cow parent proxy
     proxy = cow://aes-128-cfb:password@1.2.3.4:8388
+
+See [detailed configuration example](doc/sample-config/rc-en) for other features.
 
 The PAC file can be accessed at `http://<listen>/pac`, for the above example: `http://127.0.0.1:7777/pac`.
 
