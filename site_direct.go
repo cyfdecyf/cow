@@ -112,12 +112,6 @@ var directDomainList = []string{
 	"apple.com.cn",
 	"icloud.com",
 
-	// 微软
-	"hotmail.com",
-	"live.com",
-	"outlook.com",
-	"microsoft.com",
-
 	// 其他
 	"macromedia.com",
 	"mmcdn.cn",
