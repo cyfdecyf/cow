@@ -79,7 +79,7 @@ listen = http://127.0.0.1:7777
 #   Here are the supported encryption methods:
 #
 #     aes-128-cfb, aes-192-cfb, aes-256-cfb,
-#     bf-cfb, cast5-cfb, des-cfb, table, rc4
+#     bf-cfb, cast5-cfb, des-cfb, rc4-md5, rc4, table
 #
 #   aes-128-cfb is recommended.
 #
