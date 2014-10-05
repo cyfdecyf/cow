@@ -2,8 +2,8 @@
 
 cd "$( dirname "${BASH_SOURCE[0]}" )/.."
 
-version=`grep '^version=' ./install-cow.sh | sed -s 's/version=//'`
-echo "creating cow binary version $version"
+version=`grep '^version=' ./install-meow.sh | sed -s 's/version=//'`
+echo "creating meow binary version $version"
 
 mkdir -p bin
 build() {
@@ -29,20 +29,20 @@ build() {
         cgo="CGO_ENABLED=0"
     fi
 
-    name=cow-$arch-$version
+    name=meow-$arch-$version
     echo "building $name"
     echo $cgo $goos $goarch $goarm go build
     eval $cgo $goos $goarch $goarm go build || exit 1
     if [[ $1 == "windows" ]]; then
-        mv cow.exe script
+        mv meow.exe script
         pushd script
         sed -e 's/$/\r/' ../doc/sample-config/rc > rc.txt
-        zip $name.zip cow.exe cow-taskbar.exe cow-hide.exe rc.txt
-        rm -f cow.exe rc.txt
+        zip $name.zip meow.exe meow-taskbar.exe meow-hide.exe rc.txt
+        rm -f meow.exe rc.txt
         mv $name.zip ../bin/
         popd
     else
-        mv cow bin/$name
+        mv meow bin/$name
         gzip -f bin/$name
     fi
 }

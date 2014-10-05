@@ -15,7 +15,7 @@ const (
 )
 
 func initConfigDir() {
-	// On windows, put the configuration file in the same directory of cow executable
+	// On windows, put the configuration file in the same directory of meow executable
 	// This is not a reliable way to detect binary directory, but it works for double click and run
 	configPath.dir = path.Dir(os.Args[0])
 }

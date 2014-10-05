@@ -52,7 +52,7 @@ type Request struct {
 	raw     *bytes.Buffer // stores the raw content of request header
 	rawByte []byte        // underlying buffer for raw
 
-	// request line from client starts at 0, cow generates request line that
+	// request line from client starts at 0, meow generates request line that
 	// can be sent directly to web server
 	reqLnStart int // start of generated request line in raw
 	headStart  int // start of header in raw
@@ -369,7 +369,7 @@ var hopByHopHeader = map[string]bool{
 
 type HeaderParserFunc func(*Header, []byte) error
 
-// Used by both "Connection" and "Proxy-Connection" header. COW always adds
+// Used by both "Connection" and "Proxy-Connection" header. meow always adds
 // connection header at the end of a request/response (in parseRequest and
 // parseResponse), no matter whether the original one has this header or not.
 // This will change the order of headers, but should be OK as RFC2616 4.2 says
@@ -431,7 +431,7 @@ func (h *Header) parseTransferEncoding(s []byte) error {
 // a) request includes TE header
 // b) server is the original server
 //
-// Even though COW removes TE header, the original server can still respond
+// Even though meow removes TE header, the original server can still respond
 // with Trailer header.
 // As Trailer is general header, it's possible to appear in request. But is
 // there any client does this?
@@ -444,9 +444,9 @@ func (h *Header) parseTrailer(s []byte) error {
 	return nil
 }
 
-// For now, COW does not fully support 100-continue. It will return "417
+// For now, meow does not fully support 100-continue. It will return "417
 // expectation failed" if a request contains expect header. This is one of the
-// strategies supported by polipo, which is easiest to implement in cow.
+// strategies supported by polipo, which is easiest to implement in meow.
 // TODO If we see lots of expect 100-continue usage, provide full support.
 
 func (h *Header) parseExpect(s []byte) error {
@@ -635,7 +635,7 @@ func parseRequest(c *clientConn, r *Request) (err error) {
 		r.raw.WriteString(fullHeaderConnectionClose)
 	}
 	// The spec says proxy must add Via header. polipo disables this by
-	// default, and I don't want to let others know the user is using COW, so
+	// default, and I don't want to let others know the user is using meow, so
 	// don't add it.
 	r.raw.WriteString(CRLF)
 	r.bodyStart = r.raw.Len()
@@ -735,7 +735,7 @@ func parseResponse(sv *serverConn, r *Request, rp *Response) (err error) {
 			rp.raw.WriteString("Content-Length: 0\r\n")
 		}
 	}
-	// Whether COW should respond with keep-alive depends on client request,
+	// Whether meow should respond with keep-alive depends on client request,
 	// not server response.
 	if r.ConnectionKeepAlive {
 		rp.raw.WriteString(fullHeaderConnectionKeepAlive)

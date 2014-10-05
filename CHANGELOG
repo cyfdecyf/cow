@@ -12,7 +12,7 @@
     * Improve install and startup script
 
 0.9 (2013-12-02)
-    * New feature: two COW servers can be connected using encrypted
+    * New feature: two meow servers can be connected using encrypted
       connection, thus we have an encrypted HTTP proxy chain that can
       be used to bypass the firewall
     * Allow client to use HTTP basic authentication
@@ -52,7 +52,7 @@
 0.7.3 (2013-07-10)
     * Handle 100-continue: do not forward expect header from client, ignore 100
       continue response replied by some web servers
-    * For windows: add cow-hide.exe to run cow.exe as background process,
+    * For windows: add meow-hide.exe to run meow.exe as background process,
       (provided by to xupefei)
     * Filter sites covered by user specified domains on load
     * Fix incorrectly changing header value to lower case: user name and
@@ -86,7 +86,7 @@
 
     * Avoid using too much memory to hold http requests
     * Support http parent proxy basic authentication
-    * For windows: add cow-taskbar.exe to hide cmd window to status area
+    * For windows: add meow-taskbar.exe to hide cmd window to status area
     * Fix timeout error detection
     * Some bug fixes
 
@@ -125,7 +125,7 @@
     * Performance improvement by better buffer usage
     * Allow specifying config file on command line
     * Better windows support: Config and domain list file on windows are put in the same
-      directory as COW's binary. And they all have txt extension for easy editing
+      directory as meow's binary. And they all have txt extension for easy editing
     * Bug fix: convert HTTP/1.0 response to HTTP/1.1
 
 0.3.4 (2012-12-09)

@@ -16,7 +16,7 @@ import (
 
 const (
 	version           = "0.9.3"
-	defaultListenAddr = "127.0.0.1:7777"
+	defaultListenAddr = "127.0.0.1:4411"
 )
 
 type LoadBalanceMode byte
@@ -67,7 +67,7 @@ type Config struct {
 	EstimateTimeout bool // if run estimateTimeout()
 
 	// not config option
-	saveReqLine bool // for http and cow parent, should save request line from client
+	saveReqLine bool // for http and meow parent, should save request line from client
 }
 
 var config Config
@@ -81,7 +81,7 @@ var configPath struct {
 }
 
 func printVersion() {
-	fmt.Println("cow version", version)
+	fmt.Println("meow version", version)
 }
 
 func init() {
@@ -240,18 +240,18 @@ func (pp proxyParser) ProxySs(val string) {
 	parentProxy.add(parent)
 }
 
-func (pp proxyParser) ProxyCow(val string) {
+func (pp proxyParser) Proxymeow(val string) {
 	method, passwd, server, err := parseMethodPasswdServer(val)
 	if err != nil {
-		Fatal("cow parent", err)
+		Fatal("meow parent", err)
 	}
 
 	if err := checkServerAddr(server); err != nil {
-		Fatal("parent cow server", err)
+		Fatal("parent meow server", err)
 	}
 
 	config.saveReqLine = true
-	parent := newCowParent(server, method, passwd)
+	parent := newmeowParent(server, method, passwd)
 	parentProxy.add(parent)
 }
 
@@ -279,15 +279,15 @@ func (lp listenParser) ListenHttp(val string) {
 	addListenProxy(newHttpProxy(addr, addrInPAC))
 }
 
-func (lp listenParser) ListenCow(val string) {
+func (lp listenParser) Listenmeow(val string) {
 	if cmdHasListenAddr {
 		return
 	}
 	method, passwd, addr, err := parseMethodPasswdServer(val)
 	if err != nil {
-		Fatal("listen cow", err)
+		Fatal("listen meow", err)
 	}
-	addListenProxy(newCowProxy(method, passwd, addr))
+	addListenProxy(newmeowProxy(method, passwd, addr))
 }
 
 // configParser provides functions to parse options in config file.

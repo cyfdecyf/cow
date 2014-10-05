@@ -17,7 +17,7 @@ func TestSendBodyChunked(t *testing.T) {
 		/*
 			{"0\n\r\n", "0\r\n\r\n"}, // test for buggy web servers
 			{"1a; ignore-stuff-here\nabcdefghijklmnopqrstuvwxyz\r\n10\n1234567890abcdef\n0\n\n",
-				// COW will only sanitize CRLF at chunk ending
+				// meow will only sanitize CRLF at chunk ending
 				"1a; ignore-stuff-here\nabcdefghijklmnopqrstuvwxyz\r\n10\n1234567890abcdef\r\n0\r\n\r\n"},
 		*/
 	}
@@ -53,7 +53,7 @@ func TestSendBodyChunked(t *testing.T) {
 }
 
 func TestInitSelfListenAddr(t *testing.T) {
-	listenProxy = []Proxy{newHttpProxy("0.0.0.0:7777", "")}
+	listenProxy = []Proxy{newHttpProxy("0.0.0.0:4411", "")}
 	initSelfListenAddr()
 
 	testData := []struct {
@@ -62,7 +62,7 @@ func TestInitSelfListenAddr(t *testing.T) {
 	}{
 		{Request{Header: Header{Host: "google.com:443"}, URL: &URL{}}, false},
 		{Request{Header: Header{Host: "localhost"}, URL: &URL{}}, true},
-		{Request{Header: Header{Host: "127.0.0.1:7777"}, URL: &URL{}}, true},
+		{Request{Header: Header{Host: "127.0.0.1:4411"}, URL: &URL{}}, true},
 		{Request{Header: Header{Host: ""}, URL: &URL{HostPort: "google.com"}}, false},
 		{Request{Header: Header{Host: "localhost"}, URL: &URL{HostPort: "google.com"}}, false},
 	}
@@ -78,7 +78,7 @@ func TestInitSelfListenAddr(t *testing.T) {
 
 	// Another set of listen addr.
 	listenProxy = []Proxy{
-		newHttpProxy("192.168.1.1:7777", ""),
+		newHttpProxy("192.168.1.1:4411", ""),
 		newHttpProxy("127.0.0.1:8888", ""),
 	}
 	initSelfListenAddr()

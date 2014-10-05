@@ -8,24 +8,24 @@ if ! go build; then
 fi
 
 PROXY_ADDR=127.0.0.1:7788
-COW_ADDR=127.0.0.1:8899
+meow_ADDR=127.0.0.1:8899
 
 if [[ -z "$TRAVIS" ]]; then
-    RCDIR=~/.cow/
+    RCDIR=~/.meow/
 else # on travis
     RCDIR=./script/
 fi
 
-./cow -rc $RCDIR/debugrc -listen=cow://aes-128-cfb:foobar@$COW_ADDR &
+./meow -rc $RCDIR/debugrc -listen=meow://aes-128-cfb:foobar@$meow_ADDR &
 parent_pid=$!
-./cow -rc ./script/httprc -listen=http://$PROXY_ADDR &
-cow_pid=$!
+./meow -rc ./script/httprc -listen=http://$PROXY_ADDR &
+meow_pid=$!
 
-stop_cow() {
+stop_meow() {
     kill -SIGTERM $parent_pid
-    kill -SIGTERM $cow_pid
+    kill -SIGTERM $meow_pid
 }
-trap 'stop_cow' TERM INT
+trap 'stop_meow' TERM INT
 
 sleep 1
 
@@ -60,7 +60,7 @@ test_get() {
             echo "$html"
             echo $cont
             echo "=============================="
-            kill -SIGTERM $cow_pid
+            kill -SIGTERM $meow_pid
             exit 1
         fi
         sleep 0.3
@@ -87,5 +87,5 @@ if [[ -z $TRAVIS ]]; then
     test_get https://www.alipay.com "<html>"
 fi
 
-stop_cow
+stop_meow
 exit 0

@@ -18,7 +18,7 @@ func init() {
 }
 
 // VisitCnt and SiteStat are used to track how many times a site is visited.
-// With this information: COW knows which sites are frequently visited, and
+// With this information: meow knows which sites are frequently visited, and
 // judging whether a site is blocked or not is more reliable.
 
 const (
@@ -51,7 +51,7 @@ func (d *Date) UnmarshalJSON(input []byte) error {
 	return err
 }
 
-// COW don't need very accurate visit count, so update to visit count value is
+// meow don't need very accurate visit count, so update to visit count value is
 // not protected.
 type VisitCnt struct {
 	Direct    vcntint   `json:"direct"`
@@ -158,7 +158,7 @@ func (vc *VisitCnt) BlockedVisit() {
 	if networkBad() || vc.userSpecified() {
 		return
 	}
-	// When a site changes from direct to blocked by GFW, COW should learn
+	// When a site changes from direct to blocked by GFW, meow should learn
 	// this quickly and remove it from the PAC ASAP. So change direct to 0
 	// once there's a single blocked visit, this ensures the site is removed
 	// upon the next PAC update.
@@ -217,7 +217,7 @@ func (ss *SiteStat) TempBlocked(url *URL) {
 	// domain into PAC and never have a chance to correct the error.
 	// Once using blocked visit, a host is considered to maybe blocked even if
 	// it's block visit count decrease to 0. As hasBlockedHost is not saved,
-	// upon next start up of COW, the information will reflect the current
+	// upon next start up of meow, the information will reflect the current
 	// status of that host.
 	ss.hbhLock.RLock()
 	t := ss.hasBlockedHost[url.Domain]
@@ -428,7 +428,7 @@ func initSiteStat() {
 	if err := siteStat.load(configPath.stat); err != nil {
 		os.Exit(1)
 	}
-	// Dump site stat while running, so we don't always need to close cow to
+	// Dump site stat while running, so we don't always need to close meow to
 	// get updated stat.
 	go func() {
 		for {

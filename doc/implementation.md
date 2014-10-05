@@ -6,9 +6,9 @@
 
 The final design is evolved from different previous implementations. The other subsections following this one describe how its evolved.
 
-COW uses separate goroutines to read client requests and server responses.
+meow uses separate goroutines to read client requests and server responses.
 
-- For each client, COW will create one *request goroutine* to
+- For each client, meow will create one *request goroutine* to
   - accept client request (read from client connection)
   - create connection if no one not exist
   - send request to the server (write to server connection)
@@ -18,9 +18,9 @@ COW uses separate goroutines to read client requests and server responses.
 
 One client must have one request goroutine, and may have multiple response goroutine. Response goroutine is created when the server connection is created.
 
-This makes it possible for COW to support HTTP pipeline. (Not very sure about this.) COW does not pack multiple requests and send in batch, but it can send request before previous request response is received. If the client (browser) and the web server supports HTTP pipeline, then COW will not in effect make them go back to wating response for each request.
+This makes it possible for meow to support HTTP pipeline. (Not very sure about this.) meow does not pack multiple requests and send in batch, but it can send request before previous request response is received. If the client (browser) and the web server supports HTTP pipeline, then meow will not in effect make them go back to wating response for each request.
 
-But this design does make COW more complicated. I must be careful to avoid concurrency problems between the request and response goroutine.
+But this design does make meow more complicated. I must be careful to avoid concurrency problems between the request and response goroutine.
 
 Here's things that worth noting:
 

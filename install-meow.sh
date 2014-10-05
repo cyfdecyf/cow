@@ -40,13 +40,13 @@ exit_on_fail() {
 
 while true; do
     # Get install directory from environment variable.
-    if [[ -n $COW_INSTALLDIR && -d $COW_INSTALLDIR ]]; then
-        install_dir=$COW_INSTALLDIR
+    if [[ -n $meow_INSTALLDIR && -d $meow_INSTALLDIR ]]; then
+        install_dir=$meow_INSTALLDIR
         break
     fi
 
     # Get installation directory from user
-    echo -n "Install cow binary to which directory (absolute path, defaults to current dir): "
+    echo -n "Install meow binary to which directory (absolute path, defaults to current dir): "
     read install_dir </dev/tty
     if [ -z $install_dir ]; then
         echo "No installation directory given, assuming current directory"
@@ -60,11 +60,11 @@ while true; do
     fi
 done
 
-# Ask OS X user whehter to start COW upon login
+# Ask OS X user whehter to start meow upon login
 start_on_login="n"
 if [ $os == "mac" ]; then
     while true; do
-        echo -n "Start COW upon login? (If yes, download a plist file to ~/Library/LaunchAgents) [Y/n] "
+        echo -n "Start meow upon login? (If yes, download a plist file to ~/Library/LaunchAgents) [Y/n] "
         read start_on_login </dev/tty
         case $start_on_login in
         "Y" | "y" | "")
@@ -79,21 +79,21 @@ if [ $os == "mac" ]; then
     done
 fi
 
-# Download COW binary
-bin=cow-$os$arch-$version
-tmpdir=`mktemp -d /tmp/cow.XXXXXX`
-tmpbin=$tmpdir/cow
-binary_url="http://dl.chenyufei.info/cow/$bin.gz"
-echo "Downloading cow binary $binary_url to $tmpbin.gz"
+# Download meow binary
+bin=meow-$os$arch-$version
+tmpdir=`mktemp -d /tmp/meow.XXXXXX`
+tmpbin=$tmpdir/meow
+binary_url="http://dl.chenyufei.info/meow/$bin.gz"
+echo "Downloading meow binary $binary_url to $tmpbin.gz"
 curl -L "$binary_url" -o $tmpbin.gz || \
-    exit_on_fail "Downloading cow binary failed"
+    exit_on_fail "Downloading meow binary failed"
 gunzip $tmpbin.gz || exit_on_fail "gunzip $tmpbin.gz failed"
 chmod +x $tmpbin ||
     exit_on_fail "Can't chmod for $tmpbin"
 
 # Download sample config file if no configuration directory present
-doc_base="https://raw.github.com/cyfdecyf/cow/$version/doc"
-config_dir="$HOME/.cow"
+doc_base="https://raw.github.com/cyfdecyf/meow/$version/doc"
+config_dir="$HOME/.meow"
 is_update=true
 if [ ! -e $config_dir ]; then
     is_update=false
@@ -110,12 +110,12 @@ fi
 # Download startup plist file
 if [ $start_on_login == "y" ]; then
     la_dir="$HOME/Library/LaunchAgents"
-    plist="info.chenyufei.cow.plist"
+    plist="info.chenyufei.meow.plist"
     plist_url="$doc_base/osx/$plist"
     mkdir -p $la_dir && exit_on_fail "Can't create directory $la_dir"
     echo "Downloading $plist_url to $la_dir/$plist"
     curl -L "$plist_url" | \
-        sed -e "s,COWBINARY,$install_dir/cow," > $la_dir/$plist || \
+        sed -e "s,meowBINARY,$install_dir/meow," > $la_dir/$plist || \
         exit_on_fail "Download startup plist file to $la_dir failed"
 fi
 
@@ -136,6 +136,6 @@ if $is_update; then
 else
     echo "Installation finished."
     echo "Please edit $config_dir/rc according to your own settings."
-    echo 'After that, execute "cow &" to start cow and run in background.'
+    echo 'After that, execute "meow &" to start meow and run in background.'
 fi
 

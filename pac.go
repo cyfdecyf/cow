@@ -137,7 +137,7 @@ function FindProxyForURL(url, host) {
 }
 
 // No need for content-length as we are closing connection
-var pacHeader = []byte("HTTP/1.1 200 OK\r\nServer: cow-proxy\r\n" +
+var pacHeader = []byte("HTTP/1.1 200 OK\r\nServer: meow-proxy\r\n" +
 	"Content-Type: application/x-ns-proxy-autoconfig\r\nConnection: close\r\n\r\n")
 
 // Different client will have different proxy URL, so generate it upon each request.
@@ -153,7 +153,7 @@ func genPAC(c *clientConn) []byte {
 	if proxyAddr == "" {
 		host, _, err := net.SplitHostPort(c.LocalAddr().String())
 		// This is the only check to split host port on tcp addr's string
-		// representation in COW. Keep it so we will notice if there's any
+		// representation in meow. Keep it so we will notice if there's any
 		// problem in the future.
 		if err != nil {
 			panic("split host port on local address error")

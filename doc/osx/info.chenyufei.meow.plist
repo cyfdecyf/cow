@@ -3,10 +3,10 @@
 <plist version="1.0">
   <dict>
     <key>Label</key>
-    <string>info.chenyufei.cow</string>
+    <string>info.chenyufei.meow</string>
     <key>ProgramArguments</key>
     <array>
-	<string>COWBINARY</string>
+	<string>meowBINARY</string>
     </array>
     <key>KeepAlive</key>
     <dict>

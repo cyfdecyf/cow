@@ -160,7 +160,7 @@ func (hp *httpProxy) Serve(wg *sync.WaitGroup) {
 	} else {
 		pacURL = fmt.Sprintf("http://%s/pac", hp.addrInPAC)
 	}
-	info.Printf("COW %s listen http %s, PAC url %s\n", version, hp.addr, pacURL)
+	info.Printf("meow %s listen http %s, PAC url %s\n", version, hp.addr, pacURL)
 
 	for {
 		conn, err := ln.Accept()
@@ -177,48 +177,48 @@ func (hp *httpProxy) Serve(wg *sync.WaitGroup) {
 	}
 }
 
-type cowProxy struct {
+type meowProxy struct {
 	addr   string
 	method string
 	passwd string
 	cipher *ss.Cipher
 }
 
-func newCowProxy(method, passwd, addr string) *cowProxy {
+func newmeowProxy(method, passwd, addr string) *meowProxy {
 	cipher, err := ss.NewCipher(method, passwd)
 	if err != nil {
-		Fatal("can't initialize cow proxy server", err)
+		Fatal("can't initialize meow proxy server", err)
 	}
-	return &cowProxy{addr, method, passwd, cipher}
+	return &meowProxy{addr, method, passwd, cipher}
 }
 
-func (cp *cowProxy) genConfig() string {
+func (cp *meowProxy) genConfig() string {
 	method := cp.method
 	if method == "" {
 		method = "table"
 	}
-	return fmt.Sprintf("listen = cow://%s:%s@%s", method, cp.passwd, cp.addr)
+	return fmt.Sprintf("listen = meow://%s:%s@%s", method, cp.passwd, cp.addr)
 }
 
-func (cp *cowProxy) Addr() string {
+func (cp *meowProxy) Addr() string {
 	return cp.addr
 }
 
-func (cp *cowProxy) Serve(wg *sync.WaitGroup) {
+func (cp *meowProxy) Serve(wg *sync.WaitGroup) {
 	defer func() {
 		wg.Done()
 	}()
 	ln, err := net.Listen("tcp", cp.addr)
 	if err != nil {
-		fmt.Println("listen cow failed:", err)
+		fmt.Println("listen meow failed:", err)
 		return
 	}
-	info.Printf("COW %s cow proxy address %s\n", version, cp.addr)
+	info.Printf("meow %s meow proxy address %s\n", version, cp.addr)
 
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
-			errl.Printf("cow proxy(%s) accept %v\n", ln.Addr(), err)
+			errl.Printf("meow proxy(%s) accept %v\n", ln.Addr(), err)
 			if isErrTooManyOpenFd(err) {
 				connPool.CloseAll()
 			}
@@ -265,7 +265,7 @@ func (c *clientConn) Close() {
 }
 
 func (c *clientConn) setReadTimeout(msg string) {
-	// Always keep connections alive for cow conn from client for more reuse.
+	// Always keep connections alive for meow conn from client for more reuse.
 	// For other client connections, set read timeout so we can close the
 	// connection after a period of idle to reduce number of open connections.
 	if _, ok := c.Conn.(*ss.Conn); !ok {
@@ -318,8 +318,8 @@ func isSelfRequest(r *Request) bool {
 	}
 	// Maxthon sometimes sends requests without host in request line,
 	// in that case, get host information from Host header.
-	// But if client PAC setting is using cow server's DNS name, we can't
-	// decide if the request is for cow itself (need reverse lookup).
+	// But if client PAC setting is using meow server's DNS name, we can't
+	// decide if the request is for meow itself (need reverse lookup).
 	// So if request path seems like getting PAC, simply return true.
 	if r.URL.Path == "/pac" || strings.HasPrefix(r.URL.Path, "/pac?") {
 		return true
@@ -347,8 +347,8 @@ func (c *clientConn) serveSelfURL(r *Request) (err error) {
 	}
 end:
 	sendErrorPage(c, "404 not found", "Page not found",
-		genErrMsg(r, nil, "Serving request to COW proxy."))
-	errl.Printf("cli(%s) page not found, serving request to cow %s\n%s",
+		genErrMsg(r, nil, "Serving request to meow proxy."))
+	errl.Printf("cli(%s) page not found, serving request to meow %s\n%s",
 		c.RemoteAddr(), r, r.Verbose())
 	return errPageSent
 }
@@ -420,8 +420,8 @@ func (c *clientConn) serve() {
 	var err error
 
 	var authed bool
-	// For cow proxy server, authentication is done by matching password.
-	if _, ok := c.proxy.(*cowProxy); ok {
+	// For meow proxy server, authentication is done by matching password.
+	if _, ok := c.proxy.(*meowProxy); ok {
 		authed = true
 	}
 
@@ -452,7 +452,7 @@ func (c *clientConn) serve() {
 		}
 		dbgPrintRq(c, &r)
 
-		// PAC may leak frequently visited sites information. But if cow
+		// PAC may leak frequently visited sites information. But if meow
 		// requires authentication for PAC, some clients may not be able
 		// handle it. (e.g. Proxy SwitchySharp extension on Chrome.)
 		if isSelfRequest(&r) {
@@ -481,7 +481,7 @@ func (c *clientConn) serve() {
 
 		if r.ExpectContinue {
 			sendErrorPage(c, statusExpectFailed, "Expect header not supported",
-				"Please contact COW's developer if you see this.")
+				"Please contact meow's developer if you see this.")
 			// Client may have sent request body at this point. Simply close
 			// connection so we don't need to handle this case.
 			// NOTE: sendErrorPage tells client the connection will keep alive, but
@@ -536,8 +536,8 @@ func (c *clientConn) serve() {
 			return
 		}
 		// Put server connection to pool, so other clients can use it.
-		_, isCowConn := sv.Conn.(cowConn)
-		if rp.ConnectionKeepAlive || isCowConn {
+		_, ismeowConn := sv.Conn.(meowConn)
+		if rp.ConnectionKeepAlive || ismeowConn {
 			if debug {
 				debug.Printf("cli(%s) connPool put %s", c.RemoteAddr(), sv.hostPort)
 			}
@@ -941,13 +941,13 @@ func (sv *serverConn) unsetReadTimeout(msg string) {
 func (sv *serverConn) maybeSSLErr(cliStart time.Time) bool {
 	// If client closes connection very soon, maybe there's SSL error, maybe
 	// not (e.g. user stopped request).
-	// COW can't tell which is the case, so this detection is not reliable.
+	// meow can't tell which is the case, so this detection is not reliable.
 	return sv.state > svConnected && time.Now().Sub(cliStart) < sslLeastDuration
 }
 
 func (sv *serverConn) mayBeClosed() bool {
-	if _, ok := sv.Conn.(cowConn); ok {
-		debug.Println("cow parent would keep alive")
+	if _, ok := sv.Conn.(meowConn); ok {
+		debug.Println("meow parent would keep alive")
 		return false
 	}
 	return time.Now().After(sv.willCloseOn)
@@ -1031,7 +1031,7 @@ func (sw *serverWriter) Write(p []byte) (int, error) {
 		// buffer released
 	} else if sw.rq.raw.Len() >= 2*httpBufSize {
 		// Avoid using too much memory to hold request body. If a request is
-		// not buffered completely, COW can't retry and can release memory
+		// not buffered completely, meow can't retry and can release memory
 		// immediately.
 		debug.Println(sw.rq, "request body too large, not buffering any more")
 		sw.rq.releaseBuf()
@@ -1142,8 +1142,8 @@ func (sv *serverConn) doConnect(r *Request, c *clientConn) (err error) {
 	r.state = rsCreated
 
 	_, isHttpConn := sv.Conn.(httpConn)
-	_, isCowConn := sv.Conn.(cowConn)
-	if isHttpConn || isCowConn {
+	_, ismeowConn := sv.Conn.(meowConn)
+	if isHttpConn || ismeowConn {
 		if debug {
 			debug.Printf("cli(%s) send CONNECT request to parent\n", c.RemoteAddr())
 		}
@@ -1216,7 +1216,7 @@ func (sv *serverConn) sendHTTPProxyRequestHeader(r *Request, c *clientConn) (err
 func (sv *serverConn) sendRequestHeader(r *Request, c *clientConn) (err error) {
 	// Send request to the server
 	switch sv.Conn.(type) {
-	case httpConn, cowConn:
+	case httpConn, meowConn:
 		return sv.sendHTTPProxyRequestHeader(r, c)
 	}
 	/*
@@ -1406,7 +1406,7 @@ func sendBodySplitIntoChunk(w io.Writer, r *bufio.Reader) (err error) {
 // Send message body.
 func sendBody(w io.Writer, bufRd *bufio.Reader, contLen int, chunk bool) (err error) {
 	// chunked encoding has precedence over content length
-	// COW does not sanitize response header, but can correctly handle it
+	// meow does not sanitize response header, but can correctly handle it
 	if chunk {
 		err = sendBodyChunked(w, bufRd, httpBufSize)
 	} else if contLen >= 0 {

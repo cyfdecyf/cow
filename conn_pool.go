@@ -92,7 +92,7 @@ func (cp *ConnPool) Get(hostPort string, asDirect bool) (sv *serverConn) {
 func (cp *ConnPool) Put(sv *serverConn) {
 	// Multiplexing connections.
 	switch sv.Conn.(type) {
-	case httpConn, cowConn:
+	case httpConn, meowConn:
 		putConnToChan(sv, cp.muxConn, "muxConn")
 		return
 	}

@@ -73,8 +73,8 @@ func printParentProxy(parent []ParentWithFail) {
 			debug.Println("\thttp parent: ", pc.server)
 		case *socksParent:
 			debug.Println("\tsocks parent: ", pc.server)
-		case *cowParent:
-			debug.Println("\tcow parent: ", pc.server)
+		case *meowParent:
+			debug.Println("\tmeow parent: ", pc.server)
 		}
 	}
 }
@@ -419,54 +419,54 @@ func (sp *shadowsocksParent) connect(url *URL) (net.Conn, error) {
 	return shadowsocksConn{c, sp}, nil
 }
 
-// cow parent proxy
-type cowParent struct {
+// meow parent proxy
+type meowParent struct {
 	server string
 	method string
 	passwd string
 	cipher *ss.Cipher
 }
 
-type cowConn struct {
+type meowConn struct {
 	net.Conn
-	parent *cowParent
+	parent *meowParent
 }
 
-func (s cowConn) String() string {
-	return "cow proxy " + s.parent.server
+func (s meowConn) String() string {
+	return "meow proxy " + s.parent.server
 }
 
-func newCowParent(srv, method, passwd string) *cowParent {
+func newmeowParent(srv, method, passwd string) *meowParent {
 	cipher, err := ss.NewCipher(method, passwd)
 	if err != nil {
-		Fatal("create cow cipher:", err)
+		Fatal("create meow cipher:", err)
 	}
-	return &cowParent{srv, method, passwd, cipher}
+	return &meowParent{srv, method, passwd, cipher}
 }
 
-func (cp *cowParent) getServer() string {
+func (cp *meowParent) getServer() string {
 	return cp.server
 }
 
-func (cp *cowParent) genConfig() string {
+func (cp *meowParent) genConfig() string {
 	method := cp.method
 	if method == "" {
 		method = "table"
 	}
-	return fmt.Sprintf("proxy = cow://%s:%s@%s", method, cp.passwd, cp.server)
+	return fmt.Sprintf("proxy = meow://%s:%s@%s", method, cp.passwd, cp.server)
 }
 
-func (cp *cowParent) connect(url *URL) (net.Conn, error) {
+func (cp *meowParent) connect(url *URL) (net.Conn, error) {
 	c, err := net.Dial("tcp", cp.server)
 	if err != nil {
-		errl.Printf("can't connect to cow parent %s for %s: %v\n",
+		errl.Printf("can't connect to meow parent %s for %s: %v\n",
 			cp.server, url.HostPort, err)
 		return nil, err
 	}
-	debug.Printf("connected to: %s via cow parent: %s\n",
+	debug.Printf("connected to: %s via meow parent: %s\n",
 		url.HostPort, cp.server)
 	ssconn := ss.NewConn(c, cp.cipher.Copy())
-	return cowConn{ssconn, cp}, nil
+	return meowConn{ssconn, cp}, nil
 }
 
 // For socks documentation, refer to rfc 1928 http://www.ietf.org/rfc/rfc1928.txt
