@@ -308,7 +308,7 @@ func (ss *SiteStat) store(statPath string) (err error) {
 	os.Remove(statPath + ".bak")
 	os.Rename(statPath, statPath+".bak")
 	if err = os.Rename(f.Name(), statPath); err != nil {
-		errl.Println("can't rename newly created stat file", err)
+		errl.Println("rename new stat file", err)
 		return
 	}
 	return
@@ -381,12 +381,12 @@ func (ss *SiteStat) load(file string) (err error) {
 			}
 		}
 	}()
-	var exists bool
-	if exists, err = isFileExists(file); err != nil {
+	var exist bool
+	if exist, err = isFileExists(file); err != nil {
 		fmt.Println("Error loading stat:", err)
 		return
 	}
-	if !exists {
+	if !exist {
 		return
 	}
 	var f *os.File
@@ -394,6 +394,7 @@ func (ss *SiteStat) load(file string) (err error) {
 		fmt.Printf("Error opening site stat %s: %v\n", file, err)
 		return
 	}
+	defer f.Close()
 	b, err := ioutil.ReadAll(f)
 	if err != nil {
 		fmt.Println("Error reading site stat:", err)
