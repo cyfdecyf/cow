@@ -11,9 +11,8 @@ import (
 )
 
 var pac struct {
-	template       *template.Template
-	topLevelDomain string
-	directList     string
+	template   *template.Template
+	directList string
 	// Assignments and reads to directList are in different goroutines. Go
 	// does not guarantee atomic assignment, so we should protect these racing
 	// access.
@@ -129,11 +128,6 @@ function FindProxyForURL(url, host) {
 		Fatal("Internal error on generating pac file template:", err)
 	}
 
-	var buf bytes.Buffer
-	for k, _ := range topLevelDomain {
-		buf.WriteString(fmt.Sprintf("\t\"%s\": true,\n", k))
-	}
-	pac.topLevelDomain = buf.String()[:buf.Len()-2] // remove the final comma
 }
 
 // No need for content-length as we are closing connection
@@ -175,11 +169,9 @@ func genPAC(c *clientConn) []byte {
 	data := struct {
 		ProxyAddr     string
 		DirectDomains string
-		TopLevel      string
 	}{
 		proxyAddr,
 		dl,
-		pac.topLevelDomain,
 	}
 
 	buf.Write(pacHeader)

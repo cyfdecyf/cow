@@ -92,7 +92,7 @@ chmod +x $tmpbin ||
     exit_on_fail "Can't chmod for $tmpbin"
 
 # Download sample config file if no configuration directory present
-doc_base="https://raw.github.com/cyfdecyf/meow/$version/doc"
+doc_base="https://raw.github.com/renzhn/meow/$version/doc"
 config_dir="$HOME/.meow"
 is_update=true
 if [ ! -e $config_dir ]; then
@@ -110,7 +110,7 @@ fi
 # Download startup plist file
 if [ $start_on_login == "y" ]; then
     la_dir="$HOME/Library/LaunchAgents"
-    plist="info.chenyufei.meow.plist"
+    plist="info.renzhn.meow.plist"
     plist_url="$doc_base/osx/$plist"
     mkdir -p $la_dir && exit_on_fail "Can't create directory $la_dir"
     echo "Downloading $plist_url to $la_dir/$plist"

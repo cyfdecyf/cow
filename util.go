@@ -401,16 +401,6 @@ func NewNbitIPv4Mask(n int) net.IPMask {
 	return net.IPMask(mask)
 }
 
-var topLevelDomain = map[string]bool{
-	"ac":  true,
-	"co":  true,
-	"com": true,
-	"edu": true,
-	"gov": true,
-	"net": true,
-	"org": true,
-}
-
 func trimLastDot(s string) string {
 	if len(s) > 0 && s[len(s)-1] == '.' {
 		return s[:len(s)-1]
@@ -439,17 +429,6 @@ func host2Domain(host string) (domain string) {
 		return host
 	}
 
-	part := host[dot2ndLast+1 : lastDot]
-	// If the 2nd last part of a domain name equals to a top level
-	// domain, search for the 3rd part in the host name.
-	// So domains like bbc.co.uk will not be recorded as co.uk
-	if topLevelDomain[part] {
-		dot3rdLast := strings.LastIndex(host[:dot2ndLast], ".")
-		if dot3rdLast == -1 {
-			return host
-		}
-		return host[dot3rdLast+1:]
-	}
 	return host[dot2ndLast+1:]
 }
 
