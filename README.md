@@ -1,5 +1,4 @@
 # MEOW Proxy
----
 
 <pre>
        /\
@@ -11,14 +10,12 @@
 如果你的代理有充足的流量和比直接连接国外网站更快的速度，为和不将国外网站统统用代理来连接呢？麻麻再也不用担心网站被墙了！发挥出你goagent和shadowsocks更大的潜力吧！
 
 ## 获取
----
 
 - **Windows:** [下载地址](http://meowproxy.me/)
 - **OS X, Linux:** 待添加
 - **从源码安装:** 安装 [Go](http://golang.org/doc/install)，然后 `go get github.com/renzhn/meow`
 
 ## 配置
----
 
 编辑 `rc.txt` (Windows) 或 `~/.meow/rc` (其他)，例子：
 
@@ -33,7 +30,6 @@
     proxy = ss://aes-128-cfb:password@example.server.com:25
 
 ## 直连列表
----
 
 直接连接的域名列表保存在 `direct.txt` (Windows) 或 `~/.meow/direct` (其他)，例子：
 
@@ -46,6 +42,7 @@
 
 ## TODO
 
+- Windows wrapper app
 - 完善PAC
 - 通过IP判断国内网站
 - Linux & OS X release
