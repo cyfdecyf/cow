@@ -79,7 +79,7 @@ var configPath struct {
 }
 
 func printVersion() {
-	fmt.Println("meow version", version)
+	fmt.Println("MEOW version", version)
 }
 
 func init() {

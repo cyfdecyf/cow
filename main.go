@@ -6,6 +6,7 @@ import (
 	"os/signal"
 	"runtime"
 	// "runtime/pprof"
+	"fmt"
 	"sync"
 	"syscall"
 )
@@ -39,6 +40,14 @@ func main() {
 		printVersion()
 		os.Exit(0)
 	}
+
+	fmt.Printf(`
+       /\
+   )  ( ')     MEOW Proxy %s
+  (  /  )      http://meowproxy.me
+   \(__)|      
+	`, version)
+	fmt.Println()
 
 	parseConfig(cmdLineConfig.RcFile, cmdLineConfig)
 

@@ -147,7 +147,7 @@ func (hp *httpProxy) Serve(wg *sync.WaitGroup) {
 	} else {
 		pacURL = fmt.Sprintf("http://%s/pac", hp.addrInPAC)
 	}
-	info.Printf("meow %s listen http %s, PAC url %s\n", version, hp.addr, pacURL)
+	info.Printf("listen http %s, PAC url %s\n", hp.addr, pacURL)
 
 	for {
 		conn, err := ln.Accept()
@@ -200,7 +200,7 @@ func (cp *meowProxy) Serve(wg *sync.WaitGroup) {
 		fmt.Println("listen meow failed:", err)
 		return
 	}
-	info.Printf("meow %s meow proxy address %s\n", version, cp.addr)
+	info.Printf("meow proxy address %s\n", cp.addr)
 
 	for {
 		conn, err := ln.Accept()
