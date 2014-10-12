@@ -13,7 +13,7 @@
 
 - **Windows:** [下载地址](http://meowproxy.me/)
 - **OS X, Linux:** 待添加
-- **从源码安装:** 安装 [Go](http://golang.org/doc/install)，然后 `go get github.com/renzhn/meow`
+- **从源码安装:** 安装 [Go](http://golang.org/doc/install)，然后 `go get github.com/renzhn/MEOW`
 
 ## 配置
 
