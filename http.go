@@ -62,7 +62,6 @@ type Request struct {
 	isConnect bool
 	partial   bool // whether contains only partial request data
 	state     rqState
-	tryCnt    byte
 }
 
 // Assume keep-alive request by default.
@@ -103,18 +102,6 @@ func (r *Request) Verbose() []byte {
 // Refer to http://stackoverflow.com/a/299696/306935
 func (r *Request) hasBody() bool {
 	return r.Chunking || r.ContLen > 0
-}
-
-func (r *Request) isRetry() bool {
-	return r.tryCnt > 1
-}
-
-func (r *Request) tryOnce() {
-	r.tryCnt++
-}
-
-func (r *Request) tooManyRetry() bool {
-	return r.tryCnt > 3
 }
 
 func (r *Request) responseNotSent() bool {

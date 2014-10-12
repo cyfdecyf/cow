@@ -49,19 +49,6 @@ const sslLeastDuration = time.Second
 
 // Some code are learnt from the http package
 
-// encapulate actual error for an retry error
-type RetryError struct {
-	error
-}
-
-func isErrRetry(err error) bool {
-	if err == nil {
-		return false
-	}
-	_, ok := err.(RetryError)
-	return ok
-}
-
 var zeroTime time.Time
 
 type directConn struct {
@@ -353,39 +340,6 @@ end:
 	return errPageSent
 }
 
-func (c *clientConn) shouldRetry(r *Request, sv *serverConn, re error) bool {
-	if !isErrRetry(re) {
-		return false
-	}
-	err, _ := re.(RetryError)
-	if !r.responseNotSent() {
-		if debug {
-			debug.Printf("cli(%s) has sent some response, can't retry %v\n", c.RemoteAddr(), r)
-		}
-		return false
-	}
-	if r.partial {
-		if debug {
-			debug.Printf("cli(%s) partial request, can't retry %v\n", c.RemoteAddr(), r)
-		}
-		sendErrorPage(c, "502 partial request", err.Error(),
-			genErrMsg(r, sv, "Request is too large to hold in buffer, can't retry. "+
-				"Refresh to retry may work."))
-		return false
-	} else if r.raw == nil {
-		msg := "Please report issue to the developer: Non partial request with buffer released"
-		errl.Println(msg, r)
-		panic(msg)
-	}
-	if r.tooManyRetry() {
-		debug.Printf("cli(%s) can't retry %v tryCnt=%d\n", c.RemoteAddr(), r, r.tryCnt)
-		sendErrorPage(c, "502 retry failed", "Can't finish HTTP request",
-			genErrMsg(r, sv, "Has tried several times."))
-		return false
-	}
-	return true
-}
-
 func dbgPrintRq(c *clientConn, r *Request) {
 	if r.Trailer {
 		errl.Printf("cli(%s) request  %s has Trailer header\n%s",
@@ -482,11 +436,6 @@ func (c *clientConn) serve() {
 			return
 		}
 
-	retry:
-		r.tryOnce()
-		if bool(debug) && r.isRetry() {
-			debug.Printf("cli(%s) retry request tryCnt=%d %v\n", c.RemoteAddr(), r.tryCnt, &r)
-		}
 		if sv, err = c.getServerConn(&r); err != nil {
 			if debug {
 				debug.Printf("cli(%s) failed to get server conn %v\n", c.RemoteAddr(), &r)
@@ -508,9 +457,6 @@ func (c *clientConn) serve() {
 		if r.isConnect {
 			// server connection will be closed in doConnect
 			err = sv.doConnect(&r, c)
-			if c.shouldRetry(&r, sv, err) {
-				goto retry
-			}
 			// debug.Printf("doConnect %s to %s done\n", c.RemoteAddr(), r.URL.HostPort)
 			return
 		}
@@ -519,9 +465,7 @@ func (c *clientConn) serve() {
 			// For client I/O error, we can actually put server connection to
 			// pool. But let's make thing simple for now.
 			sv.Close()
-			if c.shouldRetry(&r, sv, err) {
-				goto retry
-			} else if err == errPageSent && (!r.hasBody() || r.hasSent()) {
+			if err == errPageSent && (!r.hasBody() || r.hasSent()) {
 				// Can only continue if request has no body, or request body
 				// has been read.
 				continue
@@ -568,7 +512,7 @@ func (c *clientConn) handleServerReadError(r *Request, sv *serverConn, err error
 			c.RemoteAddr(), msg, err, err, r)
 	}
 	if err == io.EOF {
-		return RetryError{err}
+		return err
 	}
 	if r.responseNotSent() {
 		sendErrorPage(c, "502 read error", err.Error(), genErrMsg(r, sv, msg))
@@ -579,7 +523,7 @@ func (c *clientConn) handleServerReadError(r *Request, sv *serverConn, err error
 }
 
 func (c *clientConn) handleServerWriteError(r *Request, sv *serverConn, err error, msg string) error {
-	return RetryError{err}
+	return err
 }
 
 func dbgPrintRep(c *clientConn, r *Request, rp *Response) {
@@ -982,17 +926,6 @@ func copyClient2Server(c *clientConn, sv *serverConn, r *Request, srvStopped not
 
 	var n int
 
-	if r.isRetry() {
-		if debug {
-			debug.Printf("cli(%s)->srv(%s) retry request %d bytes of buffered body\n",
-				c.RemoteAddr(), r.URL.HostPort, len(r.rawBody()))
-		}
-		if _, err = sv.Write(r.rawBody()); err != nil {
-			debug.Println("cli->srv send to server error")
-			return
-		}
-	}
-
 	w := newServerWriter(r, sv)
 	if c.bufRd != nil {
 		n = c.bufRd.Buffered()
@@ -1071,7 +1004,7 @@ func (sv *serverConn) doConnect(r *Request, c *clientConn) (err error) {
 				c.RemoteAddr(), err)
 			return err
 		}
-	} else if !r.isRetry() {
+	} else {
 		// debug.Printf("send connection confirmation to %s->%s\n", c.RemoteAddr(), r.URL.HostPort)
 		if _, err = c.Write(connEstablished); err != nil {
 			debug.Printf("cli(%s) error send 200 Connecion established: %v\n",
@@ -1093,7 +1026,7 @@ func (sv *serverConn) doConnect(r *Request, c *clientConn) (err error) {
 
 	// debug.Printf("doConnect: srv(%s)->cli(%s)\n", r.URL.HostPort, c.RemoteAddr())
 	err = copyServer2Client(sv, c, r)
-	if isErrRetry(err) {
+	if err != nil {
 		srvStopped.notify()
 		<-done
 		// debug.Printf("doConnect: cli(%s)->srv(%s) stopped\n", c.RemoteAddr(), r.URL.HostPort)
@@ -1101,7 +1034,7 @@ func (sv *serverConn) doConnect(r *Request, c *clientConn) (err error) {
 		// close client connection to force read from client in copyClient2Server return
 		c.Conn.Close()
 	}
-	if isErrRetry(cli2srvErr) {
+	if cli2srvErr != nil {
 		return cli2srvErr
 	}
 	return
@@ -1152,7 +1085,7 @@ func (sv *serverConn) sendRequestHeader(r *Request, c *clientConn) (err error) {
 func (sv *serverConn) sendRequestBody(r *Request, c *clientConn) (err error) {
 	// Send request body. If this is retry, r.raw contains request body and is
 	// sent while sending raw request.
-	if !r.hasBody() || r.isRetry() {
+	if !r.hasBody() {
 		return
 	}
 
