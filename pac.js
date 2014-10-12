@@ -12,16 +12,6 @@ for (var i = 0; i < directList.length; i += 1) {
 	directAcc[directList[i]] = true;
 }
 
-var topLevel = {
-        "ac": true,
-        "co": true,
-        "com": true,
-        "edu": true,
-        "gov": true,
-        "net": true,
-        "org": true
-};
-
 // hostIsIP determines whether a host address is an IP address and whether
 // it is private. Currenly only handles IPv4 addresses.
 function hostIsIP(host) {

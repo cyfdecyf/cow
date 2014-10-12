@@ -7,7 +7,6 @@ import (
 	"strings"
 	"sync"
 	"text/template"
-	"time"
 )
 
 var pac struct {
@@ -42,14 +41,10 @@ var directList = [
 "{{.DirectDomains}}"
 ];
 
-var directAcc = {};
+var directAcc = [];
 for (var i = 0; i < directList.length; i += 1) {
 	directAcc[directList[i]] = true;
 }
-
-var topLevel = {
-{{.TopLevel}}
-};
 
 // hostIsIP determines whether a host address is an IP address and whether
 // it is private. Currenly only handles IPv4 addresses.
@@ -101,14 +96,6 @@ function host2Domain(host) {
 	if (dot2ndLast === -1)
 		return host;
 
-	var part = host.substring(dot2ndLast+1, lastDot);
-	if (topLevel[part]) {
-		var dot3rdLast = host.lastIndexOf(".", dot2ndLast-1);
-		if (dot3rdLast === -1) {
-			return host;
-		}
-		return host.substring(dot3rdLast+1);
-	}
 	return host.substring(dot2ndLast+1);
 }
 
@@ -186,12 +173,6 @@ func initPAC() {
 	// we can't control goroutine scheduling, make sure when
 	// initPAC is done, direct list is updated
 	updateDirectList()
-	go func() {
-		for {
-			time.Sleep(time.Minute)
-			updateDirectList()
-		}
-	}()
 }
 
 func sendPAC(c *clientConn) error {
