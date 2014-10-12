@@ -74,10 +74,8 @@ var config Config
 var configNeedUpgrade bool // whether should upgrade config file
 
 var configPath struct {
-	dir           string // directory containing config file and blocked site list
-	alwaysBlocked string // blocked sites specified by user
-	alwaysDirect  string // direct sites specified by user
-	stat          string // site visit statistics
+	dir          string // directory containing config file and blocked site list
+	alwaysDirect string // direct sites specified by user
 }
 
 func printVersion() {
@@ -88,9 +86,7 @@ func init() {
 	initConfigDir()
 	// fmt.Println("home dir:", homeDir)
 
-	configPath.alwaysBlocked = path.Join(configPath.dir, alwaysBlockedFname)
 	configPath.alwaysDirect = path.Join(configPath.dir, alwaysDirectFname)
-	configPath.stat = path.Join(configPath.dir, statFname)
 
 	config.DetectSSLErr = false
 	config.AlwaysProxy = false
@@ -251,7 +247,7 @@ func (pp proxyParser) Proxymeow(val string) {
 	}
 
 	config.saveReqLine = true
-	parent := newmeowParent(server, method, passwd)
+	parent := newMeowParent(server, method, passwd)
 	parentProxy.add(parent)
 }
 
@@ -279,7 +275,7 @@ func (lp listenParser) ListenHttp(val string) {
 	addListenProxy(newHttpProxy(addr, addrInPAC))
 }
 
-func (lp listenParser) Listenmeow(val string) {
+func (lp listenParser) ListenMeow(val string) {
 	if cmdHasListenAddr {
 		return
 	}
@@ -287,7 +283,7 @@ func (lp listenParser) Listenmeow(val string) {
 	if err != nil {
 		Fatal("listen meow", err)
 	}
-	addListenProxy(newmeowProxy(method, passwd, addr))
+	addListenProxy(newMeowProxy(method, passwd, addr))
 }
 
 // configParser provides functions to parse options in config file.

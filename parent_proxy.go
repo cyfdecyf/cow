@@ -436,7 +436,7 @@ func (s meowConn) String() string {
 	return "meow proxy " + s.parent.server
 }
 
-func newmeowParent(srv, method, passwd string) *meowParent {
+func newMeowParent(srv, method, passwd string) *meowParent {
 	cipher, err := ss.NewCipher(method, passwd)
 	if err != nil {
 		Fatal("create meow cipher:", err)

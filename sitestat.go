@@ -1,11 +1,9 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/cyfdecyf/bufio"
-	"io/ioutil"
 	"math/rand"
 	"os"
 	"strings"
@@ -85,39 +83,12 @@ func (vc *VisitCnt) shouldNotSave() bool {
 	return vc.userSpecified() || vc.isStale() || (vc.Blocked == 0 && vc.Direct == 0)
 }
 
-const tmpBlockedTimeout = 2 * time.Minute
-
-func (vc *VisitCnt) AsTempBlocked() bool {
-	return time.Now().Sub(vc.blockedOn) < tmpBlockedTimeout
-}
-
 func (vc *VisitCnt) AsDirect() bool {
 	return (vc.Blocked == 0) || (vc.Direct-vc.Blocked >= directDelta) || vc.AlwaysDirect()
 }
 
-func (vc *VisitCnt) AsBlocked() bool {
-	if vc.Blocked == userCnt || vc.AsTempBlocked() {
-		return true
-	}
-	// add some randomness to fix mistake
-	delta := vc.Blocked - vc.Direct
-	return delta >= blockedDelta && rand.Intn(int(delta)) != 0
-}
-
 func (vc *VisitCnt) AlwaysDirect() bool {
 	return vc.Direct == userCnt
-}
-
-func (vc *VisitCnt) AlwaysBlocked() bool {
-	return vc.Blocked == userCnt
-}
-
-func (vc *VisitCnt) OnceBlocked() bool {
-	return vc.Blocked > 0 || vc.AlwaysBlocked() || vc.AsTempBlocked()
-}
-
-func (vc *VisitCnt) tempBlocked() {
-	vc.blockedOn = time.Now()
 }
 
 // time.Time is composed of 3 fields, so need lock to protect update. As
@@ -173,14 +144,12 @@ type SiteStat struct {
 
 	// Whether a domain has blocked host. Used to avoid considering a domain as
 	// direct though it has blocked hosts.
-	hasBlockedHost map[string]bool
-	hbhLock        sync.RWMutex
+	hbhLock sync.RWMutex
 }
 
 func newSiteStat() *SiteStat {
 	return &SiteStat{
-		Vcnt:           map[string]*VisitCnt{},
-		hasBlockedHost: map[string]bool{},
+		Vcnt: map[string]*VisitCnt{},
 	}
 }
 
@@ -200,33 +169,6 @@ func (ss *SiteStat) create(s string) (vcnt *VisitCnt) {
 	ss.Vcnt[s] = vcnt
 	ss.vcLock.Unlock()
 	return
-}
-
-// Caller should guarantee that always direct url does not attempt
-// blocked visit.
-func (ss *SiteStat) TempBlocked(url *URL) {
-	debug.Printf("%s temp blocked\n", url.Host)
-
-	vcnt := ss.get(url.Host)
-	if vcnt == nil {
-		panic("TempBlocked should always get existing visitCnt")
-	}
-	vcnt.tempBlocked()
-
-	// Mistakenly consider a partial blocked domain as direct will make that
-	// domain into PAC and never have a chance to correct the error.
-	// Once using blocked visit, a host is considered to maybe blocked even if
-	// it's block visit count decrease to 0. As hasBlockedHost is not saved,
-	// upon next start up of meow, the information will reflect the current
-	// status of that host.
-	ss.hbhLock.RLock()
-	t := ss.hasBlockedHost[url.Domain]
-	ss.hbhLock.RUnlock()
-	if !t {
-		ss.hbhLock.Lock()
-		ss.hasBlockedHost[url.Domain] = true
-		ss.hbhLock.Unlock()
-	}
 }
 
 var alwaysDirectVisitCnt = newVisitCnt(userCnt, 0)
@@ -251,159 +193,10 @@ func (ss *SiteStat) GetVisitCnt(url *URL) (vcnt *VisitCnt) {
 	return ss.create(url.Host)
 }
 
-func (ss *SiteStat) store(statPath string) (err error) {
-	if err = mkConfigDir(); err != nil {
-		return
-	}
-
-	now := time.Now()
-	var savedSS *SiteStat
-	if ss.Update == Date(zeroTime) {
-		ss.Update = Date(time.Now())
-	}
-	if now.Sub(time.Time(ss.Update)) > siteStaleThreshold {
-		// Not updated for a long time, don't drop any record
-		savedSS = ss
-		// Changing update time too fast will also drop useful record
-		savedSS.Update = Date(time.Time(ss.Update).Add(siteStaleThreshold / 2))
-		if time.Time(savedSS.Update).After(now) {
-			savedSS.Update = Date(now)
-		}
-	} else {
-		savedSS = newSiteStat()
-		savedSS.Update = Date(now)
-		ss.vcLock.RLock()
-		for site, vcnt := range ss.Vcnt {
-			if vcnt.shouldNotSave() {
-				continue
-			}
-			savedSS.Vcnt[site] = vcnt
-		}
-		ss.vcLock.RUnlock()
-	}
-
-	b, err := json.MarshalIndent(savedSS, "", "\t")
-	if err != nil {
-		errl.Println("Error marshalling site stat:", err)
-		panic("internal error: error marshalling site")
-	}
-
-	// Store stat into temp file first and then rename.
-	// Ensures atomic update to stat file to avoid file damage.
-
-	// Create tmp file inside config firectory to avoid cross FS rename.
-	f, err := ioutil.TempFile(configPath.dir, "stat")
-	if err != nil {
-		errl.Println("create tmp file to store stat", err)
-		return
-	}
-	if _, err = f.Write(b); err != nil {
-		errl.Println("Error writing stat file:", err)
-		f.Close()
-		return
-	}
-	f.Close()
-
-	// Windows don't allow rename to existing file.
-	os.Remove(statPath + ".bak")
-	os.Rename(statPath, statPath+".bak")
-	if err = os.Rename(f.Name(), statPath); err != nil {
-		errl.Println("can't rename newly created stat file", err)
-		return
-	}
-	return
-}
-
 func (ss *SiteStat) loadList(lst []string, direct, blocked vcntint) {
 	for _, d := range lst {
 		ss.Vcnt[d] = newVisitCntWithTime(direct, blocked, zeroTime)
 	}
-}
-
-func (ss *SiteStat) loadBuiltinList() {
-	ss.loadList(blockedDomainList, 0, userCnt)
-	ss.loadList(directDomainList, userCnt, 0)
-}
-
-func (ss *SiteStat) loadUserList() {
-	if directList, err := loadSiteList(configPath.alwaysDirect); err == nil {
-		ss.loadList(directList, userCnt, 0)
-	}
-	if blockedList, err := loadSiteList(configPath.alwaysBlocked); err == nil {
-		ss.loadList(blockedList, 0, userCnt)
-	}
-}
-
-// Filter sites covered by user specified domains, also filter out stale
-// sites.
-func (ss *SiteStat) filterSites() {
-	// It's not safe to remove element while iterating over a map.
-	var removeSites []string
-
-	// find what to remove first
-	ss.vcLock.RLock()
-	for site, vcnt := range ss.Vcnt {
-		if vcnt.userSpecified() {
-			continue
-		}
-		if vcnt.isStale() {
-			removeSites = append(removeSites, site)
-			continue
-		}
-		var dmcnt *VisitCnt
-		domain := host2Domain(site)
-		if domain != site {
-			dmcnt = ss.get(domain)
-		}
-		if dmcnt != nil && dmcnt.userSpecified() {
-			removeSites = append(removeSites, site)
-		}
-	}
-	ss.vcLock.RUnlock()
-
-	// do remove
-	ss.vcLock.Lock()
-	for _, site := range removeSites {
-		delete(ss.Vcnt, site)
-	}
-	ss.vcLock.Unlock()
-}
-
-func (ss *SiteStat) load(file string) (err error) {
-	defer func() {
-		// load builtin list first, so user list can override builtin
-		ss.loadBuiltinList()
-		ss.loadUserList()
-		ss.filterSites()
-		for host, vcnt := range ss.Vcnt {
-			if vcnt.OnceBlocked() {
-				ss.hasBlockedHost[host2Domain(host)] = true
-			}
-		}
-	}()
-	var exists bool
-	if exists, err = isFileExists(file); err != nil {
-		fmt.Println("Error loading stat:", err)
-		return
-	}
-	if !exists {
-		return
-	}
-	var f *os.File
-	if f, err = os.Open(file); err != nil {
-		fmt.Printf("Error opening site stat %s: %v\n", file, err)
-		return
-	}
-	b, err := ioutil.ReadAll(f)
-	if err != nil {
-		fmt.Println("Error reading site stat:", err)
-		return
-	}
-	if err = json.Unmarshal(b, ss); err != nil {
-		fmt.Println("Error decoding site stat:", err)
-		return
-	}
-	return
 }
 
 func (ss *SiteStat) GetDirectList() []string {
@@ -411,9 +204,6 @@ func (ss *SiteStat) GetDirectList() []string {
 	// anyway to do more fine grained locking?
 	ss.vcLock.RLock()
 	for site, vc := range ss.Vcnt {
-		if ss.hasBlockedHost[host2Domain(site)] {
-			continue
-		}
 		if vc.AsDirect() {
 			lst = append(lst, site)
 		}
@@ -425,17 +215,9 @@ func (ss *SiteStat) GetDirectList() []string {
 var siteStat = newSiteStat()
 
 func initSiteStat() {
-	if err := siteStat.load(configPath.stat); err != nil {
-		os.Exit(1)
+	if directList, err := loadSiteList(configPath.alwaysDirect); err == nil {
+		siteStat.loadList(directList, userCnt, 0)
 	}
-	// Dump site stat while running, so we don't always need to close meow to
-	// get updated stat.
-	go func() {
-		for {
-			time.Sleep(5 * time.Minute)
-			storeSiteStat(siteStatCont)
-		}
-	}()
 }
 
 const (
@@ -447,19 +229,6 @@ const (
 // siteStatFini ensures no more calls after going to exit.
 var storeLock sync.Mutex
 var siteStatFini bool
-
-func storeSiteStat(cont byte) {
-	storeLock.Lock()
-	defer storeLock.Unlock()
-
-	if siteStatFini {
-		return
-	}
-	siteStat.store(configPath.stat)
-	if cont == siteStatExit {
-		siteStatFini = true
-	}
-}
 
 func loadSiteList(fpath string) (lst []string, err error) {
 	var exists bool

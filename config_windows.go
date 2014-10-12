@@ -6,10 +6,8 @@ import (
 )
 
 const (
-	rcFname            = "rc.txt"
-	alwaysBlockedFname = "blocked.txt"
-	alwaysDirectFname  = "direct.txt"
-	statFname          = "stat.txt"
+	rcFname           = "rc.txt"
+	alwaysDirectFname = "direct.txt"
 
 	newLine = "\r\n"
 )

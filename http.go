@@ -655,9 +655,6 @@ func (rp *Response) hasBody(method string) bool {
 func parseResponse(sv *serverConn, r *Request, rp *Response) (err error) {
 	var s []byte
 	reader := sv.bufRd
-	if sv.maybeFake() {
-		sv.setReadTimeout("parseResponse")
-	}
 	if s, err = reader.ReadSlice('\n'); err != nil {
 		// err maybe timeout caused by explicity setting deadline, EOF, or
 		// reset caused by GFW.
@@ -667,9 +664,6 @@ func parseResponse(sv *serverConn, r *Request, rp *Response) (err error) {
 		// For read error, return directly in order to identify whether this
 		// is caused by GFW.
 		return err
-	}
-	if sv.maybeFake() {
-		sv.unsetReadTimeout("parseResponse")
 	}
 	// debug.Printf("Response line %s", s)
 

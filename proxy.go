@@ -184,7 +184,7 @@ type meowProxy struct {
 	cipher *ss.Cipher
 }
 
-func newmeowProxy(method, passwd, addr string) *meowProxy {
+func newMeowProxy(method, passwd, addr string) *meowProxy {
 	cipher, err := ss.NewCipher(method, passwd)
 	if err != nil {
 		Fatal("can't initialize meow proxy server", err)
@@ -378,13 +378,6 @@ func (c *clientConn) shouldRetry(r *Request, sv *serverConn, re error) bool {
 		panic(msg)
 	}
 	if r.tooManyRetry() {
-		if sv.maybeFake() {
-			// Sometimes GFW reset will got EOF error leading to retry too many times.
-			// In that case, consider the url as temp blocked and try parent proxy.
-			siteStat.TempBlocked(r.URL)
-			r.tryCnt = 0
-			return true
-		}
 		debug.Printf("cli(%s) can't retry %v tryCnt=%d\n", c.RemoteAddr(), r, r.tryCnt)
 		sendErrorPage(c, "502 retry failed", "Can't finish HTTP request",
 			genErrMsg(r, sv, "Has tried several times."))
@@ -536,8 +529,8 @@ func (c *clientConn) serve() {
 			return
 		}
 		// Put server connection to pool, so other clients can use it.
-		_, ismeowConn := sv.Conn.(meowConn)
-		if rp.ConnectionKeepAlive || ismeowConn {
+		_, isMeowConn := sv.Conn.(meowConn)
+		if rp.ConnectionKeepAlive || isMeowConn {
 			if debug {
 				debug.Printf("cli(%s) connPool put %s", c.RemoteAddr(), sv.hostPort)
 			}
@@ -569,11 +562,6 @@ func genErrMsg(r *Request, sv *serverConn, what string) string {
 		r, what, sv.Conn)
 }
 
-func (c *clientConn) handleBlockedRequest(r *Request, err error) error {
-	siteStat.TempBlocked(r.URL)
-	return RetryError{err}
-}
-
 func (c *clientConn) handleServerReadError(r *Request, sv *serverConn, err error, msg string) error {
 	if debug {
 		debug.Printf("cli(%s) server read error %s %T %v %v\n",
@@ -581,9 +569,6 @@ func (c *clientConn) handleServerReadError(r *Request, sv *serverConn, err error
 	}
 	if err == io.EOF {
 		return RetryError{err}
-	}
-	if sv.maybeFake() && maybeBlocked(err) {
-		return c.handleBlockedRequest(r, err)
 	}
 	if r.responseNotSent() {
 		sendErrorPage(c, "502 read error", err.Error(), genErrMsg(r, sv, msg))
@@ -594,11 +579,6 @@ func (c *clientConn) handleServerReadError(r *Request, sv *serverConn, err error
 }
 
 func (c *clientConn) handleServerWriteError(r *Request, sv *serverConn, err error, msg string) error {
-	// This function is only called in doRequest, no response is sent to client.
-	// So if visiting blocked site, can always retry request.
-	if sv.maybeFake() && isErrConnReset(err) {
-		siteStat.TempBlocked(r.URL)
-	}
 	return RetryError{err}
 }
 
@@ -723,7 +703,7 @@ func connectDirect2(url *URL, siteInfo *VisitCnt, recursive bool) (net.Conn, err
 		c, err = net.Dial("tcp", url.HostPort)
 	} else {
 		to := dialTimeout
-		if siteInfo.OnceBlocked() && to >= defaultDialTimeout {
+		if to >= defaultDialTimeout {
 			// If once blocked, decrease timeout to switch to parent proxy faster.
 			to = minDialTimeout
 		} else if siteInfo.AsDirect() {
@@ -765,75 +745,53 @@ func isHttpErrCode(err error) bool {
 	return false
 }
 
-func maybeBlocked(err error) bool {
-	if parentProxy.empty() {
-		return false
-	}
-	return isErrTimeout(err) || isErrConnReset(err) || isHttpErrCode(err)
-}
-
+// MEOW !!!
 // Connect to requested server according to whether it's visit count.
 // If direct connection fails, try parent proxies.
 func (c *clientConn) connect(r *Request, siteInfo *VisitCnt) (srvconn net.Conn, err error) {
 	var errMsg string
-	if config.AlwaysProxy {
-		if srvconn, err = parentProxy.connect(r.URL); err == nil {
+	var socksErr error
+
+	if siteInfo.AlwaysDirect() {
+		if srvconn, err = connectDirect(r.URL, siteInfo); err == nil {
 			return
 		}
-		errMsg = genErrMsg(r, nil, "Parent proxy connection failed, always use parent proxy.")
+	}
+
+	// “我向来不惮以最坏的恶意揣测中国人”
+	if srvconn, err = parentProxy.connect(r.URL); err == nil {
+		return
+	}
+
+	errMsg = genErrMsg(r, nil, "Parent proxy connection failed.")
+	goto fail
+
+	if parentProxy.empty() {
+		errMsg = genErrMsg(r, nil, "Direct connection failed, no parent proxy.")
 		goto fail
 	}
-	if siteInfo.AsBlocked() && !parentProxy.empty() {
-		// In case of connection error to socks server, fallback to direct connection
-		if srvconn, err = parentProxy.connect(r.URL); err == nil {
-			return
-		}
-		if siteInfo.AlwaysBlocked() {
-			errMsg = genErrMsg(r, nil, "Parent proxy connection failed, always blocked site.")
-			goto fail
-		}
-		if siteInfo.AsTempBlocked() {
-			errMsg = genErrMsg(r, nil, "Parent proxy connection failed, temporarily blocked site.")
-			goto fail
-		}
-		if srvconn, err = connectDirect(r.URL, siteInfo); err == nil {
-			return
-		}
-		errMsg = genErrMsg(r, nil, "Parent proxy and direct connection failed, maybe blocked site.")
-	} else {
-		// In case of error on direction connection, try parent server
-		if srvconn, err = connectDirect(r.URL, siteInfo); err == nil {
-			return
-		}
-		if parentProxy.empty() {
-			errMsg = genErrMsg(r, nil, "Direct connection failed, no parent proxy.")
-			goto fail
-		}
-		if siteInfo.AlwaysDirect() {
-			errMsg = genErrMsg(r, nil, "Direct connection failed, always direct site.")
-			goto fail
-		}
-		// net.Dial does two things: DNS lookup and TCP connection.
-		// GFW may cause failure here: make it time out or reset connection.
-		// debug.Printf("type of err %T %v\n", err, err)
-
-		// RST during TCP handshake is valid and would return as connection
-		// refused error. My observation is that GFW does not use RST to stop
-		// TCP handshake.
-		// To simplify things and avoid error in my observation, always try
-		// parent proxy in case of Dial error.
-		var socksErr error
-		if srvconn, socksErr = parentProxy.connect(r.URL); socksErr == nil {
-			c.handleBlockedRequest(r, err)
-			if debug {
-				debug.Printf("cli(%s) direct connection failed, use parent proxy for %v\n",
-					c.RemoteAddr(), r)
-			}
-			return srvconn, nil
-		}
-		errMsg = genErrMsg(r, nil,
-			"Direct and parent proxy connection failed, maybe blocked site.")
+	if siteInfo.AlwaysDirect() {
+		errMsg = genErrMsg(r, nil, "Direct connection failed, always direct site.")
+		goto fail
 	}
+	// net.Dial does two things: DNS lookup and TCP connection.
+	// GFW may cause failure here: make it time out or reset connection.
+	// debug.Printf("type of err %T %v\n", err, err)
+
+	// RST during TCP handshake is valid and would return as connection
+	// refused error. My observation is that GFW does not use RST to stop
+	// TCP handshake.
+	// To simplify things and avoid error in my observation, always try
+	// parent proxy in case of Dial error.
+	if srvconn, socksErr = parentProxy.connect(r.URL); socksErr == nil {
+		if debug {
+			debug.Printf("cli(%s) direct connection failed, use parent proxy for %v\n",
+				c.RemoteAddr(), r)
+		}
+		return srvconn, nil
+	}
+	errMsg = genErrMsg(r, nil,
+		"Direct and parent proxy connection failed, maybe blocked site.")
 
 fail:
 	sendErrorPage(c, "504 Connection failed", err.Error(), errMsg)
@@ -907,10 +865,6 @@ func (sv *serverConn) Close() error {
 	return sv.Conn.Close()
 }
 
-func (sv *serverConn) maybeFake() bool {
-	return sv.state == svConnected && sv.isDirect() && !sv.siteInfo.AlwaysDirect()
-}
-
 func setConnReadTimeout(cn net.Conn, d time.Duration, msg string) {
 	if err := cn.SetReadDeadline(time.Now().Add(d)); err != nil {
 		errl.Println("set readtimeout:", msg, err)
@@ -926,7 +880,7 @@ func unsetConnReadTimeout(cn net.Conn, msg string) {
 
 func (sv *serverConn) setReadTimeout(msg string) {
 	to := readTimeout
-	if sv.siteInfo.OnceBlocked() && to > defaultReadTimeout {
+	if to > defaultReadTimeout {
 		to = minReadTimeout
 	} else if sv.siteInfo.AsDirect() {
 		to = maxTimeout
@@ -980,20 +934,12 @@ func copyServer2Client(sv *serverConn, c *clientConn, r *Request) (err error) {
 	readTimeoutSet := false
 	for {
 		// debug.Println("srv->cli")
-		if sv.maybeFake() {
-			sv.setReadTimeout("srv->cli")
-			readTimeoutSet = true
-		} else if readTimeoutSet {
+		if readTimeoutSet {
 			sv.unsetReadTimeout("srv->cli")
 			readTimeoutSet = false
 		}
 		var n int
 		if n, err = sv.Read(buf); err != nil {
-			if sv.maybeFake() && maybeBlocked(err) {
-				siteStat.TempBlocked(r.URL)
-				debug.Printf("srv->cli blocked site %s detected, err: %v retry\n", r.URL.HostPort, err)
-				return RetryError{err}
-			}
 			// Expected error besides EOF: "use of closed network connection",
 			// this is to make blocking read return.
 			// debug.Printf("copyServer2Client read data: %v\n", err)
@@ -1097,19 +1043,15 @@ func copyClient2Server(c *clientConn, sv *serverConn, r *Request, srvStopped not
 	}()
 	for {
 		// debug.Println("cli->srv")
-		if sv.maybeFake() {
-			setConnReadTimeout(c.Conn, time.Second, "cli->srv")
-			deadlineIsSet = true
-		} else if deadlineIsSet {
+		if deadlineIsSet {
 			// maybeFake may trun to false after timeout, but timeout should be unset
 			unsetConnReadTimeout(c.Conn, "cli->srv before read")
 			deadlineIsSet = false
 		}
 		if n, err = c.Read(buf); err != nil {
-			if config.DetectSSLErr && sv.maybeFake() && (isErrConnReset(err) || err == io.EOF) &&
+			if config.DetectSSLErr && (isErrConnReset(err) || err == io.EOF) &&
 				sv.maybeSSLErr(start) {
 				debug.Println("client connection closed very soon, taken as SSL error:", r)
-				siteStat.TempBlocked(r.URL)
 			} else if isErrTimeout(err) && !srvStopped.hasNotified() {
 				// debug.Printf("cli(%s)->srv(%s) timeout\n", c.RemoteAddr(), r.URL.HostPort)
 				continue
@@ -1142,8 +1084,8 @@ func (sv *serverConn) doConnect(r *Request, c *clientConn) (err error) {
 	r.state = rsCreated
 
 	_, isHttpConn := sv.Conn.(httpConn)
-	_, ismeowConn := sv.Conn.(meowConn)
-	if isHttpConn || ismeowConn {
+	_, isMeowConn := sv.Conn.(meowConn)
+	if isHttpConn || isMeowConn {
 		if debug {
 			debug.Printf("cli(%s) send CONNECT request to parent\n", c.RemoteAddr())
 		}

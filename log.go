@@ -41,8 +41,8 @@ func init() {
 	flag.BoolVar((*bool)(&info), "info", true, "info log")
 	flag.BoolVar((*bool)(&debug), "debug", false, "debug log, with this option, log goes to stdout with color")
 	flag.BoolVar((*bool)(&errl), "err", true, "error log")
-	flag.BoolVar((*bool)(&dbgRq), "request", false, "request log")
-	flag.BoolVar((*bool)(&dbgRep), "reply", false, "reply log")
+	flag.BoolVar((*bool)(&dbgRq), "request", true, "request log")
+	flag.BoolVar((*bool)(&dbgRep), "reply", true, "reply log")
 	flag.BoolVar(&verbose, "v", false, "more info in request/response logging")
 	flag.BoolVar(&colorize, "color", false, "colorize log output")
 }
@@ -106,12 +106,14 @@ func (d errorLogging) Println(args ...interface{}) {
 }
 
 func (d requestLogging) Printf(format string, args ...interface{}) {
+	requestLog.Printf(format, args...) //debug
 	if d {
 		requestLog.Printf(format, args...)
 	}
 }
 
 func (d responseLogging) Printf(format string, args ...interface{}) {
+	responseLog.Printf(format, args...) //debug
 	if d {
 		responseLog.Printf(format, args...)
 	}

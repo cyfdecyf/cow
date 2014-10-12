@@ -7,10 +7,8 @@ import (
 )
 
 const (
-	rcFname            = "rc"
-	alwaysBlockedFname = "blocked"
-	alwaysDirectFname  = "direct"
-	statFname          = "stat"
+	rcFname           = "rc"
+	alwaysDirectFname = "direct"
 
 	newLine = "\n"
 )
