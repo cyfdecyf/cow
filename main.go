@@ -8,8 +8,6 @@ import (
 	// "runtime/pprof"
 	"sync"
 	"syscall"
-
-	"bitbucket.org/kardianos/service"
 )
 
 // var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
