@@ -42,7 +42,11 @@
 
 ## TODO
 
-- Windows wrapper app
 - 完善PAC
 - 通过IP判断国内网站
 - Linux & OS X release
+
+## 致谢
+
+- @cyfdecyf: COW author
+- Github: Github Student Pack
