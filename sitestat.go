@@ -96,47 +96,6 @@ func (vc *VisitCnt) AlwaysDirect() bool {
 // global lock to avoid associating a lock to each VisitCnt.
 var visitLock sync.Mutex
 
-// visit updates visit cnt
-func (vc *VisitCnt) visit(inc *vcntint) {
-	if *inc < maxCnt {
-		*inc++
-	}
-	// Because of concurrent update, possible for *inc to overflow and become
-	// negative, but very unlikely.
-	if *inc > maxCnt || *inc < 0 {
-		*inc = maxCnt
-	}
-
-	if !vc.rUpdated {
-		vc.rUpdated = true
-		visitLock.Lock()
-		vc.Recent = Date(time.Now())
-		visitLock.Unlock()
-	}
-}
-
-func (vc *VisitCnt) DirectVisit() {
-	if networkBad() || vc.userSpecified() {
-		return
-	}
-	// one successful direct visit probably means the site is not actually
-	// blocked
-	vc.visit(&vc.Direct)
-	vc.Blocked = 0
-}
-
-func (vc *VisitCnt) BlockedVisit() {
-	if networkBad() || vc.userSpecified() {
-		return
-	}
-	// When a site changes from direct to blocked by GFW, meow should learn
-	// this quickly and remove it from the PAC ASAP. So change direct to 0
-	// once there's a single blocked visit, this ensures the site is removed
-	// upon the next PAC update.
-	vc.visit(&vc.Blocked)
-	vc.Direct = 0
-}
-
 type SiteStat struct {
 	Update Date                 `json:"update"`
 	Vcnt   map[string]*VisitCnt `json:"site_info"` // Vcnt uses host as key

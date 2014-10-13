@@ -749,18 +749,6 @@ func (sv *serverConn) isDirect() bool {
 	return ok
 }
 
-func (sv *serverConn) updateVisit() {
-	if sv.visited {
-		return
-	}
-	sv.visited = true
-	if sv.isDirect() {
-		sv.siteInfo.DirectVisit()
-	} else {
-		sv.siteInfo.BlockedVisit()
-	}
-}
-
 func (sv *serverConn) initBuf() {
 	if sv.bufRd == nil {
 		sv.buf = httpBuf.Get()
@@ -851,7 +839,6 @@ func copyServer2Client(sv *serverConn, c *clientConn, r *Request) (err error) {
 	*/
 
 	total := 0
-	const directThreshold = 8192
 	readTimeoutSet := false
 	for {
 		// debug.Println("srv->cli")
@@ -875,9 +862,6 @@ func copyServer2Client(sv *serverConn, c *clientConn, r *Request) (err error) {
 		// set state to rsRecvBody to indicate the request has partial response sent to client
 		r.state = rsRecvBody
 		sv.state = svSendRecvResponse
-		if total > directThreshold {
-			sv.updateVisit()
-		}
 	}
 }
 
@@ -1113,10 +1097,7 @@ func (sv *serverConn) doRequest(c *clientConn, r *Request, rp *Response) (err er
 		return
 	}
 	r.state = rsSent
-	if err = c.readResponse(sv, r, rp); err == nil {
-		sv.updateVisit()
-	}
-	return err
+	return c.readResponse(sv, r, rp)
 }
 
 // Send response body if header specifies content length
