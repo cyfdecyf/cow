@@ -350,16 +350,22 @@ end:
 	return errPageSent
 }
 
-func dbgPrintRq(c *clientConn, r *Request) {
+func dbgPrintRq(c *clientConn, r *Request, direct bool) {
 	if r.Trailer {
 		errl.Printf("cli(%s) request  %s has Trailer header\n%s",
 			c.RemoteAddr(), r, r.Verbose())
 	}
 	if dbgRq {
-		if verbose {
-			dbgRq.Printf("cli(%s) request  %s\n%s", c.RemoteAddr(), r, r.Verbose())
+		var connType string
+		if direct {
+			connType = "DIRECT"
 		} else {
-			dbgRq.Printf("cli(%s) request  %s\n", c.RemoteAddr(), r)
+			connType = "PROXY"
+		}
+		if verbose {
+			dbgRq.Printf("%s %s %s\n%s\n", connType, c.RemoteAddr(), r, r.Verbose())
+		} else {
+			dbgRq.Printf("%s %s %s\n", connType, c.RemoteAddr(), r)
 		}
 	}
 }
@@ -407,7 +413,6 @@ func (c *clientConn) serve() {
 				"Your browser didn't send a complete request in time.")
 			return
 		}
-		dbgPrintRq(c, &r)
 
 		// PAC may leak frequently visited sites information. But if meow
 		// requires authentication for PAC, some clients may not be able
@@ -543,11 +548,9 @@ func dbgPrintRep(c *clientConn, r *Request, rp *Response) {
 	}
 	if dbgRep {
 		if verbose {
-			dbgRep.Printf("cli(%s) response %s %s\n%s",
-				c.RemoteAddr(), r, rp, rp.Verbose())
+			dbgRep.Printf("%s %s\n%s", r, rp, rp.Verbose())
 		} else {
-			dbgRep.Printf("cli(%s) response %s %s\n",
-				c.RemoteAddr(), r, rp)
+			dbgRep.Printf("%s %s\n", r, rp)
 		}
 	}
 }
@@ -706,6 +709,7 @@ func (c *clientConn) connect(r *Request, siteInfo *VisitCnt) (srvconn net.Conn, 
 	var errMsg string
 
 	if siteInfo.AlwaysDirect() {
+		dbgPrintRq(c, r, true)
 		if srvconn, err = connectDirect(r.URL, siteInfo); err == nil {
 			return
 		}
@@ -719,6 +723,7 @@ func (c *clientConn) connect(r *Request, siteInfo *VisitCnt) (srvconn net.Conn, 
 	}
 
 	// “我向来是不惮以最坏的恶意来揣测中国人的”
+	dbgPrintRq(c, r, false)
 	if srvconn, err = parentProxy.connect(r.URL); err == nil {
 		return
 	}
