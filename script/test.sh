@@ -16,9 +16,9 @@ else # on travis
     RCDIR=./script/
 fi
 
-./MEOW -rc $RCDIR/debugrc -listen=meow://aes-128-cfb:foobar@$MEOW_ADDR &
+./MEOW -request=false -reply=false -rc $RCDIR/debugrc -listen=meow://aes-128-cfb:foobar@$MEOW_ADDR &
 parent_pid=$!
-./MEOW -rc ./script/httprc -listen=http://$PROXY_ADDR &
+./MEOW -request=false -reply=false -rc ./script/httprc -listen=http://$PROXY_ADDR &
 meow_pid=$!
 
 stop_meow() {
