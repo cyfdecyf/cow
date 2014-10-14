@@ -48,5 +48,6 @@
 
 ## 致谢
 
-- @cyfdecyf: COW author
-- Github: Github Student Pack
+- @cyfdecyf - COW author
+- Github - Github Student Pack
+- https://www.pandafan.org/pac/index.html - White List
