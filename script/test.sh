@@ -8,7 +8,7 @@ if ! go build; then
 fi
 
 PROXY_ADDR=127.0.0.1:7788
-meow_ADDR=127.0.0.1:8899
+MEOW_ADDR=127.0.0.1:8899
 
 if [[ -z "$TRAVIS" ]]; then
     RCDIR=~/.meow/
@@ -16,9 +16,9 @@ else # on travis
     RCDIR=./script/
 fi
 
-./meow -rc $RCDIR/debugrc -listen=meow://aes-128-cfb:foobar@$meow_ADDR &
+./MEOW -rc $RCDIR/debugrc -listen=meow://aes-128-cfb:foobar@$MEOW_ADDR &
 parent_pid=$!
-./meow -rc ./script/httprc -listen=http://$PROXY_ADDR &
+./MEOW -rc ./script/httprc -listen=http://$PROXY_ADDR &
 meow_pid=$!
 
 stop_meow() {
@@ -41,34 +41,31 @@ test_get() {
         code="200"
     fi
 
-    # get 5 times
-    for i in {1..2}; do
-        # -s silent to disable progress meter, but enable --show-error
-        # -i to include http header
-        # -L to follow redirect so we should always get HTTP 200
-        if [[ -n $noproxy ]]; then
-            cont=`curl -s --show-error -i -L $url 2>&1`
-        else
-            cont=`curl -s --show-error -i -L -x $PROXY_ADDR $url 2>&1`
-        fi
-        ok=`echo $cont | grep -E -o "HTTP/1\.1 +$code"`
-        html=`echo $cont | grep -E -o -i "$target"`
-        if [[ -z $ok || -z $html ]] ; then
-            echo "=============================="
-            echo "GET $url FAILED!!!"
-            echo "$ok"
-            echo "$html"
-            echo $cont
-            echo "=============================="
-            kill -SIGTERM $meow_pid
-            exit 1
-        fi
-        sleep 0.3
-    done
+    # -s silent to disable progress meter, but enable --show-error
+    # -i to include http header
+    # -L to follow redirect so we should always get HTTP 200
+    if [[ -n $noproxy ]]; then
+        cont=`curl -s --show-error -i -L $url 2>&1`
+    else
+        cont=`curl -s --show-error -i -L -x $PROXY_ADDR $url 2>&1`
+    fi
+    ok=`echo $cont | grep -E -o "HTTP/1\.1 +$code"`
+    html=`echo $cont | grep -E -o -i "$target"`
+    if [[ -z $ok || -z $html ]] ; then
+        echo "=============================="
+        echo "GET $url FAILED!!!"
+        echo "$ok"
+        echo "$html"
+        echo $cont
+        echo "=============================="
+        kill -SIGTERM $meow_pid
+        exit 1
+    fi
+    sleep 0.3
     echo "passed"
 }
 
-test_get $PROXY_ADDR/pac "apple.com" "noproxy" # test for pac
+test_get $PROXY_ADDR/pac "proxy-autoconfig" "noproxy" # test for pac
 test_get google.com "<html" # 301 redirect
 test_get www.google.com "<html" # 302 redirect , chunked encoding
 test_get www.reddit.com "<html" # chunked encoding
