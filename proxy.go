@@ -47,6 +47,15 @@ const fullKeepAliveHeader = "Keep-Alive: timeout=15\r\n"
 // drop connection immediately upon SSL error.
 const sslLeastDuration = time.Second
 
+const minDialTimeout = 3 * time.Second
+const minReadTimeout = 4 * time.Second
+const defaultDialTimeout = 5 * time.Second
+const defaultReadTimeout = 5 * time.Second
+const maxTimeout = 15 * time.Second
+
+var dialTimeout = defaultDialTimeout
+var readTimeout = defaultReadTimeout
+
 // Some code are learnt from the http package
 
 var zeroTime time.Time

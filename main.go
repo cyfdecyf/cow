@@ -1,37 +1,11 @@
 package main
 
 import (
-	// "flag"
-	"os"
-	"os/signal"
-	"runtime"
-	// "runtime/pprof"
 	"fmt"
+	"os"
+	"runtime"
 	"sync"
-	"syscall"
 )
-
-// var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
-
-func sigHandler() {
-	// TODO On Windows, these signals will not be triggered on closing cmd
-	// window. How to detect this?
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM,
-		syscall.SIGHUP)
-
-	for sig := range sigChan {
-		// May handle other signals in the future.
-		info.Printf("%v caught, exit\n", sig)
-		break
-	}
-	/*
-		if *cpuprofile != "" {
-			pprof.StopCPUProfile()
-		}
-	*/
-	os.Exit(0)
-}
 
 func main() {
 	// Parse flags after load config to allow override options in config
@@ -61,27 +35,19 @@ func main() {
 
 	initParentPool()
 
-	/*
-		if *cpuprofile != "" {
-			f, err := os.Create(*cpuprofile)
-			if err != nil {
-				Fatal(err)
-			}
-			pprof.StartCPUProfile(f)
-		}
-	*/
+	if config.DialTimeout > 0 {
+		dialTimeout = config.DialTimeout
+	}
+
+	if config.ReadTimeout > 0 {
+		readTimeout = config.ReadTimeout
+	}
 
 	if config.Core > 0 {
 		runtime.GOMAXPROCS(config.Core)
 	}
 
-	go sigHandler()
 	go runSSH()
-	if config.EstimateTimeout {
-		go runEstimateTimeout()
-	} else {
-		info.Println("timeout estimation disabled")
-	}
 
 	var wg sync.WaitGroup
 	wg.Add(len(listenProxy))

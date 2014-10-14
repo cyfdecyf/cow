@@ -118,7 +118,7 @@ func (parent *ParentWithFail) connect(url *URL) (srvconn net.Conn, err error) {
 	const maxFailCnt = 30
 	srvconn, err = parent.ParentProxy.connect(url)
 	if err != nil {
-		if parent.fail < maxFailCnt && !networkBad() {
+		if parent.fail < maxFailCnt {
 			parent.fail++
 		}
 		return

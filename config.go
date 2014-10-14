@@ -236,7 +236,7 @@ func (pp proxyParser) ProxySs(val string) {
 	parentProxy.add(parent)
 }
 
-func (pp proxyParser) Proxymeow(val string) {
+func (pp proxyParser) ProxyMeow(val string) {
 	method, passwd, server, err := parseMethodPasswdServer(val)
 	if err != nil {
 		Fatal("meow parent", err)
@@ -422,10 +422,6 @@ func (p configParser) ParseHttpUserPasswd(val string) {
 	}
 	http.parent.initAuth(val)
 	http.passwdCnt++
-}
-
-func (p configParser) ParseAlwaysProxy(val string) {
-	config.AlwaysProxy = parseBool(val, "alwaysProxy")
 }
 
 func (p configParser) ParseLoadBalance(val string) {
