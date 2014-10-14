@@ -1,5 +1,8 @@
 # MEOW Proxy
 
+当前版本：1.0beta [CHANGELOG](CHANGELOG)
+[![Build Status](https://travis-ci.org/renzhn/MEOW.png?branch=master)](https://travis-ci.org/renzhn/MEOW)
+
 <pre>
        /\
    )  ( ')     MEOW 是 [COW](https://github.com/cyfdecyf/cow) 的一个派生版本
@@ -8,9 +11,6 @@
 </pre>
 
 如果你的代理有充足的流量和比直接连接国外网站更快的速度，为和不将国外网站统统用代理来连接呢？麻麻再也不用担心网站被墙了！发挥出你goagent和shadowsocks更大的潜力吧！
-
-当前版本：1.0beta [CHANGELOG](CHANGELOG)
-[![Build Status](https://travis-ci.org/renzhn/MEOW.png?branch=master)](https://travis-ci.org/renzhn/MEOW)
 
 ## 获取
 
