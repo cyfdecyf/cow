@@ -47,11 +47,11 @@ func TestCalcDigest(t *testing.T) {
 		"cnonce": "6c46874228c087eb",
 		"uri":    "/",
 	}
-	const targetDigest = "bad1cb3526e4b257a62cda10f7c25aad"
+	const targetDigest = "c51dbb53e998cb7d68794574e60f8ea0"
 
 	digest := calcRequestDigest(auth, a1, "GET")
 	if digest != targetDigest {
-		t.Errorf("authentication digest calculation wrong, got: %x, should be: %s\n", digest, targetDigest)
+		t.Errorf("authentication digest calculation wrong, got: %s, should be: %s\n", digest, targetDigest)
 	}
 }
 

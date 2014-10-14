@@ -13,15 +13,14 @@ func TestParseRequestURI(t *testing.T) {
 		rawurl string
 		url    *URL
 	}{
-		// I'm really tired of typing google.com ...
 		{"http://www.g.com", &URL{"www.g.com:80", "www.g.com", "80", "g.com", ""}},
 		{"http://plus.g.com/", &URL{"plus.g.com:80", "plus.g.com", "80", "g.com", "/"}},
 		{"https://g.com:80", &URL{"g.com:80", "g.com", "80", "g.com", ""}},
 		{"http://mail.g.com:80/", &URL{"mail.g.com:80", "mail.g.com", "80", "g.com", "/"}},
 		{"http://g.com:80/ncr", &URL{"g.com:80", "g.com", "80", "g.com", "/ncr"}},
 		{"https://g.com/ncr/tree", &URL{"g.com:443", "g.com", "443", "g.com", "/ncr/tree"}},
-		{"www.g.com.hk:80/", &URL{"www.g.com.hk:80", "www.g.com.hk", "80", "g.com.hk", "/"}},
-		{"g.com.jp:80", &URL{"g.com.jp:80", "g.com.jp", "80", "g.com.jp", ""}},
+		{"www.g.com.hk:80/", &URL{"www.g.com.hk:80", "www.g.com.hk", "80", "com.hk", "/"}},
+		{"g.com.jp:80", &URL{"g.com.jp:80", "g.com.jp", "80", "com.jp", ""}},
 		{"g.com", &URL{"g.com:80", "g.com", "80", "g.com", ""}},
 		{"g.com:8000/ncr", &URL{"g.com:8000", "g.com", "8000", "g.com", "/ncr"}},
 		{"g.com/ncr/tree", &URL{"g.com:80", "g.com", "80", "g.com", "/ncr/tree"}},
