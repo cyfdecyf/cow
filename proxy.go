@@ -283,6 +283,7 @@ func initSelfListenAddr() {
 				selfListenAddr[ad] = true
 			}
 			selfListenAddr["localhost"] = true
+			selfListenAddr["127.0.0.1"] = true
 			continue
 		}
 
