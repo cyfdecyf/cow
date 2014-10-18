@@ -47,15 +47,6 @@ const fullKeepAliveHeader = "Keep-Alive: timeout=15\r\n"
 // drop connection immediately upon SSL error.
 const sslLeastDuration = time.Second
 
-const minDialTimeout = 3 * time.Second
-const minReadTimeout = 4 * time.Second
-const defaultDialTimeout = 5 * time.Second
-const defaultReadTimeout = 5 * time.Second
-const maxTimeout = 15 * time.Second
-
-var dialTimeout = defaultDialTimeout
-var readTimeout = defaultReadTimeout
-
 // Some code are learnt from the http package
 
 var zeroTime time.Time
@@ -83,8 +74,7 @@ type serverConn struct {
 	hostPort    string
 	state       serverConnState
 	willCloseOn time.Time
-	siteInfo    *VisitCnt
-	visited     bool
+	direct      bool
 }
 
 type clientConn struct {
@@ -631,12 +621,12 @@ func (c *clientConn) readResponse(sv *serverConn, r *Request, rp *Response) (err
 }
 
 func (c *clientConn) getServerConn(r *Request) (*serverConn, error) {
-	siteInfo := siteStat.GetVisitCnt(r.URL)
+	direct := directList.shouldDirect(r.URL)
 	// For CONNECT method, always create new connection.
 	if r.isConnect {
-		return c.createServerConn(r, siteInfo)
+		return c.createServerConn(r, direct)
 	}
-	sv := connPool.Get(r.URL.HostPort, siteInfo.AsDirect())
+	sv := connPool.Get(r.URL.HostPort, direct)
 	if sv != nil {
 		// For websites like feedly, the site itself is not blocked, but the
 		// content it loads may result reset. So we should reset server
@@ -650,30 +640,17 @@ func (c *clientConn) getServerConn(r *Request) (*serverConn, error) {
 	if debug {
 		debug.Printf("cli(%s) connPool no conn %s", c.RemoteAddr(), r.URL.HostPort)
 	}
-	return c.createServerConn(r, siteInfo)
+	return c.createServerConn(r, direct)
 }
 
-func connectDirect2(url *URL, siteInfo *VisitCnt, recursive bool) (net.Conn, error) {
+func connectDirect2(url *URL, recursive bool) (net.Conn, error) {
 	var c net.Conn
 	var err error
-	if siteInfo.AlwaysDirect() {
-		c, err = net.Dial("tcp", url.HostPort)
-	} else {
-		to := dialTimeout
-		if to >= defaultDialTimeout {
-			// If once blocked, decrease timeout to switch to parent proxy faster.
-			to = minDialTimeout
-		} else if siteInfo.AsDirect() {
-			// If usually can be accessed directly, increase timeout to avoid
-			// problems when network condition is bad.
-			to = maxTimeout
-		}
-		c, err = net.DialTimeout("tcp", url.HostPort, to)
-	}
+	c, err = net.Dial("tcp", url.HostPort)
 	if err != nil {
 		debug.Printf("error direct connect to: %s %v\n", url.HostPort, err)
 		if isErrTooManyOpenFd(err) && !recursive {
-			return connectDirect2(url, siteInfo, true)
+			return connectDirect2(url, true)
 		}
 		return nil, err
 	}
@@ -681,8 +658,8 @@ func connectDirect2(url *URL, siteInfo *VisitCnt, recursive bool) (net.Conn, err
 	return directConn{c}, nil
 }
 
-func connectDirect(url *URL, siteInfo *VisitCnt) (net.Conn, error) {
-	return connectDirect2(url, siteInfo, false)
+func connectDirect(url *URL) (net.Conn, error) {
+	return connectDirect2(url, false)
 }
 
 func isErrTimeout(err error) bool {
@@ -705,12 +682,12 @@ func isHttpErrCode(err error) bool {
 // MEOW !!!
 // Connect to requested server according to whether it's visit count.
 // If direct connection fails, try parent proxies.
-func (c *clientConn) connect(r *Request, siteInfo *VisitCnt) (srvconn net.Conn, err error) {
+func (c *clientConn) connect(r *Request, direct bool) (srvconn net.Conn, err error) {
 	var errMsg string
 
-	if siteInfo.AlwaysDirect() {
+	if direct {
 		dbgPrintRq(c, r, true)
-		if srvconn, err = connectDirect(r.URL, siteInfo); err == nil {
+		if srvconn, err = connectDirect(r.URL); err == nil {
 			return
 		}
 		errMsg = genErrMsg(r, nil, "Direct connection failed, always direct site.")
@@ -734,12 +711,12 @@ fail:
 	return nil, errPageSent
 }
 
-func (c *clientConn) createServerConn(r *Request, siteInfo *VisitCnt) (*serverConn, error) {
-	srvconn, err := c.connect(r, siteInfo)
+func (c *clientConn) createServerConn(r *Request, direct bool) (*serverConn, error) {
+	srvconn, err := c.connect(r, direct)
 	if err != nil {
 		return nil, err
 	}
-	sv := newServerConn(srvconn, r.URL.HostPort, siteInfo)
+	sv := newServerConn(srvconn, r.URL.HostPort, direct)
 	if debug {
 		debug.Printf("cli(%s) connected to %s %d concurrent connections\n",
 			c.RemoteAddr(), sv.hostPort, incSrvConnCnt(sv.hostPort))
@@ -750,11 +727,11 @@ func (c *clientConn) createServerConn(r *Request, siteInfo *VisitCnt) (*serverCo
 // Should call initBuf before reading http response from server. This allows
 // us not init buf for connect method which does not need to parse http
 // respnose.
-func newServerConn(c net.Conn, hostPort string, siteInfo *VisitCnt) *serverConn {
+func newServerConn(c net.Conn, hostPort string, direct bool) *serverConn {
 	sv := &serverConn{
 		Conn:     c,
 		hostPort: hostPort,
-		siteInfo: siteInfo,
+		direct:   direct,
 	}
 	return sv
 }
@@ -800,16 +777,6 @@ func unsetConnReadTimeout(cn net.Conn, msg string) {
 		// It's possible that conn has been closed, so use debug log.
 		debug.Println("unset readtimeout:", msg, err)
 	}
-}
-
-func (sv *serverConn) setReadTimeout(msg string) {
-	to := readTimeout
-	if to > defaultReadTimeout {
-		to = minReadTimeout
-	} else if sv.siteInfo.AsDirect() {
-		to = maxTimeout
-	}
-	setConnReadTimeout(sv.Conn, to, msg)
 }
 
 func (sv *serverConn) unsetReadTimeout(msg string) {

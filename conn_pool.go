@@ -60,7 +60,7 @@ func putConnToChan(sv *serverConn, ch chan *serverConn, chname string) {
 	}
 }
 
-func (cp *ConnPool) Get(hostPort string, asDirect bool) (sv *serverConn) {
+func (cp *ConnPool) Get(hostPort string, direct bool) (sv *serverConn) {
 	// Get from site specific connection first.
 	// Direct connection are all site specific, so must use site specific
 	// first to avoid using parent proxy for direct sites.
@@ -78,7 +78,7 @@ func (cp *ConnPool) Get(hostPort string, asDirect bool) (sv *serverConn) {
 
 	// All mulplexing connections are for blocked sites,
 	// so for direct sites we should stop here.
-	if asDirect && !config.AlwaysProxy {
+	if direct {
 		return nil
 	}
 

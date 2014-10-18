@@ -28,20 +28,12 @@ func main() {
 	initSelfListenAddr()
 	initLog()
 	initAuth()
-	initSiteStat()
+	initDirectList()
 	initPAC() // initPAC uses siteStat, so must init after site stat
 
 	initStat()
 
 	initParentPool()
-
-	if config.DialTimeout > 0 {
-		dialTimeout = config.DialTimeout
-	}
-
-	if config.ReadTimeout > 0 {
-		readTimeout = config.ReadTimeout
-	}
 
 	if config.Core > 0 {
 		runtime.GOMAXPROCS(config.Core)

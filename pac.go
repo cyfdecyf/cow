@@ -26,7 +26,7 @@ func getDirectList() string {
 }
 
 func updateDirectList() {
-	dl := strings.Join(siteStat.GetDirectList(), "\",\n\"")
+	dl := strings.Join(directList.GetDirectList(), "\",\n\"")
 	pac.dLRWMutex.Lock()
 	pac.directList = dl
 	pac.dLRWMutex.Unlock()

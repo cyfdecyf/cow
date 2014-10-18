@@ -257,7 +257,7 @@ func (parent *ParentWithLatency) updateLatency(wg *sync.WaitGroup) {
 	var total time.Duration
 	for i := 0; i < N; i++ {
 		now := time.Now()
-		cn, err := net.DialTimeout("tcp", ipPort, dialTimeout)
+		cn, err := net.Dial("tcp", ipPort)
 		if err != nil {
 			debug.Println("latency update dial:", err)
 			total += time.Minute // 1 minute as penalty

@@ -40,7 +40,6 @@ var defaultTunnelAllowedPort = []string{
 type Config struct {
 	RcFile      string // config file
 	LogFile     string
-	AlwaysProxy bool
 	LoadBalance LoadBalanceMode
 
 	TunnelAllowedPort map[string]bool // allowed ports to create tunnel
@@ -89,11 +88,8 @@ func init() {
 	configPath.alwaysDirect = path.Join(configPath.dir, alwaysDirectFname)
 
 	config.DetectSSLErr = false
-	config.AlwaysProxy = false
 
 	config.AuthTimeout = 2 * time.Hour
-	config.DialTimeout = defaultDialTimeout
-	config.ReadTimeout = defaultReadTimeout
 
 	config.TunnelAllowedPort = make(map[string]bool)
 	for _, port := range defaultTunnelAllowedPort {
