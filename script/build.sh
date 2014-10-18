@@ -2,57 +2,44 @@
 
 cd "$( dirname "${BASH_SOURCE[0]}" )/.."
 
-version=`grep '^version=' ./install-meow.sh | sed -s 's/version=//'`
-echo "creating meow binary version $version"
+version=`grep '^version=' ./install.sh | sed -s 's/version=//'`
+echo "creating MEOW binary version $version"
 
 mkdir -p bin
-build() {
-    local name
+
+gox -output="bin/{{.Dir}}-{{.OS}}-{{.Arch}}-$version" -os="darwin linux windows"
+
+pack() {
     local goos
     local goarch
-    local goarm
-    local cgo
-    local armv
+    local name
 
-    goos="GOOS=$1"
-    goarch="GOARCH=$2"
-    arch=$3
-    if [[ $2 == "arm" ]]; then
-        armv=`echo $arch | grep -o [0-9]`
-        goarm="GOARM=$armv"
-    fi
+    goos=$1
+    goarch=$2
+    name=MEOW-$goos-$goarch-$version
 
-    if [[ $1 == "darwin" ]]; then
-        # Enable CGO for OS X so change network location will not cause problem.
-        cgo="CGO_ENABLED=1"
-    else
-        cgo="CGO_ENABLED=0"
-    fi
-
-    name=meow-$arch-$version
-    echo "building $name"
-    echo $cgo $goos $goarch $goarm go build
-    eval $cgo $goos $goarch $goarm go build || exit 1
+    echo "packing $goos $goarch"
     if [[ $1 == "windows" ]]; then
-        mv meow.exe script
+        mv bin/$name.exe script/proxy.exe
         pushd script
         sed -e 's/$/\r/' ../doc/sample-config/rc > rc.txt
-        zip $name.zip meow.exe meow-taskbar.exe meow-hide.exe rc.txt
-        rm -f meow.exe rc.txt
+        sed -e 's/$/\r/' ../doc/sample-config/rc-full > rc-full.txt
+        sed -e 's/$/\r/' ../doc/sample-config/direct > direct.txt
+        mv meow-taskbar.exe MEOW.exe
+        zip $name.zip proxy.exe MEOW.exe rc.txt rc-full.txt direct.txt
+        rm -f proxy.exe rc.txt rc-full.txt direct.txt
         mv $name.zip ../bin/
+        mv MEOW.exe meow-taskbar.exe
         popd
     else
-        mv meow bin/$name
         gzip -f bin/$name
     fi
 }
 
-build darwin amd64 mac64
-build darwin 386 mac32
-build linux amd64 linux64
-build linux 386 linux32
-build linux arm linux-armv5tel
-build linux arm linux-armv6l
-build linux arm linux-armv7l
-build windows amd64 win64
-build windows 386 win32
+pack darwin amd64
+pack darwin 386
+pack linux amd64
+pack linux 386
+pack linux arm
+pack windows amd64
+pack windows 386
