@@ -5,13 +5,13 @@ version=1.0
 arch=`uname -m`
 case $arch in
     "x86_64")
-        arch="64"
+        arch="amd64"
         ;;
     "i386" | "i586" | "i486" | "i686")
-        arch="32"
+        arch="386"
         ;;
     "armv5tel" | "armv6l" | "armv7l")
-        arch="-$arch"
+        arch="arm"
         ;;
     *)
         echo "$arch currently has no precompiled binary"
@@ -21,7 +21,7 @@ esac
 os=`uname -s`
 case $os in
     "Darwin")
-        os="mac"
+        os="darwin"
         ;;
     "Linux")
         os="linux"
@@ -53,7 +53,7 @@ while true; do
         install_dir=`pwd`
         break
     fi
-    if [ ! -d $install_dir ]; then
+    if [ ! -d "$install_dir" ]; then
         echo "Directory $install_dir does not exists"
     else
         break
@@ -80,7 +80,7 @@ if [ $os == "mac" ]; then
 fi
 
 # Download MEOW binary
-bin=MEOW-$os$arch-$version
+bin=MEOW-$os-$arch-$version
 tmpdir=`mktemp -d /tmp/MEOW.XXXXXX`
 tmpbin=$tmpdir/MEOW
 binary_url="http://meowproxy.me/dist/$bin.gz"
@@ -100,7 +100,7 @@ if [ ! -e $config_dir ]; then
     sample_config_base="${doc_base}/sample-config"
     echo "Downloading sample config file to $config_dir"
     mkdir -p $config_dir || exit_on_fail "Can't create $config_dir directory"
-    for f in rc; do
+    for f in rc rc-full direct; do
         echo "Downloading $sample_config_base/$f to $config_dir/$f"
         curl -L "$sample_config_base/$f" -o $config_dir/$f || \
             exit_on_fail "Downloading sample config file $f failed"
@@ -110,7 +110,7 @@ fi
 # Download startup plist file
 if [ $start_on_login == "y" ]; then
     la_dir="$HOME/Library/LaunchAgents"
-    plist="info.renzhn.meow.plist"
+    plist="net.ohrz.meow.plist"
     plist_url="$doc_base/osx/$plist"
     mkdir -p $la_dir && exit_on_fail "Can't create directory $la_dir"
     echo "Downloading $plist_url to $la_dir/$plist"
