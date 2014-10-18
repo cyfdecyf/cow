@@ -31,6 +31,12 @@ pack() {
         mv $name.zip ../bin/
         mv MEOW.exe meow-taskbar.exe
         popd
+        if [[ $2 == "386" ]]; then
+            mv bin/$name.zip bin/MEOW-windows-x86-$version.zip
+        fi
+        if [[ $2 == "amd64" ]]; then
+            mv bin/$name.zip bin/MEOW-windows-x64-$version.zip
+        fi
     else
         gzip -f bin/$name
     fi
