@@ -40,6 +40,7 @@ var defaultTunnelAllowedPort = []string{
 type Config struct {
 	RcFile      string // config file
 	LogFile     string
+	JudgeByIP   bool
 	LoadBalance LoadBalanceMode
 
 	TunnelAllowedPort map[string]bool // allowed ports to create tunnel
@@ -86,6 +87,8 @@ func init() {
 	// fmt.Println("home dir:", homeDir)
 
 	configPath.alwaysDirect = path.Join(configPath.dir, alwaysDirectFname)
+
+	config.JudgeByIP = true
 
 	config.DetectSSLErr = false
 
@@ -542,6 +545,10 @@ func (p configParser) ParseReadTimeout(val string) {
 
 func (p configParser) ParseDialTimeout(val string) {
 	config.DialTimeout = parseDuration(val, "dialTimeout")
+}
+
+func (p configParser) ParseJudgeByIP(val string) {
+	config.JudgeByIP = parseBool(val, "judgeByIP")
 }
 
 func (p configParser) ParseDetectSSLErr(val string) {

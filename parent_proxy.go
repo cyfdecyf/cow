@@ -246,12 +246,12 @@ func (parent *ParentWithLatency) updateLatency(wg *sync.WaitGroup) {
 	}
 
 	// Resolve host name first, so latency does not include resolve time.
-	ip, err := net.LookupHost(host)
+	ip, err := net.LookupIP(host)
 	if err != nil {
 		parent.latency = latencyMax
 		return
 	}
-	ipPort := net.JoinHostPort(ip[0], port)
+	ipPort := net.JoinHostPort(ip[0].String(), port)
 
 	const N = 3
 	var total time.Duration

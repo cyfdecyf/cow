@@ -7,9 +7,9 @@ import (
 func TestShouldDirect(t *testing.T) {
 	directList := newDirectList()
 
-	directList.Domain["com.cn"] = true
-	directList.Domain["edu.cn"] = true
-	directList.Domain["baidu.com"] = true
+	directList.Domain["com.cn"] = domainTypeDirect
+	directList.Domain["edu.cn"] = domainTypeDirect
+	directList.Domain["baidu.com"] = domainTypeDirect
 
 	g, _ := ParseRequestURI("gtemp.com")
 	if directList.shouldDirect(g) {
