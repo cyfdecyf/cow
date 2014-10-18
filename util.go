@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"crypto/md5"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"github.com/cyfdecyf/bufio"
@@ -476,4 +477,17 @@ func hostAddr() (addr []string) {
 		addr = append(addr, ads[:id])
 	}
 	return addr
+}
+
+// ip to long int
+func ip2long(ipstr string) (uint32, error) {
+	ip := net.ParseIP(ipstr)
+	if ip == nil {
+		return 0, errors.New("Invalid IP")
+	}
+	ip = ip.To4()
+	if ip == nil {
+		return 0, errors.New("Not IPv4")
+	}
+	return binary.BigEndian.Uint32(ip), nil
 }

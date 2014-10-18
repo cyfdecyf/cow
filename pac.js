@@ -2,9 +2,9 @@ var direct = 'DIRECT';
 var httpProxy = 'PROXY';
 
 var directList = [
+	"baidu.com",
+	"www.taobao.com"
 	"", // corresponds to simple host name and ip address
-	"taobao.com",
-	"www.baidu.com"
 ];
 
 var directAcc = {};
@@ -62,25 +62,13 @@ function host2Domain(host) {
 	if (dot2ndLast === -1)
 		return host;
 
-	var part = host.substring(dot2ndLast+1, lastDot);
-	if (topLevel[part]) {
-		var dot3rdLast = host.lastIndexOf(".", dot2ndLast-1);
-		if (dot3rdLast === -1) {
-			return host;
-		}
-		return host.substring(dot3rdLast+1);
-	}
 	return host.substring(dot2ndLast+1);
 }
 
 function FindProxyForURL(url, host) {
 	if (url.substring(0,4) == "ftp:")
 		return direct;
-	var domain = host2Domain(host);
-	if (host.length == domain.length) {
-		return directAcc[host] ? direct : httpProxy;
-	}
-	return (directAcc[host] || directAcc[domain]) ? direct : httpProxy;
+	return (directAcc[host] || directAcc[host2Domain(host)]) ? direct : httpProxy;
 }
 
 // Tests
@@ -141,13 +129,13 @@ testData = [
 	{ host: '12.20.2.1', mode: httpProxy},
 
 	// host in direct domain/host should return direct
-	{ host: 'taobao.com', mode: direct},
-	{ host: 'www.taobao.com', mode: direct},
+	{ host: 'baidu.com', mode: direct},
 	{ host: 'www.baidu.com', mode: direct},
+	{ host: 'www.taobao.com', mode: direct},
 
 	// host not in direct domain should return proxy
-	{ host: 'baidu.com', mode: httpProxy},
-	{ host: 'foo.baidu.com', mode: httpProxy},
+	{ host: 'taobao.com', mode: httpProxy},
+	{ host: 'foo.taobao.com', mode: httpProxy},
 	{ host: 'google.com', mode: httpProxy},
 	{ host: 'www.google.com', mode: httpProxy},
 	{ host: 'www.google.com.hk', mode: httpProxy}

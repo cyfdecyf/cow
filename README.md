@@ -1,6 +1,6 @@
 # MEOW Proxy
 
-当前版本：1.0beta [CHANGELOG](CHANGELOG)
+当前版本：1.0 [CHANGELOG](CHANGELOG)
 [![Build Status](https://travis-ci.org/renzhn/MEOW.png?branch=master)](https://travis-ci.org/renzhn/MEOW)
 
 <pre>
@@ -32,6 +32,15 @@
     # shadowsocks 二级代理
     proxy = ss://aes-128-cfb:password@example.server.com:25
 
+## 工作方式
+
+当通过 MEOW 访问一个网站时，MEOW 会：
+
+- 检查域名是否在直连列表中
+- **检查域名的IP是否为国内IP**
+
+如果有一条满足要求，MEOW 会直接连接。否则 MEOW 会通过代理连接。
+
 ## 直连列表
 
 直接连接的域名列表保存在 `direct.txt` (Windows) 或 `~/.meow/direct` (其他)，例子：
@@ -41,16 +50,22 @@
 -  `edu.cn` => `*.edu.cn`
 -  `music.163.com` => `music.163.com`
 
-不在直连列表的网站将使用代理连接
+一般是**确定**要直接连接的网站
 
-## TODO
+## 与 COW 相比的修改
 
-- 完善PAC
 - 通过IP判断国内网站
-- Linux & OS X release
+- 修改了判断域名的方式，只匹配句号分隔的后两部分
+- 移除了`blocked`、`sitestat`文件及相关的功能
+
+## 一些细节
+
+- 如果检查到域名的IP是国内的IP（当然是不在直连列表里的域名），MEOW 会将此域名缓存到内存中的直连列表。PAC 文件中包含了从文件读取和缓存的域名直连列表的定义，浏览器设置为PAC后会直接连接这些域名而不是经过 MEOW 代理。
+- MEOW 判断域名是否该直连效率很高。判断直连列表用Map，判断国内IP用二分查找并且有缓存，因此不用担心判断域名导致速度变慢。甚至去掉`direct`文件 MEOW 也可以工作。
 
 ## 致谢
 
 - @cyfdecyf - COW author
 - Github - Github Student Pack
-- https://www.pandafan.org/pac/index.html - White List
+- https://www.pandafan.org/pac/index.html - Domain White List
+- https://github.com/Leask/Flora_Pac - CN IP Data

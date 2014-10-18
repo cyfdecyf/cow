@@ -29,11 +29,14 @@ func main() {
 	initLog()
 	initAuth()
 	initDirectList()
-	initPAC() // initPAC uses siteStat, so must init after site stat
 
 	initStat()
 
 	initParentPool()
+
+	if config.JudgeByIP {
+		initCNIPData()
+	}
 
 	if config.Core > 0 {
 		runtime.GOMAXPROCS(config.Core)

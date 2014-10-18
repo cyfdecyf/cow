@@ -4,32 +4,11 @@ import (
 	"bytes"
 	"fmt"
 	"net"
-	"strings"
-	"sync"
 	"text/template"
 )
 
 var pac struct {
-	template   *template.Template
-	directList string
-	// Assignments and reads to directList are in different goroutines. Go
-	// does not guarantee atomic assignment, so we should protect these racing
-	// access.
-	dLRWMutex sync.RWMutex
-}
-
-func getDirectList() string {
-	pac.dLRWMutex.RLock()
-	dl := pac.directList
-	pac.dLRWMutex.RUnlock()
-	return dl
-}
-
-func updateDirectList() {
-	dl := strings.Join(directList.GetDirectList(), "\",\n\"")
-	pac.dLRWMutex.Lock()
-	pac.directList = dl
-	pac.dLRWMutex.Unlock()
+	template *template.Template
 }
 
 func init() {
@@ -37,7 +16,6 @@ func init() {
 var httpProxy = 'PROXY {{.ProxyAddr}}; DIRECT';
 
 var directList = [
-"",
 "{{.DirectDomains}}"
 ];
 
@@ -102,11 +80,7 @@ function host2Domain(host) {
 function FindProxyForURL(url, host) {
 	if (url.substring(0,4) == "ftp:")
 		return direct;
-	var domain = host2Domain(host);
-	if (host.length == domain.length) {
-		return directAcc[host] ? direct : httpProxy;
-	}
-	return (directAcc[host] || directAcc[domain]) ? direct : httpProxy;
+	return (directAcc[host] || directAcc[host2Domain(host)]) ? direct : httpProxy;
 }
 `
 	var err error
@@ -142,9 +116,14 @@ func genPAC(c *clientConn) []byte {
 		proxyAddr = net.JoinHostPort(host, hproxy.port)
 	}
 
-	dl := getDirectList()
+	directDomains := ""
+	for k, v := range directList.Domain {
+		if v == domainTypeDirect {
+			directDomains += k + "\",\n\""
+		}
+	}
 
-	if dl == "" {
+	if directDomains == "" {
 		// Empty direct domain list
 		buf.Write(pacHeader)
 		pacproxy := fmt.Sprintf("function FindProxyForURL(url, host) { return 'PROXY %s; DIRECT'; };",
@@ -158,7 +137,7 @@ func genPAC(c *clientConn) []byte {
 		DirectDomains string
 	}{
 		proxyAddr,
-		dl,
+		directDomains,
 	}
 
 	buf.Write(pacHeader)
@@ -167,12 +146,6 @@ func genPAC(c *clientConn) []byte {
 		panic("Error generating pac file")
 	}
 	return buf.Bytes()
-}
-
-func initPAC() {
-	// we can't control goroutine scheduling, make sure when
-	// initPAC is done, direct list is updated
-	updateDirectList()
 }
 
 func sendPAC(c *clientConn) error {
