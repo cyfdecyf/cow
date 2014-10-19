@@ -14,17 +14,17 @@
 
 ## 获取
 
-- **Windows:** [下载地址](http://meowproxy.me/dist/)
 - **OS X, Linux:** 执行以下命令（也可用于更新）
 
         curl -L git.io/meowproxy | bash
 
   环境变量 `MEOW_INSTALLDIR` 可以指定安装的路径，若该环境变量不是目录则询问用户
+- **Windows:** [下载地址](http://meowproxy.me/dist/)
 - **从源码安装:** 安装 [Go](http://golang.org/doc/install)，然后 `go get github.com/renzhn/MEOW`
 
 ## 配置
 
-编辑 `rc.txt` (Windows) 或 `~/.meow/rc` (其他)，例子：
+编辑 `~/.meow/rc` (OS X, Linux) 或 `rc.txt` (Windows)，例子：
 
     # 监听地址，设为0.0.0.0可以监听所有端口，共享给局域网使用
     listen = http://127.0.0.1:4411
@@ -47,7 +47,7 @@
 
 ## 直连列表
 
-直接连接的域名列表保存在 `direct.txt` (Windows) 或 `~/.meow/direct` (其他)，例子：
+直接连接的域名列表保存在 `~/.meow/direct` (OS X, Linux) 或 `direct.txt` (Windows)，例子：
 
 -  `baidu.com` => `*.baidu.com`
 -  `com.cn` => `*.com.cn`
@@ -65,8 +65,8 @@
 ## 一些细节
 
 - 程序的输出结果：DIRECT表示直连，PROXY表示通过代理连接；GET ... 200 OK表示成功获取数据，以此类推
-- 如果检查到域名的IP是国内的IP（当然是不在直连列表里的域名），MEOW 会将此域名缓存到内存中的直连列表。PAC 文件中包含了从文件读取和缓存的域名直连列表的定义，浏览器设置为PAC后会先尝试直接连接这些域名其次使用 MEOW 代理。
-- MEOW 判断域名是否该直连的效率很高。判断直连域名用Map，判断国内IP用二分查找并且缓存，因此不用担心判断域名导致网速变慢。甚至去掉`direct`文件 MEOW 也可以工作。
+- 如果检查到域名的IP是国内的IP（当然是不在直连列表里的域名），MEOW 会将此域名缓存到内存中的直连列表。PAC 文件中包含了从`direct`文件中读取和内存中缓存的域名直连列表的定义，浏览器设置为PAC后会对这些域名直接连接否则使用 MEOW 代理。
+- MEOW 判断是否该直连的效率很高。判断直连域名用Map，判断国内IP用二分查找并且缓存，因此不用担心判断域名导致网速变慢。甚至去掉`direct`文件 MEOW 也可以工作。
 
 ## 致谢
 
