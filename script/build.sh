@@ -5,7 +5,7 @@ cd "$( dirname "${BASH_SOURCE[0]}" )/.."
 version=`grep '^version=' ./install.sh | sed -s 's/version=//'`
 echo "creating MEOW binary version $version"
 
-mkdir -p bin
+mkdir -p bin/windows
 
 gox -output="bin/{{.Dir}}-{{.OS}}-{{.Arch}}-$version" -os="darwin linux windows"
 
@@ -32,10 +32,10 @@ pack() {
         mv MEOW.exe meow-taskbar.exe
         popd
         if [[ $2 == "386" ]]; then
-            mv bin/$name.zip bin/MEOW-windows-x86-$version.zip
+            mv bin/$name.zip bin/windows/MEOW-x86-$version.zip
         fi
         if [[ $2 == "amd64" ]]; then
-            mv bin/$name.zip bin/MEOW-windows-x64-$version.zip
+            mv bin/$name.zip bin/windows/MEOW-x64-$version.zip
         fi
     else
         gzip -f bin/$name

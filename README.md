@@ -19,7 +19,7 @@
         curl -L git.io/meowproxy | bash
 
   环境变量 `MEOW_INSTALLDIR` 可以指定安装的路径，若该环境变量不是目录则询问用户
-- **Windows:** [下载地址](http://meowproxy.me/dist/)
+- **Windows:** [下载地址](http://meowproxy.me/dist/windows/)
 - **从源码安装:** 安装 [Go](http://golang.org/doc/install)，然后 `go get github.com/renzhn/MEOW`
 
 ## 配置
