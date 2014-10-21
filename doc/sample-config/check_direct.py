@@ -1,16 +1,29 @@
 import os
+import subprocess
 
 directlist = open('direct').read().splitlines()
 
-with open('direct_other', 'a') as outfile:
-    for domain in directlist:
-        if not domain.endswith('.cn'):
-            ret = os.system('ping {}'.format(domain))
-            print ret
+direct_cn = open('direct_cn', 'w')
+direct_ok = open('direct_ok', 'w')
+direct_fail = open('direct_fail', 'w')
+
+
+for domain in directlist:
+    if domain.endswith('.cn'):
+        direct_cn.write(domain + '\n')
+        print domain + ': cn'
+    else:
+        p = subprocess.Popen(['ping', domain], stdout=subprocess.PIPE)
+        streamdata = p.communicate()[0]
+        ret = p.returncode
+        #ret = os.system('ping {}'.format(domain))
+        if ret == 0:
+            direct_ok.write(domain + '\n')
+            print domain + ': ok'
+        else:
+            direct_fail.write(domain + '\n')
+            print domain + ': fail'
             
-with open('direct_out', 'a') as outfile:
-    for domain in directlist:
-        if domain.endswith('.cn'):
-            print domain
-            outfile.write(domain + '\n')
-            
+direct_cn.close()
+direct_ok.close()
+direct_fail.close()
