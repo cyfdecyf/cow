@@ -62,7 +62,7 @@ done
 
 # Ask OS X user whehter to start MEOW upon login
 start_on_login="n"
-if [ $os == "mac" ]; then
+if [ $os == "darwin" ]; then
     while true; do
         echo -n "Start MEOW upon login? (If yes, download a plist file to ~/Library/LaunchAgents) [Y/n] "
         read start_on_login </dev/tty
