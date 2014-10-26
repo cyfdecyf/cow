@@ -9,10 +9,7 @@
 	<string>COWBINARY</string>
     </array>
     <key>KeepAlive</key>
-    <dict>
-      <key>NetworkState</key>
-      <true/>
-    </dict>
+    <true/>
     <key>RunAtLoad</key>
     <true/>
   </dict>
