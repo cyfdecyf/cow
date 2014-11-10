@@ -10,6 +10,8 @@
 #   listen = http://127.0.0.1:7777
 #
 #   上面的例子中，cow 生成的 PAC url 为 http://127.0.0.1:7777/pac
+#   配置浏览器或系统 HTTP 和 HTTPS 代理时请填入该地址
+#   若配置代理时有对所有协议使用该代理的选项，且你不清楚此选项的含义，请勾选
 #
 # cow (需两个 cow 服务器配合使用):
 #   listen = cow://encrypt_method:password@1.2.3.4:5678
