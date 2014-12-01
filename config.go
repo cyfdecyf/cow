@@ -4,7 +4,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/cyfdecyf/bufio"
 	"net"
 	"os"
 	"path"
@@ -12,11 +11,15 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/cyfdecyf/bufio"
 )
 
 const (
 	version           = "0.9.4"
 	defaultListenAddr = "127.0.0.1:7777"
+	// use a fast to fetch web site
+	defaultEstimateTarget = "www.baidu.com"
 )
 
 type LoadBalanceMode byte
@@ -66,6 +69,9 @@ type Config struct {
 	PrintVer        bool
 	EstimateTimeout bool // if run estimateTimeout()
 
+	// Timeout estimate target site, default to baidu
+	EstimateTarget string
+
 	// not config option
 	saveReqLine bool // for http and cow parent, should save request line from client
 }
@@ -103,6 +109,8 @@ func init() {
 	for _, port := range defaultTunnelAllowedPort {
 		config.TunnelAllowedPort[port] = true
 	}
+
+	config.EstimateTarget = defaultEstimateTarget
 }
 
 // Whether command line options specifies listen addr
@@ -558,6 +566,10 @@ func (p configParser) ParseDialTimeout(val string) {
 
 func (p configParser) ParseDetectSSLErr(val string) {
 	config.DetectSSLErr = parseBool(val, "detectSSLErr")
+}
+
+func (p configParser) ParseEstimateTarget(val string) {
+	config.EstimateTarget = val
 }
 
 // overrideConfig should contain options from command line to override options
