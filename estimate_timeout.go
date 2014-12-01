@@ -17,11 +17,8 @@ const maxTimeout = 15 * time.Second
 var dialTimeout = defaultDialTimeout
 var readTimeout = defaultReadTimeout
 
-// use a fast to fetch web site
-const estimateSite = "www.baidu.com"
-
 var estimateReq = []byte("GET / HTTP/1.1\r\n" +
-	"Host: " + estimateSite + "\r\n" +
+	"Host: " + config.EstimateTarget + "\r\n" +
 	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10.8; rv:11.0) Gecko/20100101 Firefox/11.0\r\n" +
 	"Accept: */*\r\n" +
 	"Accept-Language: en-us,en;q=0.5\r\n" +
@@ -32,16 +29,16 @@ var estimateReq = []byte("GET / HTTP/1.1\r\n" +
 // how much time is spent on connect and fetch. This avoids incorrectly
 // considering non-blocked sites as blocked when network connection is bad.
 func estimateTimeout() {
-	// debug.Println("estimating timeout")
+	//debug.Println("estimating timeout")
 	buf := connectBuf.Get()
 	defer connectBuf.Put(buf)
 	var est time.Duration
 
 	start := time.Now()
-	c, err := net.Dial("tcp", estimateSite+":80")
+	c, err := net.Dial("tcp", config.EstimateTarget+":80")
 	if err != nil {
 		errl.Printf("estimateTimeout: can't connect to %s: %v, network has problem?\n",
-			estimateSite, err)
+			config.EstimateTarget, err)
 		goto onErr
 	}
 	defer c.Close()
@@ -71,7 +68,7 @@ func estimateTimeout() {
 	}
 	if err != io.EOF {
 		errl.Printf("estimateTimeout: error getting %s: %v, network has problem?\n",
-			estimateSite, err)
+			config.EstimateTarget, err)
 		goto onErr
 	}
 	est = time.Now().Sub(start) * 10
