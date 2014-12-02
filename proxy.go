@@ -1135,7 +1135,7 @@ func copyClient2Server(c *clientConn, sv *serverConn, r *Request, srvStopped not
 	}
 }
 
-var connEstablished = []byte("HTTP/1.1 200 Tunnel established\r\n\r\n")
+var connEstablished = []byte("HTTP/1.1 200 Tunnel established\r\nProxy-agent: cow\r\n\r\n")
 
 // Do HTTP CONNECT
 func (sv *serverConn) doConnect(r *Request, c *clientConn) (err error) {
