@@ -710,7 +710,7 @@ func parseResponse(sv *serverConn, r *Request, rp *Response) (err error) {
 
 	//Check for http error code from config file
 	if config.HttpErrorCode > 0 && rp.Status == config.HttpErrorCode {
-		errl.Println("Requested http code is raised")
+		debug.Println("Requested http code is raised")
 		return CustomHttpErr
 	}
 
