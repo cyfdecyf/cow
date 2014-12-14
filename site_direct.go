@@ -19,6 +19,10 @@ var directDomainList = []string{
 	"ku6cdn.com",
 	"ku6img.com",
 
+	// 音乐
+	"kugou.com",
+	"xiami.com",
+
 	// 电商
 	"z.cn",
 	"amazon.cn",
