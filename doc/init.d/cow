@@ -15,18 +15,18 @@
 # user. Please change the following variables in order to use this script.
 # COW will search for rc/direct/block/stat file under user's $HOME/.cow/ directory.
 BIN=/usr/local/bin/cow
-USER=usr
-GROUP=grp
-PID_DIR=/var/run
+USER=usr # desired user, usually your default login user
+GROUP=grp # same string as default login user
+PID_DIR=/var/run # change folder to $USER has access right to write
 PID_FILE=$PID_DIR/cow.pid
-LOG_FILE=/var/log/cow
+LOG_FILE=/var/log/cow # change folder to $USER has access right to write, make sure all folder are exist already
 
 RET_VAL=0
 
 check_running() {
-  if [[ -r $PID_FILE ]]; then
+  if [ -r $PID_FILE ]; then
     read PID <$PID_FILE
-    if [[ -d "/proc/$PID" ]]; then
+    if [ -d "/proc/$PID" ]; then
       return 0
     else
       rm -f $PID_FILE
@@ -54,7 +54,7 @@ do_status() {
 }
 
 do_start() {
-  if [[ ! -d $PID_DIR ]]; then
+  if [ ! -d $PID_DIR ]; then
     echo "creating PID dir"
     mkdir $PID_DIR || echo "failed creating PID directory $PID_DIR"; exit 1
     chown $USER:$GROUP $PID_DIR || echo "failed creating PID directory $PID_DIR"; exit 1
