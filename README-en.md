@@ -52,7 +52,7 @@ Command line options can override options in the configuration file For more det
 In ideal situation, you don't need to specify which sites are blocked and which are not, but COW hasen't reached that goal. So you may need to manually specify this if COW made the wrong judgement.
 
 - `~/.cow/blocked` for blocked sites
-- `~/.cow/direct` for blocked sites
+- `~/.cow/direct` for directly accessible sites
 - One line for each domain
   - `google.com` means `*.google.com`
   - You can use domains like `google.com.hk`
