@@ -29,7 +29,7 @@ func TestIPShouldDirect(t *testing.T) {
 	}
 
 	directIPDomains := []string{
-		"ohrz.net",
+		"baidu.com",
 		"www.ahut.edu.cn",
 	}
 	for _, domain := range directIPDomains {

@@ -21,7 +21,7 @@ const isWindows = runtime.GOOS == "windows"
 type notification chan byte
 
 func newNotification() notification {
-	// Notification channle has size 1, so sending a single one will not block
+	// Notification channel has size 1, so sending a single one will not block
 	return make(chan byte, 1)
 }
 

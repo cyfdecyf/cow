@@ -57,8 +57,7 @@ type Config struct {
 	DialTimeout time.Duration
 	ReadTimeout time.Duration
 
-	Core         int
-	DetectSSLErr bool
+	Core int
 
 	HttpErrorCode int
 
@@ -89,8 +88,6 @@ func init() {
 	configPath.alwaysDirect = path.Join(configPath.dir, alwaysDirectFname)
 
 	config.JudgeByIP = true
-
-	config.DetectSSLErr = false
 
 	config.AuthTimeout = 2 * time.Hour
 
@@ -549,10 +546,6 @@ func (p configParser) ParseDialTimeout(val string) {
 
 func (p configParser) ParseJudgeByIP(val string) {
 	config.JudgeByIP = parseBool(val, "judgeByIP")
-}
-
-func (p configParser) ParseDetectSSLErr(val string) {
-	config.DetectSSLErr = parseBool(val, "detectSSLErr")
 }
 
 // overrideConfig should contain options from command line to override options

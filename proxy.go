@@ -33,19 +33,14 @@ const httpBufSize = 8192
 var httpBuf = leakybuf.NewLeakyBuf(512, httpBufSize)
 
 // If no keep-alive header in response, use this as the keep-alive value.
-const defaultServerConnTimeout = 15 * time.Second
+const defaultServerConnTimeout = 5 * time.Second
 
 // Close client connection if no new requests received in some time.
 // (On OS X, the default soft limit of open file descriptor is 256, which is
 // very conservative and easy to cause problem if we are not careful to limit
 // open fds.)
-const clientConnTimeout = 15 * time.Second
-const fullKeepAliveHeader = "Keep-Alive: timeout=15\r\n"
-
-// If client closed connection for HTTP CONNECT method in less then 1 second,
-// consider it as an ssl error. This is only effective for Chrome which will
-// drop connection immediately upon SSL error.
-const sslLeastDuration = time.Second
+const clientConnTimeout = 5 * time.Second
+const fullKeepAliveHeader = "Keep-Alive: timeout=5\r\n"
 
 // Some code are learnt from the http package
 
@@ -248,22 +243,6 @@ func (c *clientConn) Close() {
 			c.RemoteAddr(), decCliCnt())
 	}
 	c.Conn.Close()
-}
-
-func (c *clientConn) setReadTimeout(msg string) {
-	// Always keep connections alive for meow conn from client for more reuse.
-	// For other client connections, set read timeout so we can close the
-	// connection after a period of idle to reduce number of open connections.
-	if _, ok := c.Conn.(*ss.Conn); !ok {
-		// make actual timeout a little longer than keep-alive value sent to client
-		setConnReadTimeout(c.Conn, clientConnTimeout+2*time.Second, msg)
-	}
-}
-
-func (c *clientConn) unsetReadTimeout(msg string) {
-	if _, ok := c.Conn.(*ss.Conn); !ok {
-		unsetConnReadTimeout(c.Conn, msg)
-	}
 }
 
 // Listen address as key, not including port part.
@@ -519,6 +498,9 @@ func (c *clientConn) handleServerReadError(r *Request, sv *serverConn, err error
 	if err == io.EOF {
 		return err
 	}
+	if isErrTimeout(err) || isErrConnReset(err) || isHttpErrCode(err) {
+		return err
+	}
 	if r.responseNotSent() {
 		sendErrorPage(c, "502 read error", err.Error(), genErrMsg(r, sv, msg))
 		return errPageSent
@@ -766,30 +748,6 @@ func (sv *serverConn) Close() error {
 	return sv.Conn.Close()
 }
 
-func setConnReadTimeout(cn net.Conn, d time.Duration, msg string) {
-	if err := cn.SetReadDeadline(time.Now().Add(d)); err != nil {
-		errl.Println("set readtimeout:", msg, err)
-	}
-}
-
-func unsetConnReadTimeout(cn net.Conn, msg string) {
-	if err := cn.SetReadDeadline(zeroTime); err != nil {
-		// It's possible that conn has been closed, so use debug log.
-		debug.Println("unset readtimeout:", msg, err)
-	}
-}
-
-func (sv *serverConn) unsetReadTimeout(msg string) {
-	unsetConnReadTimeout(sv.Conn, msg)
-}
-
-func (sv *serverConn) maybeSSLErr(cliStart time.Time) bool {
-	// If client closes connection very soon, maybe there's SSL error, maybe
-	// not (e.g. user stopped request).
-	// meow can't tell which is the case, so this detection is not reliable.
-	return sv.state > svConnected && time.Now().Sub(cliStart) < sslLeastDuration
-}
-
 func (sv *serverConn) mayBeClosed() bool {
 	if _, ok := sv.Conn.(meowConn); ok {
 		debug.Println("meow parent would keep alive")
@@ -821,13 +779,8 @@ func copyServer2Client(sv *serverConn, c *clientConn, r *Request) (err error) {
 	*/
 
 	total := 0
-	readTimeoutSet := false
 	for {
 		// debug.Println("srv->cli")
-		if readTimeoutSet {
-			sv.unsetReadTimeout("srv->cli")
-			readTimeoutSet = false
-		}
 		var n int
 		if n, err = sv.Read(buf); err != nil {
 			// Expected error besides EOF: "use of closed network connection",
@@ -878,18 +831,6 @@ func (sw *serverWriter) Write(p []byte) (int, error) {
 }
 
 func copyClient2Server(c *clientConn, sv *serverConn, r *Request, srvStopped notification, done chan struct{}) (err error) {
-	// sv.maybeFake may change during execution in this function.
-	// So need a variable to record the whether timeout is set.
-	deadlineIsSet := false
-	defer func() {
-		if deadlineIsSet {
-			// May need to retry, unset timeout here to avoid read client
-			// timeout on retry. Note c.Conn maybe closed when calling this.
-			unsetConnReadTimeout(c.Conn, "cli->srv after err")
-		}
-		close(done)
-	}()
-
 	var n int
 
 	w := newServerWriter(r, sv)
@@ -909,47 +850,28 @@ func copyClient2Server(c *clientConn, sv *serverConn, r *Request, srvStopped not
 		c.releaseBuf()
 	}
 
-	var start time.Time
-	if config.DetectSSLErr {
-		start = time.Now()
-	}
 	buf := connectBuf.Get()
 	defer func() {
 		connectBuf.Put(buf)
 	}()
 	for {
-		// debug.Println("cli->srv")
-		if deadlineIsSet {
-			// maybeFake may trun to false after timeout, but timeout should be unset
-			unsetConnReadTimeout(c.Conn, "cli->srv before read")
-			deadlineIsSet = false
-		}
+		// debug.Println("908: cli->srv")
 		if n, err = c.Read(buf); err != nil {
-			if config.DetectSSLErr && (isErrConnReset(err) || err == io.EOF) &&
-				sv.maybeSSLErr(start) {
-				debug.Println("client connection closed very soon, taken as SSL error:", r)
-			} else if isErrTimeout(err) && !srvStopped.hasNotified() {
-				// debug.Printf("cli(%s)->srv(%s) timeout\n", c.RemoteAddr(), r.URL.HostPort)
+			if isErrTimeout(err) && !srvStopped.hasNotified() {
+				debug.Printf("911: cli(%s)->srv(%s) timeout\n", c.RemoteAddr(), r.URL.HostPort)
 				continue
 			}
-			// debug.Printf("cli->srv read err: %v\n", err)
+			debug.Printf("914: cli->srv read err: %v\n", err)
 			return
 		}
 
 		// copyServer2Client will detect write to closed server. Just store client content for retry.
 		if _, err = w.Write(buf[:n]); err != nil {
 			// XXX is it enough to only do block detection in copyServer2Client?
-			/*
-				if sv.maybeFake() && isErrConnReset(err) {
-					siteStat.TempBlocked(r.URL)
-					errl.Printf("copyClient2Server blocked site %d detected, retry\n", r.URL.HostPort)
-					return RetryError{err}
-				}
-			*/
-			// debug.Printf("cli->srv write err: %v\n", err)
+			debug.Printf("921: cli->srv write err: %v\n", err)
 			return
 		}
-		// debug.Printf("cli(%s)->srv(%s) sent %d bytes data\n", c.RemoteAddr(), r.URL.HostPort, n)
+		// debug.Printf("924: cli(%s)->srv(%s) sent %d bytes data\n", c.RemoteAddr(), r.URL.HostPort, n)
 	}
 }
 
@@ -983,7 +905,7 @@ func (sv *serverConn) doConnect(r *Request, c *clientConn) (err error) {
 	done := make(chan struct{})
 	srvStopped := newNotification()
 	go func() {
-		// debug.Printf("doConnect: cli(%s)->srv(%s)\n", c.RemoteAddr(), r.URL.HostPort)
+		debug.Printf("989: doConnect: cli(%s)->srv(%s)\n", c.RemoteAddr(), r.URL.HostPort)
 		cli2srvErr = copyClient2Server(c, sv, r, srvStopped, done)
 		// Close sv to force read from server in copyServer2Client return.
 		// Note: there's no other code closing the server connection for CONNECT.
