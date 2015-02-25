@@ -130,8 +130,3 @@ listen = http://127.0.0.1:4411
 # 如需允许其他端口，请用该选项添加
 # 限制隧道连接的端口可以防止将运行 meow 的服务器上只监听本机 ip 的服务暴露给外部
 #tunnelAllowedPort = 80, 443
-
-# 基于 client 是否很快关闭连接来检测 SSL 错误，只对 Chrome 有效
-# （Chrome 遇到 SSL 错误会直接关闭连接，而不是让用户选择是否继续）
-# 可能将可直连网站误判为被墙网站，当 GFW 进行 SSL 中间人攻击时可以考虑使用
-#detectSSLErr = false
