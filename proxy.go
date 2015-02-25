@@ -914,10 +914,9 @@ func (sv *serverConn) doConnect(r *Request, c *clientConn) (err error) {
 
 	// debug.Printf("doConnect: srv(%s)->cli(%s)\n", r.URL.HostPort, c.RemoteAddr())
 	err = copyServer2Client(sv, c, r)
-	if err != nil {
+	if isErrTimeout(err) || isErrConnReset(err) || isHttpErrCode(err) {
 		srvStopped.notify()
 		<-done
-		// debug.Printf("doConnect: cli(%s)->srv(%s) stopped\n", c.RemoteAddr(), r.URL.HostPort)
 	} else {
 		// close client connection to force read from client in copyClient2Server return
 		c.Conn.Close()
