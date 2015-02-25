@@ -1,6 +1,6 @@
 # MEOW Proxy
 
-当前版本：1.0 [CHANGELOG](CHANGELOG)
+当前版本：1.1 [CHANGELOG](CHANGELOG)
 [![Build Status](https://travis-ci.org/renzhn/MEOW.png?branch=master)](https://travis-ci.org/renzhn/MEOW)
 
 <pre>
