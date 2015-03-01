@@ -94,7 +94,7 @@ func runEstimateTimeout() {
 	dialTimeout = config.DialTimeout
 	for {
 		estimateTimeout()
-		time.Sleep(30 * time.Second)
+		time.Sleep(time.Minute)
 	}
 }
 
