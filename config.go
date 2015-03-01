@@ -16,10 +16,9 @@ import (
 )
 
 const (
-	version           = "0.9.4"
-	defaultListenAddr = "127.0.0.1:7777"
-	// use a fast to fetch web site
-	defaultEstimateTarget = "www.baidu.com"
+	version               = "0.9.4"
+	defaultListenAddr     = "127.0.0.1:7777"
+	defaultEstimateTarget = "example.com"
 )
 
 type LoadBalanceMode byte
@@ -67,10 +66,8 @@ type Config struct {
 
 	// not configurable in config file
 	PrintVer        bool
-	EstimateTimeout bool // if run estimateTimeout()
-
-	// Timeout estimate target site, default to baidu
-	EstimateTarget string
+	EstimateTimeout bool   // Whether to run estimateTimeout().
+	EstimateTarget  string // Timeout estimate target site.
 
 	// not config option
 	saveReqLine bool // for http and cow parent, should save request line from client
