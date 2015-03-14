@@ -82,13 +82,13 @@ func (vc *VisitCnt) isStale() bool {
 // shouldNotSave returns true if the a VisitCnt is not visited for a long time
 // (several days) or is specified by user.
 func (vc *VisitCnt) shouldNotSave() bool {
-	return vc.userSpecified() || vc.isStale() || (vc.Blocked == 0 && vc.Direct == 0)
+	return vc.isStale() || (vc.Blocked == 0 && vc.Direct == 0)
 }
 
 const tmpBlockedTimeout = 2 * time.Minute
 
 func (vc *VisitCnt) AsTempBlocked() bool {
-	return time.Now().Sub(vc.blockedOn) < tmpBlockedTimeout
+	return !vc.AlwaysDirect() && time.Now().Sub(vc.blockedOn) < tmpBlockedTimeout
 }
 
 func (vc *VisitCnt) AsDirect() bool {
