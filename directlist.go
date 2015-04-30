@@ -5,10 +5,12 @@ import (
 	"net"
 	"os"
 	"strings"
+	"sync"
 )
 
 type DirectList struct {
 	Domain map[string]DomainType
+	sync.RWMutex
 }
 
 type DomainType byte
@@ -51,7 +53,7 @@ func (directList *DirectList) shouldDirect(url *URL) (direct bool) {
 	isIP, isPrivate := hostIsIP(url.Host)
 	if isIP {
 		if isPrivate {
-			directList.Domain[url.Host] = domainTypeDirect
+			directList.add(url.Host, domainTypeDirect)
 			return true
 		}
 		ip = url.Host
@@ -65,12 +67,18 @@ func (directList *DirectList) shouldDirect(url *URL) (direct bool) {
 	}
 
 	if ipShouldDirect(ip) {
-		directList.Domain[url.Host] = domainTypeDirect
+		directList.add(url.Host, domainTypeDirect)
 		return true
 	} else {
-		directList.Domain[url.Host] = domainTypeProxy
+		directList.add(url.Host, domainTypeProxy)
 		return false
 	}
+}
+
+func (directList *DirectList) add(host string, domainType DomainType) {
+	directList.Lock()
+	defer directList.Unlock()
+	directList.Domain[host] = domainType
 }
 
 func (directList *DirectList) loadList(lst []string) {
