@@ -5,6 +5,10 @@ import (
 )
 
 func ipShouldDirect(ip string) (direct bool) {
+	_, isPrivate := hostIsIP(ip)
+	if isPrivate {
+		return true
+	}
 	ipLong, err := ip2long(ip)
 	if err != nil {
 		return false
