@@ -19,6 +19,9 @@ func ipShouldDirect(ip string) (direct bool) {
 	if err != nil {
 		return false
 	}
+	if ipLong == 0 {
+		return true
+	}
 	ipIndex := sort.Search(len(CNIPDataStart), func(i int) bool {
 		return CNIPDataStart[i] > ipLong
 	})
