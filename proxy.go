@@ -672,7 +672,7 @@ func (c *clientConn) connect(r *Request, direct bool) (srvconn net.Conn, err err
 		if srvconn, err = connectDirect(r.URL); err == nil {
 			return
 		}
-		errMsg = genErrMsg(r, nil, "Direct connection failed, always direct site.")
+		errMsg = genErrMsg(r, nil, "Direct connection failed.")
 		goto fail
 	}
 
