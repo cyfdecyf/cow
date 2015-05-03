@@ -5,6 +5,12 @@ import (
 )
 
 func ipShouldDirect(ip string) (direct bool) {
+	direct = false
+	defer func() {
+		if r := recover(); r != nil {
+			errl.Printf("error judging ip should direct: %s", ip)
+		}
+	}()
 	_, isPrivate := hostIsIP(ip)
 	if isPrivate {
 		return true
