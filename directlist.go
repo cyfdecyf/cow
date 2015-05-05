@@ -60,7 +60,7 @@ func (directList *DirectList) shouldDirect(url *URL) (direct bool) {
 	} else {
 		hostIPs, err := net.LookupIP(url.Host)
 		if err != nil {
-			errl.Printf("error looking up host ip %s", url.Host)
+			errl.Printf("error looking up host ip %s, err %s", url.Host, err)
 			return false
 		}
 		ip = hostIPs[0].String()
