@@ -4,13 +4,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/cyfdecyf/bufio"
 	"io/ioutil"
 	"math/rand"
 	"os"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/cyfdecyf/bufio"
 )
 
 func init() {
@@ -426,9 +427,18 @@ func (ss *SiteStat) GetDirectList() []string {
 var siteStat = newSiteStat()
 
 func initSiteStat() {
-	if err := siteStat.load(configPath.stat); err != nil {
-		os.Exit(1)
+	err := siteStat.load(configPath.stat)
+	if err != nil {
+		errl.Printf("loading stat file failed, reason : %s", err.Error())
+		// Simply try to load the stat.back
+		err = siteStat.load(configPath.stat + ".bak")
+		// After all its not critical , simply re-create a stat object if anything is not ok
+		if err != nil {
+			errl.Printf("loading stat backup failed, creating new one , reason: %s", err.Error())
+			siteStat = newSiteStat()
+		}
 	}
+
 	// Dump site stat while running, so we don't always need to close cow to
 	// get updated stat.
 	go func() {
