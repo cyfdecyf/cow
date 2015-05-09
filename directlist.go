@@ -103,7 +103,7 @@ func initDirectList() {
 	var exists bool
 	var err error
 	if exists, err = isFileExists(configPath.alwaysDirect); err != nil {
-		errl.Printf("Error loading domaint list: %v\n", err)
+		errl.Printf("Error loading direct domain list: %v\n", err)
 	}
 	if !exists {
 		return
