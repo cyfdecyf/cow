@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
+	"hash/crc32"
 	"io"
 	"math/rand"
 	"net"
@@ -109,7 +110,7 @@ type hashParentPool struct {
 }
 
 func (pp *hashParentPool) connect(url *URL) (srvconn net.Conn, err error) {
-	start := int(stringHash(url.Host) % uint64(len(pp.parent)))
+	start := int(crc32.ChecksumIEEE([]byte(url.Host)) % uint32(len(pp.parent)))
 	debug.Printf("hash host %s try %d parent first", url.Host, start)
 	return connectInOrder(url, pp.parent, start)
 }
