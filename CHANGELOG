@@ -1,3 +1,10 @@
+0.9.5 (2015-05-12)
+    * Support new encryption method "chacha20" and "salsa20"
+    * Avoid biased parent proxy selection for hash load balacing
+    * Fix AirDrop on OS X when using PAC
+    * Fix failed start with corrupted stat file
+    * Support changing the estimate timeout target
+
 0.9.4 (2014-10-08)
     * Bug fix (#179): close stat file after load
 

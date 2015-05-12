@@ -4,7 +4,7 @@ COW 是一个简化穿墙的 HTTP 代理服务器。它能自动检测被墙网�
 
 [English README](README-en.md).
 
-当前版本：0.9.4 [CHANGELOG](CHANGELOG)
+当前版本：0.9.5 [CHANGELOG](CHANGELOG)
 [![Build Status](https://travis-ci.org/cyfdecyf/cow.png?branch=develop)](https://travis-ci.org/cyfdecyf/cow)
 
 **欢迎在 develop branch 进行开发并发送 pull request :)**
@@ -121,14 +121,14 @@ COW 默认配置下检测到被墙后，过两分钟再次尝试直连也是为�
 - 不提供 cache
 - 不支持 HTTP pipeline（Chrome, Firefox 默认都没开启 pipeline，支持这个功能容易增加问题而好处并不明显）
 
-# 致谢
+# 致谢 (Acknowledgements)
 
 贡献代码：
 
 - @tevino: http parent proxy basic authentication
 - @xupefei: 提供 cow-hide.exe 以在 windows 上在后台执行 cow.exe
 - @sunteya: 改进启动和安装脚本
-- @fzerorubigd: identify blocked site by HTTP error code
+- @fzerorubigd: identify blocked site by HTTP error code and various bug fixes
 
 Bug reporter:
 
