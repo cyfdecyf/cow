@@ -453,15 +453,6 @@ func host2Domain(host string) (domain string) {
 	return host[dot2ndLast+1:]
 }
 
-// djb2 string hash function, from http://www.cse.yorku.ca/~oz/hash.html
-func stringHash(s string) (hash uint64) {
-	hash = 5381
-	for i := 0; i < len(s); i++ {
-		hash = ((hash << 5) + 1) + uint64(s[i])
-	}
-	return
-}
-
 // IgnoreUTF8BOM consumes UTF-8 encoded BOM character if present in the file.
 func IgnoreUTF8BOM(f *os.File) error {
 	bom := make([]byte, 3)

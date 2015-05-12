@@ -86,6 +86,9 @@ function host2Domain(host) {
 function FindProxyForURL(url, host) {
 	if (url.substring(0,4) == "ftp:")
 		return direct;
+	if (host.indexOf(".local", host.length - 6) !== -1) {
+		return direct;
+	}
 	var domain = host2Domain(host);
 	if (host.length == domain.length) {
 		return directAcc[host] ? direct : httpProxy;
@@ -160,7 +163,11 @@ testData = [
 	{ host: 'foo.baidu.com', mode: httpProxy},
 	{ host: 'google.com', mode: httpProxy},
 	{ host: 'www.google.com', mode: httpProxy},
-	{ host: 'www.google.com.hk', mode: httpProxy}
+	{ host: 'www.google.com.hk', mode: httpProxy},
+
+	// host in local domain should return direct
+	{ host: 'test.local', mode: direct},
+	{ host: '.local', mode: direct},
 ];
 
 for (i = 0; i < testData.length; i += 1) {

@@ -79,7 +79,8 @@ listen = http://127.0.0.1:7777
 #   Here are the supported encryption methods:
 #
 #     aes-128-cfb, aes-192-cfb, aes-256-cfb,
-#     bf-cfb, cast5-cfb, des-cfb, rc4-md5, rc4, table
+#     bf-cfb, cast5-cfb, des-cfb, rc4-md5,
+#     chacha20, salsa20, rc4, table
 #
 #   aes-128-cfb is recommended.
 #
@@ -144,6 +145,9 @@ listen = http://127.0.0.1:7777
 
 # Maximum CPU core to use.
 #core = 2
+
+# cow uses this site to estimate timeout, better to use a fast website.
+#estimateTarget = example.com
 
 # Ports allowed to create tunnel (HTTP CONNECT method), comma separated list
 # or repeat to append more ports.
