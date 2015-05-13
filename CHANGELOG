@@ -1,6 +1,7 @@
 1.2 (2015-04-30)
     * fix crash bug: add locks to directlist (What a shame!)
     * improved check ip
+    * sync with cow 0.9.5, supporting chacha20 and salsa20
 
 1.1 (2015-02-25)
     * fix client connection manage bug
