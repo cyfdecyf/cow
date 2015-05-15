@@ -11,6 +11,7 @@ import (
 )
 
 // var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
+var quit chan struct{}
 
 func sigHandler() {
 	// TODO On Windows, these signals will not be triggered on closing cmd
@@ -29,10 +30,11 @@ func sigHandler() {
 			pprof.StopCPUProfile()
 		}
 	*/
-	os.Exit(0)
+	close(quit)
 }
 
 func main() {
+	quit = make(chan struct{})
 	// Parse flags after load config to allow override options in config
 	cmdLineConfig := parseCmdLineConfig()
 	if cmdLineConfig.PrintVer {
@@ -77,7 +79,9 @@ func main() {
 	var wg sync.WaitGroup
 	wg.Add(len(listenProxy))
 	for _, proxy := range listenProxy {
-		go proxy.Serve(&wg)
+		go proxy.Serve(&wg, quit)
 	}
 	wg.Wait()
+
+	debug.Println("listners are done, exiting...")
 }
