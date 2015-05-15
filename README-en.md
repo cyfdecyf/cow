@@ -2,8 +2,8 @@
 
 COW is a HTTP proxy to simplify bypassing the great firewall. It tries to automatically identify blocked websites and only use parent proxy for those sites.
 
-Current version: 0.9.1 [CHANGELOG](CHANGELOG)
-[![Build Status](https://travis-ci.org/cyfdecyf/cow.png?branch=develop)](https://travis-ci.org/cyfdecyf/cow)
+Current version: 0.9.5 [CHANGELOG](CHANGELOG)
+[![Build Status](https://travis-ci.org/cyfdecyf/cow.png?branch=master)](https://travis-ci.org/cyfdecyf/cow)
 
 ## Features
 
@@ -52,7 +52,7 @@ Command line options can override options in the configuration file For more det
 In ideal situation, you don't need to specify which sites are blocked and which are not, but COW hasen't reached that goal. So you may need to manually specify this if COW made the wrong judgement.
 
 - `~/.cow/blocked` for blocked sites
-- `~/.cow/direct` for blocked sites
+- `~/.cow/direct` for directly accessible sites
 - One line for each domain
   - `google.com` means `*.google.com`
   - You can use domains like `google.com.hk`
