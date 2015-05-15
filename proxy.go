@@ -4,14 +4,15 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"github.com/cyfdecyf/bufio"
-	"github.com/cyfdecyf/leakybuf"
-	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
 	"io"
 	"net"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/cyfdecyf/bufio"
+	"github.com/cyfdecyf/leakybuf"
+	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
 )
 
 // As I'm using ReadSlice to read line, it's possible to get
@@ -105,7 +106,7 @@ var (
 )
 
 type Proxy interface {
-	Serve(*sync.WaitGroup)
+	Serve(*sync.WaitGroup, <-chan struct{})
 	Addr() string
 	genConfig() string // for upgrading config
 }
@@ -142,7 +143,7 @@ func (proxy *httpProxy) Addr() string {
 	return proxy.addr
 }
 
-func (hp *httpProxy) Serve(wg *sync.WaitGroup) {
+func (hp *httpProxy) Serve(wg *sync.WaitGroup, quit <-chan struct{}) {
 	defer func() {
 		wg.Done()
 	}()
@@ -151,6 +152,12 @@ func (hp *httpProxy) Serve(wg *sync.WaitGroup) {
 		fmt.Println("listen http failed:", err)
 		return
 	}
+	var exit bool
+	go func() {
+		<-quit
+		exit = true
+		ln.Close()
+	}()
 	host, _, _ := net.SplitHostPort(hp.addr)
 	var pacURL string
 	if host == "" || host == "0.0.0.0" {
@@ -164,7 +171,7 @@ func (hp *httpProxy) Serve(wg *sync.WaitGroup) {
 
 	for {
 		conn, err := ln.Accept()
-		if err != nil {
+		if err != nil && !exit {
 			errl.Printf("http proxy(%s) accept %v\n", ln.Addr(), err)
 			if isErrTooManyOpenFd(err) {
 				connPool.CloseAll()
@@ -172,8 +179,13 @@ func (hp *httpProxy) Serve(wg *sync.WaitGroup) {
 			time.Sleep(time.Millisecond)
 			continue
 		}
+		if exit {
+			debug.Println("exiting the http listner")
+			break
+		}
 		c := newClientConn(conn, hp)
 		go c.serve()
+
 	}
 }
 
@@ -204,26 +216,36 @@ func (cp *cowProxy) Addr() string {
 	return cp.addr
 }
 
-func (cp *cowProxy) Serve(wg *sync.WaitGroup) {
+func (cp *cowProxy) Serve(wg *sync.WaitGroup, quit <-chan struct{}) {
 	defer func() {
 		wg.Done()
 	}()
+
 	ln, err := net.Listen("tcp", cp.addr)
 	if err != nil {
 		fmt.Println("listen cow failed:", err)
 		return
 	}
 	info.Printf("COW %s cow proxy address %s\n", version, cp.addr)
-
+	var exit bool
+	go func() {
+		<-quit
+		exit = true
+		ln.Close()
+	}()
 	for {
 		conn, err := ln.Accept()
-		if err != nil {
+		if err != nil && !exit {
 			errl.Printf("cow proxy(%s) accept %v\n", ln.Addr(), err)
 			if isErrTooManyOpenFd(err) {
 				connPool.CloseAll()
 			}
 			time.Sleep(time.Millisecond)
 			continue
+		}
+		if exit {
+			debug.Println("exiting cow listner")
+			break
 		}
 		ssConn := ss.NewConn(conn, cp.cipher.Copy())
 		c := newClientConn(ssConn, cp)
