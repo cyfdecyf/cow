@@ -3,6 +3,7 @@ package main
 import (
 	// "flag"
 	"os"
+	"os/exec"
 	"os/signal"
 	"runtime"
 	// "runtime/pprof"
@@ -11,18 +12,25 @@ import (
 )
 
 // var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
-var quit chan struct{}
+var (
+	quit     chan struct{}
+	relaunch bool
+)
 
 func sigHandler() {
 	// TODO On Windows, these signals will not be triggered on closing cmd
 	// window. How to detect this?
 	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGUSR1)
 
 	for sig := range sigChan {
 		// May handle other signals in the future.
 		info.Printf("%v caught, exit\n", sig)
 		storeSiteStat(siteStatExit)
+		if sig == syscall.SIGUSR1 {
+			relaunch = true
+		}
+		close(quit)
 		break
 	}
 	/*
@@ -30,7 +38,18 @@ func sigHandler() {
 			pprof.StopCPUProfile()
 		}
 	*/
-	close(quit)
+}
+
+// This code is from goagain
+func lookPath() (argv0 string, err error) {
+	argv0, err = exec.LookPath(os.Args[0])
+	if nil != err {
+		return
+	}
+	if _, err = os.Stat(argv0); nil != err {
+		return
+	}
+	return
 }
 
 func main() {
@@ -81,7 +100,22 @@ func main() {
 	for _, proxy := range listenProxy {
 		go proxy.Serve(&wg, quit)
 	}
+
 	wg.Wait()
 
-	debug.Println("listners are done, exiting...")
+	if relaunch {
+		info.Println("Relunching cow...")
+		// Need to fork me.
+		argv0, err := lookPath()
+		if nil != err {
+			errl.Println(err)
+			return
+		}
+
+		err = syscall.Exec(argv0, os.Args, os.Environ())
+		if err != nil {
+			errl.Println(err)
+		}
+	}
+	debug.Println("the main process is , exiting...")
 }
