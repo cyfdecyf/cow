@@ -18,28 +18,19 @@ const maxTimeout = 15 * time.Second
 var dialTimeout = defaultDialTimeout
 var readTimeout = defaultReadTimeout
 
-var estimateReq = "GET / HTTP/1.1\r\n" +
-	"Host: %s\r\n" +
-	"Mozilla/5.0 (Macintosh; Intel Mac OS X 10.8; rv:11.0) Gecko/20100101 Firefox/11.0\r\n" +
-	"Accept: */*\r\n" +
-	"Accept-Language: en-us,en;q=0.5\r\n" +
-	"Accept-Encoding: gzip, deflate\r\n" +
-	"Connection: close\r\n\r\n"
-
 // estimateTimeout tries to fetch a url and adjust timeout value according to
 // how much time is spent on connect and fetch. This avoids incorrectly
 // considering non-blocked sites as blocked when network connection is bad.
-func estimateTimeout() {
+func estimateTimeout(host string, payload []byte) {
 	//debug.Println("estimating timeout")
 	buf := connectBuf.Get()
 	defer connectBuf.Put(buf)
 	var est time.Duration
-	payload := fmt.Sprintf(estimateReq, config.EstimateTarget)
 	start := time.Now()
-	c, err := net.Dial("tcp", config.EstimateTarget+":80")
+	c, err := net.Dial("tcp", host+":80")
 	if err != nil {
 		errl.Printf("estimateTimeout: can't connect to %s: %v, network has problem?\n",
-			config.EstimateTarget, err)
+			host, err)
 		goto onErr
 	}
 	defer c.Close()
@@ -61,7 +52,7 @@ func estimateTimeout() {
 	// include time spent on sending request, reading all content to make it a
 	// little longer
 
-	if _, err = c.Write([]byte(payload)); err != nil {
+	if _, err = c.Write(payload); err != nil {
 		errl.Println("estimateTimeout: error sending request:", err)
 		goto onErr
 	}
@@ -70,7 +61,7 @@ func estimateTimeout() {
 	}
 	if err != io.EOF {
 		errl.Printf("estimateTimeout: error getting %s: %v, network has problem?\n",
-			config.EstimateTarget, err)
+			host, err)
 		goto onErr
 	}
 	est = time.Now().Sub(start) * 10
@@ -92,10 +83,21 @@ onErr:
 }
 
 func runEstimateTimeout() {
+	const estimateReq = "GET / HTTP/1.1\r\n" +
+		"Host: %s\r\n" +
+		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10.8; rv:11.0) Gecko/20100101 Firefox/11.0\r\n" +
+		"Accept: */*\r\n" +
+		"Accept-Language: en-us,en;q=0.5\r\n" +
+		"Accept-Encoding: gzip, deflate\r\n" +
+		"Connection: close\r\n\r\n"
+
 	readTimeout = config.ReadTimeout
 	dialTimeout = config.DialTimeout
+
+	payload := []byte(fmt.Sprintf(estimateReq, config.EstimateTarget))
+
 	for {
-		estimateTimeout()
+		estimateTimeout(config.EstimateTarget, payload)
 		time.Sleep(time.Minute)
 	}
 }
