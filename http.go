@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"github.com/cyfdecyf/bufio"
+	"io"
 	"net"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/cyfdecyf/bufio"
 )
 
 const CRLF = "\r\n"
@@ -652,25 +654,48 @@ func (rp *Response) hasBody(method string) bool {
 }
 
 // Parse response status and headers.
-func parseResponse(sv *serverConn, r *Request, rp *Response) (err error) {
+func parseResponse(sv *serverConn, c *clientConn, r *Request, rp *Response) (err error) {
 	var s []byte
 	reader := sv.bufRd
 	if sv.maybeFake() {
 		sv.setReadTimeout("parseResponse")
+	} else {
+		sv.setCometReadTimeout("parseResponse Comet")
 	}
-	if s, err = reader.ReadSlice('\n'); err != nil {
-		// err maybe timeout caused by explicity setting deadline, EOF, or
-		// reset caused by GFW.
-		debug.Printf("read response status line %v %v\n", err, r)
-		// Server connection with error will not be used any more, so no need
-		// to unset timeout.
-		// For read error, return directly in order to identify whether this
-		// is caused by GFW.
-		return err
+
+	for {
+		if s, err = reader.ReadSlice('\n'); err != nil {
+			// err maybe timeout caused by explicity setting deadline, EOF, or
+			// reset caused by GFW.
+			debug.Printf("read response status line %v %v\n", err, r)
+			// Server connection with error will not be used any more, so no need
+			// to unset timeout.
+			// For read error, return directly in order to identify whether this
+			// is caused by GFW.
+			if sv.maybeFake() {
+				return err
+			}
+
+			// This is a reliable connection, but still timeout
+			if neterr, ok := err.(net.Error); ok && neterr.Timeout() {
+				one := make([]byte, 1, 1)
+				if _, err := c.Read(one); err == io.EOF {
+					debug.Printf("read response status line %v %v\n", err, r)
+					debug.Printf("Comet time out\n")
+				}
+				c.Conn.Close()
+				sv.Close()
+				return err
+			} else {
+				continue
+			}
+		} else {
+			break
+		}
 	}
-	if sv.maybeFake() {
-		sv.unsetReadTimeout("parseResponse")
-	}
+	// if sv.maybeFake() {
+	sv.unsetReadTimeout("parseResponse")
+	// }
 	// debug.Printf("Response line %s", s)
 
 	// response status line parsing
@@ -717,7 +742,7 @@ func parseResponse(sv *serverConn, r *Request, rp *Response) (err error) {
 	if rp.Status == statusCodeContinue && !r.ExpectContinue {
 		// not expecting 100-continue, just ignore it and read final response
 		errl.Println("Ignore server 100 response for", r)
-		return parseResponse(sv, r, rp)
+		return parseResponse(sv, c, r, rp)
 	}
 
 	if rp.Chunking {
