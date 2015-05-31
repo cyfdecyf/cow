@@ -957,7 +957,7 @@ func (sv *serverConn) setReadTimeout(msg string) {
 }
 
 func (sv *serverConn) setCometReadTimeout(msg string) {
-	to := 30 * time.Second
+	to := 60 * time.Second
 	setConnReadTimeout(sv.Conn, to, msg)
 }
 

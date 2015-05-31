@@ -681,10 +681,9 @@ func parseResponse(sv *serverConn, c *clientConn, r *Request, rp *Response) (err
 				one := make([]byte, 1, 1)
 				if _, err := c.Read(one); err == io.EOF {
 					debug.Printf("read response status line %v %v\n", err, r)
-					debug.Printf("Comet time out\n")
+					errl.Printf("Comet time out\n")
+					c.Conn.Close()
 				}
-				c.Conn.Close()
-				sv.Close()
 			}
 			return err
 		} else {
