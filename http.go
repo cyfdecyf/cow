@@ -663,32 +663,27 @@ func parseResponse(sv *serverConn, c *clientConn, r *Request, rp *Response) (err
 		sv.setCometReadTimeout("parseResponse Comet")
 	}
 
-	for {
-		if s, err = reader.ReadSlice('\n'); err != nil {
-			// err maybe timeout caused by explicity setting deadline, EOF, or
-			// reset caused by GFW.
-			debug.Printf("read response status line %v %v\n", err, r)
-			// Server connection with error will not be used any more, so no need
-			// to unset timeout.
-			// For read error, return directly in order to identify whether this
-			// is caused by GFW.
-			if sv.maybeFake() {
+	if s, err = reader.ReadSlice('\n'); err != nil {
+		// err maybe timeout caused by explicity setting deadline, EOF, or
+		// reset caused by GFW.
+		debug.Printf("read response status line %v %v\n", err, r)
+		// Server connection with error will not be used any more, so no need
+		// to unset timeout.
+		// For read error, return directly in order to identify whether this
+		// is caused by GFW.
+		if sv.maybeFake() {
+			return err
+		}
+
+		// This is a reliable connection, but still timeout
+		if neterr, ok := err.(net.Error); ok && neterr.Timeout() {
+			one := make([]byte, 1, 1)
+			if _, err := c.Read(one); err == io.EOF {
+				debug.Printf("read response status line %v %v\n", err, r)
+				errl.Printf("Comet time out\n")
+				c.Conn.Close()
 				return err
 			}
-
-			// This is a reliable connection, but still timeout
-			if neterr, ok := err.(net.Error); ok && neterr.Timeout() {
-				one := make([]byte, 1, 1)
-				if _, err := c.Read(one); err == io.EOF {
-					debug.Printf("read response status line %v %v\n", err, r)
-					debug.Printf("Comet time out\n")
-				}
-				c.Conn.Close()
-				sv.Close()
-			}
-			return err
-		} else {
-			break
 		}
 	}
 	// if sv.maybeFake() {
