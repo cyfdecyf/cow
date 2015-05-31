@@ -685,10 +685,8 @@ func parseResponse(sv *serverConn, c *clientConn, r *Request, rp *Response) (err
 				}
 				c.Conn.Close()
 				sv.Close()
-				return err
-			} else {
-				continue
 			}
+			return err
 		} else {
 			break
 		}
