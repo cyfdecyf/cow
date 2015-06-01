@@ -173,3 +173,7 @@ listen = http://127.0.0.1:7777
 # This detection is no reliable, may mistaken normal sites as blocked.
 # Only consider this option when GFW is making middle man attack.
 #detectSSLErr = false
+
+# Change the stat file position, the cow user must write access to that folder
+# default is $HOME/.cow/ (linux) and ./ (windows)
+#statPath = /path/to/folder

@@ -64,6 +64,8 @@ type Config struct {
 
 	HttpErrorCode int
 
+	StatPath string
+
 	// not configurable in config file
 	PrintVer        bool
 	EstimateTimeout bool   // Whether to run estimateTimeout().
@@ -80,7 +82,6 @@ var configPath struct {
 	dir           string // directory containing config file and blocked site list
 	alwaysBlocked string // blocked sites specified by user
 	alwaysDirect  string // direct sites specified by user
-	stat          string // site visit statistics
 }
 
 func printVersion() {
@@ -93,8 +94,8 @@ func init() {
 
 	configPath.alwaysBlocked = path.Join(configPath.dir, alwaysBlockedFname)
 	configPath.alwaysDirect = path.Join(configPath.dir, alwaysDirectFname)
-	configPath.stat = path.Join(configPath.dir, statFname)
 
+	config.StatPath = configPath.dir
 	config.DetectSSLErr = false
 	config.AlwaysProxy = false
 
@@ -448,6 +449,17 @@ func (p configParser) ParseLoadBalance(val string) {
 	default:
 		Fatalf("invalid loadBalance mode: %s\n", val)
 	}
+}
+
+func (p configParser) ParseStatPath(val string) {
+	if s, err := os.Stat(val); err == nil {
+		if s.IsDir() {
+			config.StatPath = val
+			return
+		}
+	}
+
+	Fatalf("invalid directory for stat file: %s\n", val)
 }
 
 var shadow struct {

@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"math/rand"
 	"os"
+	"path"
 	"strings"
 	"sync"
 	"time"
@@ -427,11 +428,12 @@ func (ss *SiteStat) GetDirectList() []string {
 var siteStat = newSiteStat()
 
 func initSiteStat() {
-	err := siteStat.load(configPath.stat)
+	statPath := path.Join(config.StatPath, statFname)
+	err := siteStat.load(statPath)
 	if err != nil {
 		errl.Printf("loading stat file failed, reason : %s", err.Error())
 		// Simply try to load the stat.back
-		err = siteStat.load(configPath.stat + ".bak")
+		err = siteStat.load(statPath + ".bak")
 		// After all its not critical , simply re-create a stat object if anything is not ok
 		if err != nil {
 			errl.Printf("loading stat backup failed, creating new one , reason: %s", err.Error())
@@ -466,7 +468,8 @@ func storeSiteStat(cont byte) {
 	if siteStatFini {
 		return
 	}
-	siteStat.store(configPath.stat)
+	statPath := path.Join(config.StatPath, statFname)
+	siteStat.store(statPath)
 	if cont == siteStatExit {
 		siteStatFini = true
 	}
