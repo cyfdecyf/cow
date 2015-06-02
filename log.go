@@ -6,10 +6,11 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/cyfdecyf/color"
 	"io"
 	"log"
 	"os"
+
+	"github.com/cyfdecyf/color"
 )
 
 type infoLogging bool
@@ -28,10 +29,10 @@ var (
 	logFile io.Writer
 
 	// make sure logger can be called before initLog
-	errorLog    = log.New(os.Stdout, "", log.LstdFlags)
-	debugLog    = errorLog
-	requestLog  = errorLog
-	responseLog = errorLog
+	errorLog    = log.New(os.Stdout, "[ERROR] ", log.LstdFlags)
+	debugLog    = log.New(os.Stdout, "[DEBUG] ", log.LstdFlags)
+	requestLog  = log.New(os.Stdout, "[>>>>>] ", log.LstdFlags)
+	responseLog = log.New(os.Stdout, "[<<<<<] ", log.LstdFlags)
 
 	verbose  bool
 	colorize bool
