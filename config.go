@@ -81,16 +81,7 @@ func printVersion() {
 }
 
 func initConfig(rcFile string) {
-	if rcFile == "" {
-		config.RcFile = getDefaultRcFile()
-	} else {
-		config.RcFile = expandTilde(rcFile)
-	}
-	if err := isFileExists(config.RcFile); err != nil {
-		Fatal("fail to get config file:", err)
-	}
-
-	config.dir = path.Dir(config.RcFile)
+	config.dir = path.Dir(rcFile)
 	config.DirectFile = path.Join(config.dir, directFname)
 	config.ProxyFile = path.Join(config.dir, proxyFname)
 
@@ -121,6 +112,14 @@ func parseCmdLineConfig() *Config {
 
 	flag.Parse()
 
+	if c.RcFile == "" {
+		c.RcFile = getDefaultRcFile()
+	} else {
+		c.RcFile = expandTilde(c.RcFile)
+	}
+	if err := isFileExists(c.RcFile); err != nil {
+		Fatal("fail to get config file:", err)
+	}
 	initConfig(c.RcFile)
 
 	if listenAddr != "" {
@@ -575,12 +574,7 @@ func parseConfig(rc string, override *Config) {
 	// fmt.Println("rcFile:", path)
 	f, err := os.Open(expandTilde(rc))
 	if err != nil {
-		if os.IsNotExist(err) {
-			fmt.Printf("Config file %s not found, using default options\n", rc)
-		} else {
-			fmt.Println("Error opening config file:", err)
-		}
-		return
+		Fatal("Error opening config file:", err)
 	}
 
 	IgnoreUTF8BOM(f)
