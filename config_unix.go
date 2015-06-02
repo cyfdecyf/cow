@@ -7,14 +7,13 @@ import (
 )
 
 const (
-	rcFname           = "rc"
-	alwaysDirectFname = "direct"
-	alwaysProxyFname  = "proxy"
+	rcFname      = "rc"
+	directFname  = "direct"
+	proxyFname   = "proxy"
 
 	newLine = "\n"
 )
 
-func initConfigDir() {
-	home := getUserHomeDir()
-	configPath.dir = path.Join(home, ".meow")
+func getDefaultRcFile() string {
+	return path.Join(path.Join(getUserHomeDir(), ".meow", rcFname))
 }

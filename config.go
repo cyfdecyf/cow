@@ -38,10 +38,10 @@ var defaultTunnelAllowedPort = []string{
 }
 
 type Config struct {
-	RcFile      string // config file
-	LogFile     string
+	RcFile      string          // config file
+	LogFile     string          // path for log file
 	JudgeByIP   bool
-	LoadBalance LoadBalanceMode
+	LoadBalance LoadBalanceMode // select load balance mode
 
 	TunnelAllowedPort map[string]bool // allowed ports to create tunnel
 
@@ -61,7 +61,9 @@ type Config struct {
 
 	HttpErrorCode int
 
-	StatPath string
+	dir         string // directory containing config file
+	DirectFile  string // direct sites specified by user
+	ProxyFile   string // sites using proxy specified by user
 
 	// not configurable in config file
 	PrintVer        bool
@@ -74,22 +76,23 @@ type Config struct {
 var config Config
 var configNeedUpgrade bool // whether should upgrade config file
 
-var configPath struct {
-	dir          string // directory containing config file and blocked site list
-	alwaysDirect string // direct sites specified by user
-	alwaysProxy  string // sites using proxy specified by user
-}
-
 func printVersion() {
 	fmt.Println("MEOW version", version)
 }
 
-func init() {
-	initConfigDir()
-	// fmt.Println("home dir:", homeDir)
+func initConfig(rcFile string) {
+	if rcFile == "" {
+		config.RcFile = getDefaultRcFile()
+	} else {
+		config.RcFile = expandTilde(rcFile)
+	}
+	if err := isFileExists(config.RcFile); err != nil {
+		Fatal("fail to get config file:", err)
+	}
 
-	configPath.alwaysDirect = path.Join(configPath.dir, alwaysDirectFname)
-	configPath.alwaysProxy = path.Join(configPath.dir, alwaysProxyFname)
+	config.dir = path.Dir(config.RcFile)
+	config.DirectFile = path.Join(config.dir, directFname)
+	config.ProxyFile = path.Join(config.dir, proxyFname)
 
 	config.JudgeByIP = true
 
@@ -108,7 +111,7 @@ func parseCmdLineConfig() *Config {
 	var c Config
 	var listenAddr string
 
-	flag.StringVar(&c.RcFile, "rc", path.Join(configPath.dir, rcFname), "configuration file")
+	flag.StringVar(&c.RcFile, "rc", "", "config file, defaults to $HOME/.cow/rc on Unix, ./rc.txt on Windows")
 	// Specifying listen default value to StringVar would override config file options
 	flag.StringVar(&listenAddr, "listen", "", "listen address, disables listen in config")
 	flag.IntVar(&c.Core, "core", 2, "number of cores to use")
@@ -117,6 +120,9 @@ func parseCmdLineConfig() *Config {
 	flag.BoolVar(&c.EstimateTimeout, "estimate", true, "enable/disable estimate timeout")
 
 	flag.Parse()
+
+	initConfig(c.RcFile)
+
 	if listenAddr != "" {
 		configParser{}.ParseListen(listenAddr)
 		cmdHasListenAddr = true // must come after parse
@@ -337,7 +343,7 @@ func (p configParser) ParseListen(val string) {
 }
 
 func (p configParser) ParseLogFile(val string) {
-	config.LogFile = val
+	config.LogFile = expandTilde(val)
 }
 
 func (p configParser) ParseAddrInPAC(val string) {
@@ -437,15 +443,18 @@ func (p configParser) ParseLoadBalance(val string) {
 	}
 }
 
-func (p configParser) ParseStatPath(val string) {
-	if s, err := os.Stat(val); err == nil {
-		if s.IsDir() {
-			config.StatPath = val
-			return
-		}
+func (p configParser) ParseDirectFile(val string) {
+	config.DirectFile = expandTilde(val)
+	if err := isFileExists(config.DirectFile); err != nil {
+		Fatal("direct file:", err)
 	}
+}
 
-	Fatalf("invalid directory for stat file: %s\n", val)
+func (p configParser) ParseProxyFile(val string) {
+	config.ProxyFile = expandTilde(val)
+	if err := isFileExists(config.ProxyFile); err != nil {
+		Fatal("proxy file:", err)
+	}
 }
 
 var shadow struct {
@@ -525,12 +534,9 @@ func (p configParser) ParseUserPasswd(val string) {
 }
 
 func (p configParser) ParseUserPasswdFile(val string) {
-	exist, err := isFileExists(val)
+	err := isFileExists(val)
 	if err != nil {
-		Fatal("userPasswdFile error:", err)
-	}
-	if !exist {
-		Fatal("userPasswdFile", val, "does not exist")
+		Fatal("userPasswdFile:", err)
 	}
 	config.UserPasswdFile = val
 }
@@ -723,22 +729,4 @@ func checkConfig() {
 	if listenProxy == nil {
 		listenProxy = []Proxy{newHttpProxy(defaultListenAddr, "")}
 	}
-}
-
-func mkConfigDir() (err error) {
-	if configPath.dir == "" {
-		return os.ErrNotExist
-	}
-	exists, err := isDirExists(configPath.dir)
-	if err != nil {
-		errl.Printf("Error checking config directory: %v\n", err)
-		return
-	}
-	if exists {
-		return
-	}
-	if err = os.Mkdir(configPath.dir, 0755); err != nil {
-		errl.Printf("Error create config directory %s: %v\n", configPath.dir, err)
-	}
-	return
 }

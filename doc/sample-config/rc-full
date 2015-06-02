@@ -130,3 +130,7 @@ listen = http://127.0.0.1:4411
 # 如需允许其他端口，请用该选项添加
 # 限制隧道连接的端口可以防止将运行 meow 的服务器上只监听本机 ip 的服务暴露给外部
 #tunnelAllowedPort = 80, 443
+
+# 修改 direct/proxy 文件路径，如不指定，默认在配置文件所在目录下
+#directFile = <dir to rc file>/direct
+#proxyFile = <dir to rc file>/proxy

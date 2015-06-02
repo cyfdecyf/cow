@@ -24,6 +24,7 @@ func TestParseListen(t *testing.T) {
 }
 
 func TestTunnelAllowedPort(t *testing.T) {
+	initConfig("")
 	parser := configParser{}
 	parser.ParseTunnelAllowedPort("1, 2, 3, 4, 5")
 	parser.ParseTunnelAllowedPort("6")
