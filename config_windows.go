@@ -6,16 +6,16 @@ import (
 )
 
 const (
-	rcFname            = "rc.txt"
-	alwaysBlockedFname = "blocked.txt"
-	alwaysDirectFname  = "direct.txt"
-	statFname          = "stat.txt"
+	rcFname      = "rc.txt"
+	blockedFname = "blocked.txt"
+	directFname  = "direct.txt"
+	statFname    = "stat.txt"
 
 	newLine = "\r\n"
 )
 
-func initConfigDir() {
+func getDefaultRcFile() string {
 	// On windows, put the configuration file in the same directory of cow executable
 	// This is not a reliable way to detect binary directory, but it works for double click and run
-	configPath.dir = path.Dir(os.Args[0])
+	return path.Join(path.Dir(os.Args[0]), rcFname)
 }

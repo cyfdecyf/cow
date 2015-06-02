@@ -148,3 +148,9 @@ listen = http://127.0.0.1:7777
 # （Chrome 遇到 SSL 错误会直接关闭连接，而不是让用户选择是否继续）
 # 可能将可直连网站误判为被墙网站，当 GFW 进行 SSL 中间人攻击时可以考虑使用
 #detectSSLErr = false
+
+# 修改 stat/blocked/direct 文件路径，如不指定，默认在配置文件所在目录下
+# 执行 cow 的用户需要有对 stat 文件所在目录的写权限才能更新 stat 文件
+#statFile = <dir to rc file>/stat
+#blockedFile = <dir to rc file>/blocked
+#directFile = <dir to rc file>/direct

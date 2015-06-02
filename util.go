@@ -5,7 +5,6 @@ import (
 	"crypto/md5"
 	"errors"
 	"fmt"
-	"github.com/cyfdecyf/bufio"
 	"io"
 	"net"
 	"os"
@@ -13,6 +12,8 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+
+	"github.com/cyfdecyf/bufio"
 )
 
 const isWindows = runtime.GOOS == "windows"
@@ -205,32 +206,26 @@ func ParseIntFromBytes(b []byte, base int) (n int64, err error) {
 	return
 }
 
-func isFileExists(path string) (bool, error) {
+func isFileExists(path string) error {
 	stat, err := os.Stat(path)
-	if err == nil {
-		if stat.Mode()&os.ModeType == 0 {
-			return true, nil
-		}
-		return false, errors.New(path + " exists but is not regular file")
+	if err != nil {
+		return err
 	}
-	if os.IsNotExist(err) {
-		return false, nil
+	if !stat.Mode().IsRegular() {
+		return fmt.Errorf("%s is not regular file", path)
 	}
-	return false, err
+	return nil
 }
 
-func isDirExists(path string) (bool, error) {
+func isDirExists(path string) error {
 	stat, err := os.Stat(path)
-	if err == nil {
-		if stat.IsDir() {
-			return true, nil
-		}
-		return false, errors.New(path + " exists but is not directory")
+	if err != nil {
+		return err
 	}
-	if os.IsNotExist(err) {
-		return false, nil
+	if !stat.IsDir() {
+		return fmt.Errorf("%s is not directory", path)
 	}
-	return false, err
+	return nil
 }
 
 func getUserHomeDir() string {

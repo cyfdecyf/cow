@@ -7,15 +7,14 @@ import (
 )
 
 const (
-	rcFname            = "rc"
-	alwaysBlockedFname = "blocked"
-	alwaysDirectFname  = "direct"
-	statFname          = "stat"
+	rcFname      = "rc"
+	blockedFname = "blocked"
+	directFname  = "direct"
+	statFname    = "stat"
 
 	newLine = "\n"
 )
 
-func initConfigDir() {
-	home := getUserHomeDir()
-	configPath.dir = path.Join(home, ".cow")
+func getDefaultRcFile() string {
+	return path.Join(path.Join(getUserHomeDir(), ".cow", rcFname))
 }
