@@ -88,4 +88,6 @@ if [[ -z $TRAVIS ]]; then
 fi
 
 stop_cow
+sleep 0.5
+rm -f ./script/stat*
 exit 0

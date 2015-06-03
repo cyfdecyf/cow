@@ -426,11 +426,14 @@ var siteStat = newSiteStat()
 func initSiteStat() {
 	err := siteStat.load(config.StatFile)
 	if err != nil {
-		// Simply try to load the stat.back
+		// Simply try to load the stat.back, create a new object to avoid error
+		// in default site list.
+		siteStat = newSiteStat()
 		err = siteStat.load(config.StatFile + ".bak")
 		// After all its not critical , simply re-create a stat object if anything is not ok
 		if err != nil {
 			siteStat = newSiteStat()
+			siteStat.load("") // load default site list
 		}
 	}
 
