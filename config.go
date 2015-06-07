@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	version               = "0.9.5"
+	version               = "0.9.6"
 	defaultListenAddr     = "127.0.0.1:7777"
 	defaultEstimateTarget = "example.com"
 )
@@ -40,10 +40,10 @@ var defaultTunnelAllowedPort = []string{
 }
 
 type Config struct {
-	RcFile      string // config file
-	LogFile     string
-	AlwaysProxy bool
-	LoadBalance LoadBalanceMode
+	RcFile      string          // config file
+	LogFile     string          // path for log file
+	AlwaysProxy bool            // whether we should alwyas use parent proxy
+	LoadBalance LoadBalanceMode // select load balance mode
 
 	TunnelAllowedPort map[string]bool // allowed ports to create tunnel
 
@@ -64,6 +64,11 @@ type Config struct {
 
 	HttpErrorCode int
 
+	dir         string // directory containing config file
+	StatFile    string // Path for stat file
+	BlockedFile string // blocked sites specified by user
+	DirectFile  string // direct sites specified by user
+
 	// not configurable in config file
 	PrintVer        bool
 	EstimateTimeout bool   // Whether to run estimateTimeout().
@@ -76,24 +81,15 @@ type Config struct {
 var config Config
 var configNeedUpgrade bool // whether should upgrade config file
 
-var configPath struct {
-	dir           string // directory containing config file and blocked site list
-	alwaysBlocked string // blocked sites specified by user
-	alwaysDirect  string // direct sites specified by user
-	stat          string // site visit statistics
-}
-
 func printVersion() {
 	fmt.Println("cow version", version)
 }
 
-func init() {
-	initConfigDir()
-	// fmt.Println("home dir:", homeDir)
-
-	configPath.alwaysBlocked = path.Join(configPath.dir, alwaysBlockedFname)
-	configPath.alwaysDirect = path.Join(configPath.dir, alwaysDirectFname)
-	configPath.stat = path.Join(configPath.dir, statFname)
+func initConfig(rcFile string) {
+	config.dir = path.Dir(rcFile)
+	config.BlockedFile = path.Join(config.dir, blockedFname)
+	config.DirectFile = path.Join(config.dir, directFname)
+	config.StatFile = path.Join(config.dir, statFname)
 
 	config.DetectSSLErr = false
 	config.AlwaysProxy = false
@@ -117,7 +113,7 @@ func parseCmdLineConfig() *Config {
 	var c Config
 	var listenAddr string
 
-	flag.StringVar(&c.RcFile, "rc", path.Join(configPath.dir, rcFname), "configuration file")
+	flag.StringVar(&c.RcFile, "rc", "", "config file, defaults to $HOME/.cow/rc on Unix, ./rc.txt on Windows")
 	// Specifying listen default value to StringVar would override config file options
 	flag.StringVar(&listenAddr, "listen", "", "listen address, disables listen in config")
 	flag.IntVar(&c.Core, "core", 2, "number of cores to use")
@@ -126,6 +122,17 @@ func parseCmdLineConfig() *Config {
 	flag.BoolVar(&c.EstimateTimeout, "estimate", true, "enable/disable estimate timeout")
 
 	flag.Parse()
+
+	if c.RcFile == "" {
+		c.RcFile = getDefaultRcFile()
+	} else {
+		c.RcFile = expandTilde(c.RcFile)
+	}
+	if err := isFileExists(c.RcFile); err != nil {
+		Fatal("fail to get config file:", err)
+	}
+	initConfig(c.RcFile)
+
 	if listenAddr != "" {
 		configParser{}.ParseListen(listenAddr)
 		cmdHasListenAddr = true // must come after parse
@@ -346,7 +353,7 @@ func (p configParser) ParseListen(val string) {
 }
 
 func (p configParser) ParseLogFile(val string) {
-	config.LogFile = val
+	config.LogFile = expandTilde(val)
 }
 
 func (p configParser) ParseAddrInPAC(val string) {
@@ -450,6 +457,24 @@ func (p configParser) ParseLoadBalance(val string) {
 	}
 }
 
+func (p configParser) ParseStatFile(val string) {
+	config.StatFile = expandTilde(val)
+}
+
+func (p configParser) ParseBlockedFile(val string) {
+	config.BlockedFile = expandTilde(val)
+	if err := isFileExists(config.BlockedFile); err != nil {
+		Fatal("blocked file:", err)
+	}
+}
+
+func (p configParser) ParseDirectFile(val string) {
+	config.DirectFile = expandTilde(val)
+	if err := isFileExists(config.DirectFile); err != nil {
+		Fatal("direct file:", err)
+	}
+}
+
 var shadow struct {
 	parent *shadowsocksParent
 	passwd string
@@ -527,12 +552,9 @@ func (p configParser) ParseUserPasswd(val string) {
 }
 
 func (p configParser) ParseUserPasswdFile(val string) {
-	exist, err := isFileExists(val)
+	err := isFileExists(val)
 	if err != nil {
-		Fatal("userPasswdFile error:", err)
-	}
-	if !exist {
-		Fatal("userPasswdFile", val, "does not exist")
+		Fatal("userPasswdFile:", err)
 	}
 	config.UserPasswdFile = val
 }
@@ -575,12 +597,7 @@ func parseConfig(rc string, override *Config) {
 	// fmt.Println("rcFile:", path)
 	f, err := os.Open(expandTilde(rc))
 	if err != nil {
-		if os.IsNotExist(err) {
-			fmt.Printf("Config file %s not found, using default options\n", rc)
-		} else {
-			fmt.Println("Error opening config file:", err)
-		}
-		return
+		Fatal("Error opening config file:", err)
 	}
 
 	IgnoreUTF8BOM(f)
@@ -729,22 +746,4 @@ func checkConfig() {
 	if listenProxy == nil {
 		listenProxy = []Proxy{newHttpProxy(defaultListenAddr, "")}
 	}
-}
-
-func mkConfigDir() (err error) {
-	if configPath.dir == "" {
-		return os.ErrNotExist
-	}
-	exists, err := isDirExists(configPath.dir)
-	if err != nil {
-		errl.Printf("Error checking config directory: %v\n", err)
-		return
-	}
-	if exists {
-		return
-	}
-	if err = os.Mkdir(configPath.dir, 0755); err != nil {
-		errl.Printf("Error create config directory %s: %v\n", configPath.dir, err)
-	}
-	return
 }

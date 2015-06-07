@@ -289,7 +289,7 @@ func (pp *latencyParentPool) updateLatency() {
 
 	// Sort according to latency.
 	sort.Stable(&cp)
-	debug.Println("lantency lowest proxy", cp.parent[0].getServer())
+	debug.Println("latency lowest proxy", cp.parent[0].getServer())
 
 	// Update parent slice.
 	latencyMutex.Lock()

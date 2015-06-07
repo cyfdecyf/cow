@@ -1,6 +1,6 @@
 #!/bin/bash
 
-version=0.9.5
+version=0.9.6
 
 arch=`uname -m`
 case $arch in
@@ -11,7 +11,14 @@ case $arch in
         arch="32"
         ;;
     "armv5tel" | "armv6l" | "armv7l")
-        arch="-$arch"
+        features=`cat /proc/cpuinfo | grep Features`
+        if [[ ! "$features" =~ "vfp" ]]; then
+            #arm without vfp must use GOARM=5 binary
+            #see https://github.com/golang/go/wiki/GoArm
+            arch="-armv5tel"
+        else
+            arch="-$arch"
+        fi
         ;;
     *)
         echo "$arch currently has no precompiled binary"

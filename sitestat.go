@@ -253,10 +253,6 @@ func (ss *SiteStat) GetVisitCnt(url *URL) (vcnt *VisitCnt) {
 }
 
 func (ss *SiteStat) store(statPath string) (err error) {
-	if err = mkConfigDir(); err != nil {
-		return
-	}
-
 	now := time.Now()
 	var savedSS *SiteStat
 	if ss.Update == Date(zeroTime) {
@@ -293,7 +289,7 @@ func (ss *SiteStat) store(statPath string) (err error) {
 	// Ensures atomic update to stat file to avoid file damage.
 
 	// Create tmp file inside config firectory to avoid cross FS rename.
-	f, err := ioutil.TempFile(configPath.dir, "stat")
+	f, err := ioutil.TempFile(config.dir, "stat")
 	if err != nil {
 		errl.Println("create tmp file to store stat", err)
 		return
@@ -327,10 +323,10 @@ func (ss *SiteStat) loadBuiltinList() {
 }
 
 func (ss *SiteStat) loadUserList() {
-	if directList, err := loadSiteList(configPath.alwaysDirect); err == nil {
+	if directList, err := loadSiteList(config.DirectFile); err == nil {
 		ss.loadList(directList, userCnt, 0)
 	}
-	if blockedList, err := loadSiteList(configPath.alwaysBlocked); err == nil {
+	if blockedList, err := loadSiteList(config.BlockedFile); err == nil {
 		ss.loadList(blockedList, 0, userCnt)
 	}
 }
@@ -382,27 +378,28 @@ func (ss *SiteStat) load(file string) (err error) {
 			}
 		}
 	}()
-	var exist bool
-	if exist, err = isFileExists(file); err != nil {
-		fmt.Println("Error loading stat:", err)
+	if file == "" {
 		return
 	}
-	if !exist {
+	if err = isFileExists(file); err != nil {
+		if !os.IsNotExist(err) {
+			errl.Println("Error loading stat:", err)
+		}
 		return
 	}
 	var f *os.File
 	if f, err = os.Open(file); err != nil {
-		fmt.Printf("Error opening site stat %s: %v\n", file, err)
+		errl.Printf("Error opening site stat %s: %v\n", file, err)
 		return
 	}
 	defer f.Close()
 	b, err := ioutil.ReadAll(f)
 	if err != nil {
-		fmt.Println("Error reading site stat:", err)
+		errl.Println("Error reading site stat:", err)
 		return
 	}
 	if err = json.Unmarshal(b, ss); err != nil {
-		fmt.Println("Error decoding site stat:", err)
+		errl.Println("Error decoding site stat:", err)
 		return
 	}
 	return
@@ -427,15 +424,16 @@ func (ss *SiteStat) GetDirectList() []string {
 var siteStat = newSiteStat()
 
 func initSiteStat() {
-	err := siteStat.load(configPath.stat)
+	err := siteStat.load(config.StatFile)
 	if err != nil {
-		errl.Printf("loading stat file failed, reason : %s", err.Error())
-		// Simply try to load the stat.back
-		err = siteStat.load(configPath.stat + ".bak")
+		// Simply try to load the stat.back, create a new object to avoid error
+		// in default site list.
+		siteStat = newSiteStat()
+		err = siteStat.load(config.StatFile + ".bak")
 		// After all its not critical , simply re-create a stat object if anything is not ok
 		if err != nil {
-			errl.Printf("loading stat backup failed, creating new one , reason: %s", err.Error())
 			siteStat = newSiteStat()
+			siteStat.load("") // load default site list
 		}
 	}
 
@@ -466,18 +464,20 @@ func storeSiteStat(cont byte) {
 	if siteStatFini {
 		return
 	}
-	siteStat.store(configPath.stat)
+	siteStat.store(config.StatFile)
 	if cont == siteStatExit {
 		siteStatFini = true
 	}
 }
 
 func loadSiteList(fpath string) (lst []string, err error) {
-	var exists bool
-	if exists, err = isFileExists(fpath); err != nil {
-		errl.Printf("Error loading domaint list: %v\n", err)
+	if fpath == "" {
+		return
 	}
-	if !exists {
+	if err = isFileExists(fpath); err != nil {
+		if !os.IsNotExist(err) {
+			info.Printf("Error loading domaint list: %v\n", err)
+		}
 		return
 	}
 	f, err := os.Open(fpath)
