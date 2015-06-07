@@ -2,7 +2,7 @@
 
 COW is a HTTP proxy to simplify bypassing the great firewall. It tries to automatically identify blocked websites and only use parent proxy for those sites.
 
-Current version: 0.9.5 [CHANGELOG](CHANGELOG)
+Current version: 0.9.6 [CHANGELOG](CHANGELOG)
 [![Build Status](https://travis-ci.org/cyfdecyf/cow.png?branch=develop)](https://travis-ci.org/cyfdecyf/cow)
 
 ## Features
@@ -51,8 +51,8 @@ Command line options can override options in the configuration file For more det
 
 In ideal situation, you don't need to specify which sites are blocked and which are not, but COW hasen't reached that goal. So you may need to manually specify this if COW made the wrong judgement.
 
-- `~/.cow/blocked` for blocked sites
-- `~/.cow/direct` for directly accessible sites
+- `<dir containing rc file>/blocked` for blocked sites
+- `<dir containing rc file>/direct` for directly accessible sites
 - One line for each domain
   - `google.com` means `*.google.com`
   - You can use domains like `google.com.hk`
@@ -61,7 +61,7 @@ In ideal situation, you don't need to specify which sites are blocked and which 
 
 ## Visited site recording
 
-COW records all visited hosts and visit count in `~/.cow/stat`, which is a json file.
+COW records all visited hosts and visit count in `stat` (which is a json file) under the same directory with config file.
 
 - **For unknown site, first try direct access, use parent proxy upon failure. After 2 minutes, try direct access again**
   - Builtin [common blocked site](site_blocked.go) in order to reduce time to discover blockage and the use parent proxy

@@ -1,3 +1,10 @@
+0.9.6 (2015-06-07)
+    * Reload config by sending SIGUSR1 on Unix system
+    * Load blocked/direct/stat file from same directory as rc file by default
+    * Allow user to specify blocked/direct/stat file path
+    * Detect arm without vfp in install script.
+    * Fix estimate timeout bug
+
 0.9.5 (2015-05-12)
     * Support new encryption method "chacha20" and "salsa20"
     * Avoid biased parent proxy selection for hash load balacing
