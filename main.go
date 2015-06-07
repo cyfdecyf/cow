@@ -4,7 +4,6 @@ import (
 	// "flag"
 	"os"
 	"os/exec"
-	"os/signal"
 	"runtime"
 	// "runtime/pprof"
 	"sync"
@@ -16,29 +15,6 @@ var (
 	quit     chan struct{}
 	relaunch bool
 )
-
-func sigHandler() {
-	// TODO On Windows, these signals will not be triggered on closing cmd
-	// window. How to detect this?
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGUSR1)
-
-	for sig := range sigChan {
-		// May handle other signals in the future.
-		info.Printf("%v caught, exit\n", sig)
-		storeSiteStat(siteStatExit)
-		if sig == syscall.SIGUSR1 {
-			relaunch = true
-		}
-		close(quit)
-		break
-	}
-	/*
-		if *cpuprofile != "" {
-			pprof.StopCPUProfile()
-		}
-	*/
-}
 
 // This code is from goagain
 func lookPath() (argv0 string, err error) {
