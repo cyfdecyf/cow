@@ -9,6 +9,7 @@ import (
 const (
 	rcFname           = "rc"
 	alwaysDirectFname = "direct"
+	alwaysProxyFname  = "proxy"
 
 	newLine = "\n"
 )

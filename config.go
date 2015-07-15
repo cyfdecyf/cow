@@ -75,6 +75,7 @@ var configNeedUpgrade bool // whether should upgrade config file
 var configPath struct {
 	dir          string // directory containing config file and blocked site list
 	alwaysDirect string // direct sites specified by user
+	alwaysProxy  string // sites using proxy specified by user
 }
 
 func printVersion() {
@@ -86,6 +87,7 @@ func init() {
 	// fmt.Println("home dir:", homeDir)
 
 	configPath.alwaysDirect = path.Join(configPath.dir, alwaysDirectFname)
+	configPath.alwaysProxy = path.Join(configPath.dir, alwaysProxyFname)
 
 	config.JudgeByIP = true
 

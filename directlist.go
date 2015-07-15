@@ -38,14 +38,11 @@ func (directList *DirectList) shouldDirect(url *URL) (direct bool) {
 		return true
 	}
 
-	if !config.JudgeByIP {
+	if directList.Domain[url.Host] == domainTypeProxy {
 		return false
 	}
 
-	// if JudgeByIP not enabled, no domain will be set as domainTypeProxy
-	// because domainTypeProxy will only be set when MEOW finds the ip
-	// of the host should not be `direct` at running time
-	if directList.Domain[url.Host] == domainTypeProxy {
+	if !config.JudgeByIP {
 		return false
 	}
 
@@ -81,12 +78,6 @@ func (directList *DirectList) add(host string, domainType DomainType) {
 	directList.Domain[host] = domainType
 }
 
-func (directList *DirectList) loadList(lst []string) {
-	for _, d := range lst {
-		directList.Domain[d] = domainTypeDirect
-	}
-}
-
 func (directList *DirectList) GetDirectList() []string {
 	lst := make([]string, 0)
 	for site, domainType := range directList.Domain {
@@ -99,31 +90,34 @@ func (directList *DirectList) GetDirectList() []string {
 
 var directList = newDirectList()
 
-func initDirectList() {
+func initDomainList(domainListFile string, domainType DomainType) {
 	var exists bool
 	var err error
-	if exists, err = isFileExists(configPath.alwaysDirect); err != nil {
+	if exists, err = isFileExists(domainListFile); err != nil {
 		errl.Printf("Error loading direct domain list: %v\n", err)
 	}
 	if !exists {
 		return
 	}
-	f, err := os.Open(configPath.alwaysDirect)
+	f, err := os.Open(domainListFile)
 	if err != nil {
 		errl.Println("Error opening domain list:", err)
 		return
 	}
 	defer f.Close()
 
+	directList.Lock()
+	defer directList.Unlock()
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		domain := strings.TrimSpace(scanner.Text())
 		if domain == "" {
 			continue
 		}
-		directList.Domain[domain] = domainTypeDirect
+		debug.Printf("Loaded domain %s as type %v", domain, domainType)
+		directList.Domain[domain] = domainType
 	}
 	if scanner.Err() != nil {
-		errl.Printf("Error reading domain list %s: %v\n", configPath.alwaysDirect, scanner.Err())
+		errl.Printf("Error reading domain list %s: %v\n", domainListFile, scanner.Err())
 	}
 }

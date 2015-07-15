@@ -8,6 +8,7 @@ import (
 const (
 	rcFname           = "rc.txt"
 	alwaysDirectFname = "direct.txt"
+	alwaysProxyFname  = "proxy.txt"
 
 	newLine = "\r\n"
 )
