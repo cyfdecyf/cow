@@ -51,7 +51,10 @@
 
 ## 直连列表
 
-直接连接的域名列表保存在 `~/.meow/direct` (OS X, Linux) 或 `direct.txt` (Windows)，例子：
+直接连接的域名列表保存在 `~/.meow/direct` (OS X, Linux) 或 `direct.txt` (Windows)
+
+
+匹配域名**按 . 分隔的后两部分**或者**整个域名**，例子：
 
 -  `baidu.com` => `*.baidu.com`
 -  `com.cn` => `*.com.cn`
@@ -62,8 +65,8 @@
 
 ## 强制使用代理列表
 
-强制使用代理连接的域名列表保存在 `~/.meow/proxy` (OS X, Linux) 或 `proxy.txt` (Windows)，语法格式与直连列表相同。
-
+强制使用代理连接的域名列表保存在 `~/.meow/proxy` (OS X, Linux) 或 `proxy.txt` (Windows)，语法格式与直连列表相同
+（注意：匹配的是域名**按 . 分隔的后两部分**或者**整个域名**）
 
 当本地 DNS 将被墙网站域名解析为国内 IP 时十分有用
 
@@ -86,3 +89,10 @@
 - Github - Github Student Pack
 - https://www.pandafan.org/pac/index.html - Domain White List
 - https://github.com/Leask/Flora_Pac - CN IP Data
+
+## 推荐（我的另一作品）
+
+还在为安卓应用后台苦恼吗？使用**冷桌面**长按即可冻结或者解冻应用，再也不用担心国产应用跑后台啦~
+
+
+详见：http://www.coolapk.com/apk/net.ohrz.coldlauncher
