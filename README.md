@@ -1,6 +1,6 @@
 # MEOW Proxy
 
-当前版本：1.2 [CHANGELOG](CHANGELOG)
+当前版本：1.3 [CHANGELOG](CHANGELOG)
 [![Build Status](https://travis-ci.org/renzhn/MEOW.png?branch=master)](https://travis-ci.org/renzhn/MEOW)
 
 <pre>
@@ -38,12 +38,16 @@
 
 ## 工作方式
 
+当 MEOW 启动时会从配置文件加载直连列表和强制使用代理列表，详见下面两段。
+
 当通过 MEOW 访问一个网站时，MEOW 会：
 
-- 检查域名是否在直连列表中
-- **检查域名的IP是否为国内IP**
-
-如果有一条满足要求，MEOW 会直接连接。否则 MEOW 会通过代理连接。
+- 检查域名是否在直连列表中，如果在则直连
+- 检查域名是否在强制使用代理列表中，如果在则通过代理连接
+- **检查域名的 IP 是否为国内 IP**
+    通过本地 DNS 解析域名，得到域名的 IP
+    如果是国内 IP 则直连，否则通过代理连接
+    将域名加入临时的直连或者强制使用代理列表，避免下次解析域名的 IP
 
 ## 直连列表
 
@@ -55,6 +59,13 @@
 -  `music.163.com` => `music.163.com`
 
 一般是**确定**要直接连接的网站
+
+## 强制使用代理列表
+
+强制使用代理连接的域名列表保存在 `~/.meow/proxy` (OS X, Linux) 或 `proxy.txt` (Windows)，语法格式与直连列表相同。
+
+
+当本地 DNS 将被墙网站域名解析为国内 IP 时十分有用。
 
 ## 与 COW 相比的修改
 

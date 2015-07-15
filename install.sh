@@ -1,6 +1,6 @@
 #!/bin/bash
 
-version=1.2
+version=1.3
 
 arch=`uname -m`
 case $arch in
@@ -100,7 +100,7 @@ if [ ! -e $config_dir ]; then
     sample_config_base="${doc_base}/sample-config"
     echo "Downloading sample config file to $config_dir"
     mkdir -p $config_dir || exit_on_fail "Can't create $config_dir directory"
-    for f in rc rc-full direct; do
+    for f in rc rc-full direct proxy; do
         echo "Downloading $sample_config_base/$f to $config_dir/$f"
         curl -L "$sample_config_base/$f" -o $config_dir/$f || \
             exit_on_fail "Downloading sample config file $f failed"
