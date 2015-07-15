@@ -38,8 +38,8 @@ var defaultTunnelAllowedPort = []string{
 }
 
 type Config struct {
-	RcFile      string          // config file
-	LogFile     string          // path for log file
+	RcFile      string // config file
+	LogFile     string // path for log file
 	JudgeByIP   bool
 	LoadBalance LoadBalanceMode // select load balance mode
 
@@ -61,9 +61,9 @@ type Config struct {
 
 	HttpErrorCode int
 
-	dir         string // directory containing config file
-	DirectFile  string // direct sites specified by user
-	ProxyFile   string // sites using proxy specified by user
+	dir        string // directory containing config file
+	DirectFile string // direct sites specified by user
+	ProxyFile  string // sites using proxy specified by user
 
 	// not configurable in config file
 	PrintVer        bool
@@ -102,7 +102,7 @@ func parseCmdLineConfig() *Config {
 	var c Config
 	var listenAddr string
 
-	flag.StringVar(&c.RcFile, "rc", "", "config file, defaults to $HOME/.cow/rc on Unix, ./rc.txt on Windows")
+	flag.StringVar(&c.RcFile, "rc", "", "config file, defaults to $HOME/.meow/rc on Unix, ./rc.txt on Windows")
 	// Specifying listen default value to StringVar would override config file options
 	flag.StringVar(&listenAddr, "listen", "", "listen address, disables listen in config")
 	flag.IntVar(&c.Core, "core", 2, "number of cores to use")
@@ -121,6 +121,8 @@ func parseCmdLineConfig() *Config {
 		Fatal("fail to get config file:", err)
 	}
 	initConfig(c.RcFile)
+	initDomainList(config.DirectFile, domainTypeDirect)
+	initDomainList(config.ProxyFile, domainTypeProxy)
 
 	if listenAddr != "" {
 		configParser{}.ParseListen(listenAddr)

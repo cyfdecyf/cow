@@ -28,9 +28,6 @@ func main() {
 	initSelfListenAddr()
 	initLog()
 	initAuth()
-	initDomainList(configPath.alwaysDirect, domainTypeDirect)
-	initDomainList(configPath.alwaysProxy, domainTypeProxy)
-
 	initStat()
 
 	initParentPool()

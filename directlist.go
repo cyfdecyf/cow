@@ -28,6 +28,7 @@ func newDirectList() *DirectList {
 }
 
 func (directList *DirectList) shouldDirect(url *URL) (direct bool) {
+	debug.Printf("judging host: %s", url.Host)
 	if parentProxy.empty() { // no way to retry, so always visit directly
 		return true
 	}
@@ -35,10 +36,12 @@ func (directList *DirectList) shouldDirect(url *URL) (direct bool) {
 		return true
 	}
 	if directList.Domain[url.Host] == domainTypeDirect || directList.Domain[url.Domain] == domainTypeDirect {
+		debug.Printf("host or domain should direct")
 		return true
 	}
 
-	if directList.Domain[url.Host] == domainTypeProxy {
+	if directList.Domain[url.Host] == domainTypeProxy || directList.Domain[url.Domain] == domainTypeProxy {
+		debug.Printf("host or domain should using proxy")
 		return false
 	}
 
@@ -91,12 +94,8 @@ func (directList *DirectList) GetDirectList() []string {
 var directList = newDirectList()
 
 func initDomainList(domainListFile string, domainType DomainType) {
-	var exists bool
 	var err error
-	if exists, err = isFileExists(domainListFile); err != nil {
-		errl.Printf("Error loading direct domain list: %v\n", err)
-	}
-	if !exists {
+	if err = isFileExists(domainListFile); err != nil {
 		return
 	}
 	f, err := os.Open(domainListFile)
