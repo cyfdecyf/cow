@@ -35,12 +35,12 @@
     # 监听地址，设为0.0.0.0可以监听所有端口，共享给局域网使用
     listen = http://127.0.0.1:4411
     # 至少指定一个上级代理
-    # SOCKS5 二级代理
-    proxy = socks5://127.0.0.1:1080
-    # HTTP 二级代理
-    proxy = http://127.0.0.1:8087
-    # shadowsocks 二级代理
-    proxy = ss://aes-128-cfb:password@example.server.com:25
+    # SOCKS5 上级代理
+    # proxy = socks5://127.0.0.1:1080
+    # HTTP 上级代理
+    # proxy = http://127.0.0.1:8087
+    # shadowsocks 上级代理
+    # proxy = ss://aes-128-cfb:password@example.server.com:25
 
 ## 工作方式
 
