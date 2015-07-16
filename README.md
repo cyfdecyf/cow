@@ -12,6 +12,12 @@
 
 如果你的代理有充足的流量和比直接连接国外网站更快的速度，为和不将国外网站统统用代理来连接呢？麻麻再也不用担心网站被墙了！发挥出你goagent和shadowsocks更大的潜力吧！
 
+## 更新说明
+
+- 2015-07-16
+
+       1.3 版本更新了默认的直连列表、加入了强制使用代理列表，强烈推荐旧版本用户更新 [direct](https://raw.githubusercontent.com/renzhn/MEOW/master/doc/sample-config/direct) 文件和下载 [proxy](https://raw.githubusercontent.com/renzhn/MEOW/master/doc/sample-config/proxy) 文件（或者重新安装）
+
 ## 获取
 
 - **OS X, Linux:** 执行以下命令（也可用于更新）
