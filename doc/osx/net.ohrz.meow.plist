@@ -15,5 +15,10 @@
     </dict>
     <key>RunAtLoad</key>
     <true/>
+    <key>SoftResourceLimits</key>
+    <dict>
+      <key>NumberOfFiles</key>
+      <integer>20480</integer>
+    </dict>
   </dict>
 </plist>
