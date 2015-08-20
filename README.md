@@ -14,6 +14,10 @@
 
 ## 更新说明
 
+- 2015-08-20
+
+       使用最新的 Go 1.5 编译
+
 - 2015-07-16
 
        1.3 版本更新了默认的直连列表、加入了强制使用代理列表，强烈推荐旧版本用户更新 [direct](https://raw.githubusercontent.com/renzhn/MEOW/master/doc/sample-config/direct) 文件和下载 [proxy](https://raw.githubusercontent.com/renzhn/MEOW/master/doc/sample-config/proxy) 文件（或者重新安装）
