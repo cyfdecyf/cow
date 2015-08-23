@@ -10,8 +10,6 @@
    \(__)|      国内网站直接连接，其他的网站使用代理连接
 </pre>
 
-如果你的代理有充足的流量和比直接连接国外网站更快的速度，为和不将国外网站统统用代理来连接呢？麻麻再也不用担心网站被墙了！发挥出你goagent和shadowsocks更大的潜力吧！
-
 ## 更新说明
 
 - 2015-08-23 Version 1.3.1
@@ -100,10 +98,3 @@
 - Github - Github Student Pack
 - https://www.pandafan.org/pac/index.html - Domain White List
 - https://github.com/Leask/Flora_Pac - CN IP Data
-
-## 推荐（我的另一作品）
-
-还在为安卓应用后台苦恼吗？使用**冷桌面**长按即可冻结或者解冻应用，再也不用担心国产应用跑后台啦~
-
-
-详见：http://www.coolapk.com/apk/net.ohrz.coldlauncher
