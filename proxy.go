@@ -404,12 +404,6 @@ func (c *clientConn) serve() {
 			authed = true
 		}
 
-		if r.isConnect && !config.TunnelAllowedPort[r.URL.Port] {
-			sendErrorPage(c, statusForbidden, "Forbidden tunnel port",
-				genErrMsg(&r, nil, "Please contact proxy admin."))
-			return
-		}
-
 		if r.ExpectContinue {
 			sendErrorPage(c, statusExpectFailed, "Expect header not supported",
 				"Please contact meow's developer if you see this.")

@@ -27,23 +27,11 @@ const (
 	loadBalanceLatency
 )
 
-// allow the same tunnel ports as polipo
-var defaultTunnelAllowedPort = []string{
-	"22", "80", "443", // ssh, http, https
-	"873",                      // rsync
-	"143", "220", "585", "993", // imap, imap3, imap4-ssl, imaps
-	"109", "110", "473", "995", // pop2, pop3, hybrid-pop, pop3s
-	"5222", "5269", // jabber-client, jabber-server
-	"2401", "3690", "9418", // cvspserver, svn, git
-}
-
 type Config struct {
 	RcFile      string // config file
 	LogFile     string // path for log file
 	JudgeByIP   bool
 	LoadBalance LoadBalanceMode // select load balance mode
-
-	TunnelAllowedPort map[string]bool // allowed ports to create tunnel
 
 	SshServer []string
 
@@ -88,11 +76,6 @@ func initConfig(rcFile string) {
 	config.JudgeByIP = true
 
 	config.AuthTimeout = 2 * time.Hour
-
-	config.TunnelAllowedPort = make(map[string]bool)
-	for _, port := range defaultTunnelAllowedPort {
-		config.TunnelAllowedPort[port] = true
-	}
 }
 
 // Whether command line options specifies listen addr
@@ -367,17 +350,6 @@ func (p configParser) ParseAddrInPAC(val string) {
 		} else {
 			Fatal("can't specify address in PAC for non http proxy")
 		}
-	}
-}
-
-func (p configParser) ParseTunnelAllowedPort(val string) {
-	arr := strings.Split(val, ",")
-	for _, s := range arr {
-		s = strings.TrimSpace(s)
-		if _, err := strconv.Atoi(s); err != nil {
-			Fatal("tunnel allowed ports", err)
-		}
-		config.TunnelAllowedPort[s] = true
 	}
 }
 
