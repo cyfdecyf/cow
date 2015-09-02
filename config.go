@@ -215,6 +215,30 @@ func (pp proxyParser) ProxyHttp(val string) {
 	parentProxy.add(parent)
 }
 
+func (pp proxyParser) ProxyHttps(val string) {
+	var userPasswd, server string
+
+	arr := strings.Split(val, "@")
+	if len(arr) == 1 {
+		server = arr[0]
+	} else if len(arr) == 2 {
+		userPasswd = arr[0]
+		server = arr[1]
+	} else {
+		Fatal("http parent proxy contains more than one @:", val)
+	}
+
+	if err := checkServerAddr(server); err != nil {
+		Fatal("parent http server", err)
+	}
+
+	config.saveReqLine = true
+
+	parent := newHttpsParent(server)
+	parent.initAuth(userPasswd)
+	parentProxy.add(parent)
+}
+
 // Parse method:passwd@server:port
 func parseMethodPasswdServer(val string) (method, passwd, server string, err error) {
 	// Use the right-most @ symbol to seperate method:passwd and server:port.
