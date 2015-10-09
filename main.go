@@ -18,7 +18,7 @@ func main() {
 	fmt.Printf(`
        /\
    )  ( ')     MEOW Proxy %s
-  (  /  )      http://meowproxy.me
+  (  /  )      http://renzhn.github.io/MEOW/
    \(__)|      
 	`, version)
 	fmt.Println()

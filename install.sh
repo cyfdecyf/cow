@@ -83,7 +83,7 @@ fi
 bin=MEOW-$os-$arch-$version
 tmpdir=`mktemp -d /tmp/MEOW.XXXXXX`
 tmpbin=$tmpdir/MEOW
-binary_url="http://meowproxy.me/dist/$bin.gz"
+binary_url="https://github.com/renzhn/MEOW/raw/gh-pages/dist/$bin.gz"
 echo "Downloading MEOW binary $binary_url to $tmpbin.gz"
 curl -L "$binary_url" -o $tmpbin.gz || \
     exit_on_fail "Downloading MEOW binary failed"
