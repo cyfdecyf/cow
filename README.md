@@ -13,7 +13,7 @@
 ## 更新说明
 - 2015-10-09 Version 1.3.2
 
-       * 完全托管在 github，不再使用 meowproxy.me 域名
+       * 完全托管在 github，不再使用 meowproxy.me 域名，[新的下载地址](https://github.com/renzhn/MEOW/tree/gh-pages/dist/)
 
 - 2015-08-23 Version 1.3.1
 
