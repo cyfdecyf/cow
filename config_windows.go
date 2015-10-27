@@ -9,6 +9,7 @@ const (
 	rcFname      = "rc.txt"
 	directFname  = "direct.txt"
 	proxyFname   = "proxy.txt"
+	rejectFname  = "reject.txt"
 
 	newLine = "\r\n"
 )

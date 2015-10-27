@@ -597,8 +597,14 @@ func (c *clientConn) readResponse(sv *serverConn, r *Request, rp *Response) (err
 }
 
 func (c *clientConn) getServerConn(r *Request) (*serverConn, error) {
-	direct := directList.shouldDirect(r.URL)
+	domainType := directList.shouldDirect(r.URL)
 	// For CONNECT method, always create new connection.
+	direct := (domainType == domainTypeDirect)
+	if domainType == domainTypeReject {
+		dbgRq.Printf("%s REJECT\n", r.URL)
+		return nil, errors.New("Reject")
+	}
+
 	if r.isConnect {
 		return c.createServerConn(r, direct)
 	}

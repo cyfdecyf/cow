@@ -52,6 +52,7 @@ type Config struct {
 	dir        string // directory containing config file
 	DirectFile string // direct sites specified by user
 	ProxyFile  string // sites using proxy specified by user
+	RejectFile string
 
 	// not configurable in config file
 	PrintVer        bool
@@ -72,6 +73,7 @@ func initConfig(rcFile string) {
 	config.dir = path.Dir(rcFile)
 	config.DirectFile = path.Join(config.dir, directFname)
 	config.ProxyFile = path.Join(config.dir, proxyFname)
+	config.RejectFile = path.Join(config.dir, rejectFname)
 
 	config.JudgeByIP = true
 
@@ -106,6 +108,7 @@ func parseCmdLineConfig() *Config {
 	initConfig(c.RcFile)
 	initDomainList(config.DirectFile, domainTypeDirect)
 	initDomainList(config.ProxyFile, domainTypeProxy)
+	initDomainList(config.RejectFile, domainTypeReject)
 
 	if listenAddr != "" {
 		configParser{}.ParseListen(listenAddr)

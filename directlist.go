@@ -19,6 +19,7 @@ const (
 	domainTypeUnknown DomainType = iota
 	domainTypeDirect
 	domainTypeProxy
+	domainTypeReject
 )
 
 func newDirectList() *DirectList {
@@ -27,26 +28,31 @@ func newDirectList() *DirectList {
 	}
 }
 
-func (directList *DirectList) shouldDirect(url *URL) (direct bool) {
+func (directList *DirectList) shouldDirect(url *URL) (domainType DomainType) {
 	debug.Printf("judging host: %s", url.Host)
 	if parentProxy.empty() { // no way to retry, so always visit directly
-		return true
+		return domainTypeDirect
 	}
 	if url.Domain == "" { // simple host or private ip
-		return true
+		return domainTypeDirect
 	}
 	if directList.Domain[url.Host] == domainTypeDirect || directList.Domain[url.Domain] == domainTypeDirect {
 		debug.Printf("host or domain should direct")
-		return true
+		return domainTypeDirect
 	}
 
 	if directList.Domain[url.Host] == domainTypeProxy || directList.Domain[url.Domain] == domainTypeProxy {
 		debug.Printf("host or domain should using proxy")
-		return false
+		return domainTypeProxy
+	}
+
+	if directList.Domain[url.Host] == domainTypeReject || directList.Domain[url.Domain] == domainTypeReject {
+		debug.Printf("host or domain should reject")
+		return domainTypeReject
 	}
 
 	if !config.JudgeByIP {
-		return false
+		return domainTypeProxy
 	}
 
 	var ip string
@@ -54,24 +60,24 @@ func (directList *DirectList) shouldDirect(url *URL) (direct bool) {
 	if isIP {
 		if isPrivate {
 			directList.add(url.Host, domainTypeDirect)
-			return true
+			return domainTypeDirect
 		}
 		ip = url.Host
 	} else {
 		hostIPs, err := net.LookupIP(url.Host)
 		if err != nil {
 			errl.Printf("error looking up host ip %s, err %s", url.Host, err)
-			return false
+			return domainTypeProxy
 		}
 		ip = hostIPs[0].String()
 	}
 
 	if ipShouldDirect(ip) {
 		directList.add(url.Host, domainTypeDirect)
-		return true
+		return domainTypeDirect
 	} else {
 		directList.add(url.Host, domainTypeProxy)
-		return false
+		return domainTypeProxy
 	}
 }
 

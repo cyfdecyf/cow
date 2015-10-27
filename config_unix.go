@@ -10,6 +10,7 @@ const (
 	rcFname      = "rc"
 	directFname  = "direct"
 	proxyFname   = "proxy"
+	rejectFname  = "reject"
 
 	newLine = "\n"
 )
