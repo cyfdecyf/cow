@@ -92,7 +92,7 @@ chmod +x $tmpbin ||
     exit_on_fail "Can't chmod for $tmpbin"
 
 # Download sample config file if no configuration directory present
-doc_base="https://raw.github.com/renzhn/MEOW/$version/doc"
+doc_base="https://raw.github.com/renzhn/MEOW/master/doc"
 config_dir="$HOME/.meow"
 is_update=true
 if [ ! -e $config_dir ]; then
