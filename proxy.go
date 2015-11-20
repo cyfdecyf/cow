@@ -619,7 +619,7 @@ func (c *clientConn) readResponse(sv *serverConn, r *Request, rp *Response) (err
 }
 
 func (c *clientConn) getServerConn(r *Request) (*serverConn, error) {
-	domainType := directList.shouldDirect(r.URL)
+	domainType := domainList.judge(r.URL)
 	// For CONNECT method, always create new connection.
 	direct := (domainType == domainTypeDirect)
 	if domainType == domainTypeReject {

@@ -4,15 +4,15 @@ import (
 	"testing"
 )
 
-func TestShouldDirect(t *testing.T) {
-	directList := newDirectList()
+func Testjudge(t *testing.T) {
+	domainList := newDomainList()
 
-	directList.Domain["com.cn"] = domainTypeDirect
-	directList.Domain["edu.cn"] = domainTypeDirect
-	directList.Domain["baidu.com"] = domainTypeDirect
+	domainList.Domain["com.cn"] = domainTypeDirect
+	domainList.Domain["edu.cn"] = domainTypeDirect
+	domainList.Domain["baidu.com"] = domainTypeDirect
 
 	g, _ := ParseRequestURI("gtemp.com")
-	if directList.shouldDirect(g) {
+	if domainList.judge(g) == domainTypeProxy {
 		t.Error("never visited site should be considered using proxy")
 	}
 
@@ -23,7 +23,7 @@ func TestShouldDirect(t *testing.T) {
 	}
 	for _, domain := range directDomains {
 		url, _ := ParseRequestURI(domain)
-		if !directList.shouldDirect(url) {
+		if domainList.judge(url) == domainTypeDirect {
 			t.Errorf("domain %s in direct list should be considered using direct, host: %s", domain, url.Host)
 		}
 	}

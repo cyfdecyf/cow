@@ -15,13 +15,13 @@ func init() {
 	const pacRawTmpl = `var direct = 'DIRECT';
 var httpProxy = 'PROXY {{.ProxyAddr}}; DIRECT';
 
-var directList = [
+var domainList = [
 "{{.DirectDomains}}"
 ];
 
 var directAcc = [];
-for (var i = 0; i < directList.length; i += 1) {
-	directAcc[directList[i]] = true;
+for (var i = 0; i < domainList.length; i += 1) {
+	directAcc[domainList[i]] = true;
 }
 
 // hostIsIP determines whether a host address is an IP address and whether
@@ -120,7 +120,7 @@ func genPAC(c *clientConn) []byte {
 	}
 
 	directDomains := ""
-	for k, v := range directList.Domain {
+	for k, v := range domainList.Domain {
 		if v == domainTypeDirect {
 			directDomains += k + "\",\n\""
 		}
