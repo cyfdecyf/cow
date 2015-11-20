@@ -30,6 +30,10 @@ func newDirectList() *DirectList {
 
 func (directList *DirectList) shouldDirect(url *URL) (domainType DomainType) {
 	debug.Printf("judging host: %s", url.Host)
+	if directList.Domain[url.Host] == domainTypeReject || directList.Domain[url.Domain] == domainTypeReject {
+		debug.Printf("host or domain should reject")
+		return domainTypeReject
+	}
 	if parentProxy.empty() { // no way to retry, so always visit directly
 		return domainTypeDirect
 	}
@@ -40,15 +44,9 @@ func (directList *DirectList) shouldDirect(url *URL) (domainType DomainType) {
 		debug.Printf("host or domain should direct")
 		return domainTypeDirect
 	}
-
 	if directList.Domain[url.Host] == domainTypeProxy || directList.Domain[url.Domain] == domainTypeProxy {
 		debug.Printf("host or domain should using proxy")
 		return domainTypeProxy
-	}
-
-	if directList.Domain[url.Host] == domainTypeReject || directList.Domain[url.Domain] == domainTypeReject {
-		debug.Printf("host or domain should reject")
-		return domainTypeReject
 	}
 
 	if !config.JudgeByIP {
