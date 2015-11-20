@@ -356,8 +356,11 @@ func (p configParser) ParseListen(val string) {
 	if method == zeroMethod {
 		Fatalf("no such listen protocol \"%s\"\n", arr[0])
 	}
-	args := []reflect.Value{reflect.ValueOf(server), reflect.ValueOf(protocol)}
-	method.Call(args)
+	if methodName == "ListenMeow" {
+		method.Call([]reflect.Value{reflect.ValueOf(server)})
+	} else {
+		method.Call([]reflect.Value{reflect.ValueOf(server), reflect.ValueOf(protocol)})
+	}
 }
 
 func (p configParser) ParseLogFile(val string) {
