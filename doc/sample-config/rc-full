@@ -12,7 +12,7 @@
 #   上面的例子中，meow 生成的 PAC url 为 http://127.0.0.1:4411/pac
 #
 # HTTPS (提供 https 代理):
-#   listen = https://127.0.0.1:443
+#   listen = https://example.com:443
 #
 #   上面的例子中，meow 生成的 PAC url 为 https://127.0.0.1:443/pac
 #   还需要设置:
