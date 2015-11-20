@@ -4,7 +4,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/cyfdecyf/bufio"
 	"net"
 	"os"
 	"path"
@@ -12,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/cyfdecyf/bufio"
 )
 
 const (
@@ -56,7 +57,6 @@ type Config struct {
 
 	// not configurable in config file
 	PrintVer        bool
-	EstimateTimeout bool // if run estimateTimeout()
 
 	// not config option
 	saveReqLine bool // for http and meow parent, should save request line from client
@@ -93,7 +93,6 @@ func parseCmdLineConfig() *Config {
 	flag.IntVar(&c.Core, "core", 2, "number of cores to use")
 	flag.StringVar(&c.LogFile, "logFile", "", "write output to file")
 	flag.BoolVar(&c.PrintVer, "version", false, "print version")
-	flag.BoolVar(&c.EstimateTimeout, "estimate", true, "enable/disable estimate timeout")
 
 	flag.Parse()
 
@@ -689,8 +688,6 @@ func overrideConfig(oldconfig, override *Config) {
 			}
 		}
 	}
-
-	oldconfig.EstimateTimeout = override.EstimateTimeout
 }
 
 // Must call checkConfig before using config.
