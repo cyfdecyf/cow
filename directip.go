@@ -1,9 +1,5 @@
 package main
 
-import (
-	"sort"
-)
-
 func ipShouldDirect(ip string) (direct bool) {
 	direct = false
 	defer func() {
@@ -22,7 +18,11 @@ func ipShouldDirect(ip string) (direct bool) {
 	if ipLong == 0 {
 		return true
 	}
-	ipIndex := sort.Search(len(CNIPDataStart), func(i int) bool {
+	firstByte := ipLong >> 24
+	if CNIPDataRange[firstByte].end == 0 {
+		return false
+	}
+	ipIndex := searchRange(CNIPDataRange[firstByte].start, CNIPDataRange[firstByte].end, func(i int) bool {
 		return CNIPDataStart[i] > ipLong
 	})
 	ipIndex--

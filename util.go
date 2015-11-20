@@ -416,3 +416,18 @@ func ip2long(ipstr string) (uint32, error) {
 	}
 	return binary.BigEndian.Uint32(ip), nil
 }
+
+// search between [start, end]
+func searchRange(start, end int, f func(int) bool) int {
+	i, j := start, end+1
+	for i < j {
+		h := i + (j-i)/2 // avoid overflow when computing h
+		// i ≤ h < j
+		if !f(h) {
+			i = h + 1 // preserves f(i-1) == false
+		} else {
+			j = h // preserves f(j) == true
+		}
+	}
+	return i
+}
