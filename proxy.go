@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"crypto/rand"
 	"crypto/tls"
 	"errors"
 	"fmt"
@@ -143,7 +142,6 @@ func (hp *httpProxy) Serve(wg *sync.WaitGroup) {
 		config := tls.Config{
 			Certificates:             []tls.Certificate{cert},
 			InsecureSkipVerify:       false,
-			Rand:                     rand.Reader,
 			MinVersion:               tls.VersionTLS11,
 			PreferServerCipherSuites: true,
 		}
@@ -906,8 +904,9 @@ func (sv *serverConn) doConnect(r *Request, c *clientConn) (err error) {
 	r.state = rsCreated
 
 	_, isHttpConn := sv.Conn.(httpConn)
+	_, isHttpsConn := sv.Conn.(httpsConn)
 	_, isMeowConn := sv.Conn.(meowConn)
-	if isHttpConn || isMeowConn {
+	if isHttpConn || isHttpsConn || isMeowConn {
 		if debug {
 			debug.Printf("cli(%s) send CONNECT request to parent\n", c.RemoteAddr())
 		}
@@ -962,6 +961,12 @@ func (sv *serverConn) sendHTTPProxyRequestHeader(r *Request, c *clientConn) (err
 			return c.handleServerWriteError(r, sv, err,
 				"send proxy authorization header to http parent")
 		}
+	} else if hc, ok := sv.Conn.(httpsConn); ok && hc.parent.authHeader != nil {
+		// Add authorization header for parent http proxy
+		if _, err = sv.Write(hc.parent.authHeader); err != nil {
+			return c.handleServerWriteError(r, sv, err,
+				"send proxy authorization header to https parent")
+		}
 	}
 	// When retry, body is in raw buffer.
 	if _, err = sv.Write(r.rawHeaderBody()); err != nil {
@@ -979,7 +984,7 @@ func (sv *serverConn) sendHTTPProxyRequestHeader(r *Request, c *clientConn) (err
 func (sv *serverConn) sendRequestHeader(r *Request, c *clientConn) (err error) {
 	// Send request to the server
 	switch sv.Conn.(type) {
-	case httpConn, meowConn:
+	case httpConn, httpsConn, meowConn:
 		return sv.sendHTTPProxyRequestHeader(r, c)
 	}
 	/*
