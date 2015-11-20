@@ -60,6 +60,8 @@ type Config struct {
 
 	// not config option
 	saveReqLine bool // for http and meow parent, should save request line from client
+	Cert        string
+	Key         string
 }
 
 var config Config
@@ -93,6 +95,8 @@ func parseCmdLineConfig() *Config {
 	flag.IntVar(&c.Core, "core", 2, "number of cores to use")
 	flag.StringVar(&c.LogFile, "logFile", "", "write output to file")
 	flag.BoolVar(&c.PrintVer, "version", false, "print version")
+	flag.StringVar(&c.Cert, "cert", "", "cert for local https proxy")
+	flag.StringVar(&c.Key, "key", "", "key for local https proxy")
 
 	flag.Parse()
 
@@ -246,13 +250,14 @@ func (pp proxyParser) ProxyMeow(val string) {
 // listenParser provides functions to parse different types of listen addresses
 type listenParser struct{}
 
-func (lp listenParser) ListenHttp(val string) {
+func (lp listenParser) ListenHttp(val string, proto string) {
 	if cmdHasListenAddr {
 		return
 	}
+
 	arr := strings.Fields(val)
 	if len(arr) > 2 {
-		Fatal("too many fields in listen = http://", val)
+		Fatal("too many fields in listen =", proto, val)
 	}
 
 	var addr, addrInPAC string
@@ -262,9 +267,9 @@ func (lp listenParser) ListenHttp(val string) {
 	}
 
 	if err := checkServerAddr(addr); err != nil {
-		Fatal("listen http server", err)
+		Fatal("listen", proto, "server", err)
 	}
-	addListenProxy(newHttpProxy(addr, addrInPAC))
+	addListenProxy(newHttpProxy(addr, addrInPAC, proto))
 }
 
 func (lp listenParser) ListenMeow(val string) {
@@ -320,11 +325,14 @@ func (p configParser) ParseListen(val string) {
 	}
 
 	methodName := "Listen" + strings.ToUpper(protocol[0:1]) + protocol[1:]
+	if methodName == "ListenHttps" {
+		methodName = "ListenHttp"
+	}
 	method := parser.MethodByName(methodName)
 	if method == zeroMethod {
 		Fatalf("no such listen protocol \"%s\"\n", arr[0])
 	}
-	args := []reflect.Value{reflect.ValueOf(server)}
+	args := []reflect.Value{reflect.ValueOf(server), reflect.ValueOf(protocol)}
 	method.Call(args)
 }
 
@@ -544,6 +552,14 @@ func (p configParser) ParseJudgeByIP(val string) {
 	config.JudgeByIP = parseBool(val, "judgeByIP")
 }
 
+func (p configParser) ParseCert(val string) {
+	config.Cert = val
+}
+
+func (p configParser) ParseKey(val string) {
+	config.Key = val
+}
+
 // overrideConfig should contain options from command line to override options
 // in config file.
 func parseConfig(rc string, override *Config) {
@@ -695,6 +711,6 @@ func checkConfig() {
 	checkShadowsocks()
 	// listenAddr must be handled first, as addrInPAC dependends on this.
 	if listenProxy == nil {
-		listenProxy = []Proxy{newHttpProxy(defaultListenAddr, "")}
+		listenProxy = []Proxy{newHttpProxy(defaultListenAddr, "", "http")}
 	}
 }

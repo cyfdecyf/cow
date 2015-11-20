@@ -2,16 +2,19 @@ package main
 
 import (
 	"bytes"
+	"crypto/rand"
+	"crypto/tls"
 	"errors"
 	"fmt"
-	"github.com/cyfdecyf/bufio"
-	"github.com/cyfdecyf/leakybuf"
-	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
 	"io"
 	"net"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/cyfdecyf/bufio"
+	"github.com/cyfdecyf/leakybuf"
+	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
 )
 
 // As I'm using ReadSlice to read line, it's possible to get
@@ -101,21 +104,22 @@ type httpProxy struct {
 	addr      string // listen address, contains port
 	port      string // for use when generating PAC
 	addrInPAC string // proxy server address to use in PAC
+	proto     string
 }
 
-func newHttpProxy(addr, addrInPAC string) *httpProxy {
+func newHttpProxy(addr, addrInPAC string, proto string) *httpProxy {
 	_, port, err := net.SplitHostPort(addr)
 	if err != nil {
 		panic("proxy addr" + err.Error())
 	}
-	return &httpProxy{addr, port, addrInPAC}
+	return &httpProxy{addr, port, addrInPAC, proto}
 }
 
 func (proxy *httpProxy) genConfig() string {
 	if proxy.addrInPAC != "" {
-		return fmt.Sprintf("listen = http://%s %s", proxy.addr, proxy.addrInPAC)
+		return fmt.Sprintf("listen = %s://%s %s", proxy.proto, proxy.addr, proxy.addrInPAC)
 	} else {
-		return fmt.Sprintf("listen = http://%s", proxy.addr)
+		return fmt.Sprintf("listen = %s://%s", proxy.proto, proxy.addr)
 	}
 }
 
@@ -124,29 +128,49 @@ func (proxy *httpProxy) Addr() string {
 }
 
 func (hp *httpProxy) Serve(wg *sync.WaitGroup) {
+	var err error
+	var ln net.Listener
 	defer func() {
 		wg.Done()
 	}()
-	ln, err := net.Listen("tcp", hp.addr)
+
+	if hp.proto == "https" {
+		cert, err := tls.LoadX509KeyPair(config.Cert, config.Key)
+		if err != nil {
+			fmt.Println("cert error:", err.Error())
+			return
+		}
+		config := tls.Config{
+			Certificates:             []tls.Certificate{cert},
+			InsecureSkipVerify:       false,
+			Rand:                     rand.Reader,
+			MinVersion:               tls.VersionTLS11,
+			PreferServerCipherSuites: true,
+		}
+		ln, err = tls.Listen("tcp", hp.addr, &config)
+	} else {
+		ln, err = net.Listen("tcp", hp.addr)
+	}
+
 	if err != nil {
-		fmt.Println("listen http failed:", err)
+		fmt.Println("listen", hp.proto, "failed:", err)
 		return
 	}
 	host, _, _ := net.SplitHostPort(hp.addr)
 	var pacURL string
 	if host == "" || host == "0.0.0.0" {
-		pacURL = fmt.Sprintf("http://<hostip>:%s/pac", hp.port)
+		pacURL = fmt.Sprintf("%s://<hostip>:%s/pac", hp.proto, hp.port)
 	} else if hp.addrInPAC == "" {
-		pacURL = fmt.Sprintf("http://%s/pac", hp.addr)
+		pacURL = fmt.Sprintf("%s://%s/pac", hp.proto, hp.addr)
 	} else {
-		pacURL = fmt.Sprintf("http://%s/pac", hp.addrInPAC)
+		pacURL = fmt.Sprintf("%s://%s/pac", hp.proto, hp.addrInPAC)
 	}
-	info.Printf("listen http %s, PAC url %s\n", hp.addr, pacURL)
+	info.Printf("listen %s %s, PAC url %s\n", hp.proto, hp.addr, pacURL)
 
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
-			errl.Printf("http proxy(%s) accept %v\n", ln.Addr(), err)
+			errl.Printf("%s proxy(%s) accept %v\n", hp.proto, ln.Addr(), err)
 			if isErrTooManyOpenFd(err) {
 				connPool.CloseAll()
 			}
