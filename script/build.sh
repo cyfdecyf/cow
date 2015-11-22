@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -e
+
 cd "$( dirname "${BASH_SOURCE[0]}" )/.."
 
 version=`grep '^version=' ./install.sh | sed -s 's/version=//'`
