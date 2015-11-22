@@ -28,9 +28,10 @@ pack() {
         sed -e 's/$/\r/' ../doc/sample-config/rc-full > rc-full.txt
         sed -e 's/$/\r/' ../doc/sample-config/direct > direct.txt
         sed -e 's/$/\r/' ../doc/sample-config/proxy > proxy.txt
+        sed -e 's/$/\r/' ../doc/sample-config/reject > reject.txt
         mv meow-taskbar.exe MEOW.exe
-        zip $name.zip proxy.exe MEOW.exe rc.txt rc-full.txt direct.txt proxy.txt
-        rm -f proxy.exe rc.txt rc-full.txt direct.txt proxy.txt
+        zip $name.zip proxy.exe MEOW.exe rc.txt rc-full.txt direct.txt proxy.txt reject.txt
+        rm -f proxy.exe rc.txt rc-full.txt direct.txt proxy.txt reject.txt
         mv $name.zip ../bin/
         mv MEOW.exe meow-taskbar.exe
         popd
