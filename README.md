@@ -11,6 +11,13 @@
 </pre>
 
 ## 更新说明
+- 2015-11-22 Version 1.3.3
+
+       * 增加 `reject` 拒绝连接列表
+       * 支持作为 HTTPS 服务器监听
+       * 支持 HTTPS 服务器作为父代理
+	
+	
 - 2015-10-09 Version 1.3.2
 
        * 完全托管在 github，不再使用 meowproxy.me 域名，[新的下载地址](https://github.com/renzhn/MEOW/tree/gh-pages/dist/)
