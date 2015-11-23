@@ -54,6 +54,8 @@
     # proxy = http://127.0.0.1:8087
     # shadowsocks 上级代理
     # proxy = ss://aes-128-cfb:password@example.server.com:25
+    # HTTPS 上级代理
+    # proxy = https://user:password@example.server.com:port
 
 ## 工作方式
 
