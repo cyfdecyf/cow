@@ -1,20 +1,20 @@
 #!/bin/bash
 ### BEGIN INIT INFO
-# Provides:          meow
+# Provides:          MEOW
 # Required-Start:    $network
 # Required-Stop:     $network
 # Default-Start:     2 3 4 5
 # Default-Stop:      0 1 6
-# Short-Description: meow: Climb Over the Wall http proxy
+# Short-Description: MEOW Proxy
 # Description:       Automatically detect blocked site and use parent proxy.
 ### END INIT INFO
 
 # Put this script under /etc/init.d/, then run "update-rc.d meow defaults".
 
-# Note: this script requires sudo in order to run meow as the specified
+# Note: this script requires sudo in order to run MEOW as the specified
 # user. Please change the following variables in order to use this script.
-# meow will search for rc/direct/block/stat file under user's $HOME/.meow/ directory.
-BIN=/usr/local/bin/meow
+# MEOW will search for rc/direct/block/stat file under user's $HOME/.meow/ directory.
+BIN=/usr/local/bin/MEOW
 USER=sym
 GROUP=sym
 PID_DIR=/var/run
