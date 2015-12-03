@@ -4,15 +4,7 @@ package main
 
 import (
 	"net"
-	"syscall"
 )
-
-func isErrConnReset(err error) bool {
-	if ne, ok := err.(*net.OpError); ok {
-		return ne.Err == syscall.ECONNRESET
-	}
-	return false
-}
 
 func isDNSError(err error) bool {
 	if _, ok := err.(*net.DNSError); ok {
@@ -35,12 +27,4 @@ func isErrOpRead(err error) bool {
 		return false
 	}
 	return ne.Op == "read"
-}
-
-func isErrTooManyOpenFd(err error) bool {
-	if ne, ok := err.(*net.OpError); ok && (ne.Err == syscall.EMFILE || ne.Err == syscall.ENFILE) {
-		errl.Println("too many open fd")
-		return true
-	}
-	return false
 }
