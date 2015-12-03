@@ -1,6 +1,6 @@
 # MEOW Proxy
 
-当前版本：1.3.3 [CHANGELOG](CHANGELOG)
+当前版本：1.3.4 [CHANGELOG](CHANGELOG)
 [![Build Status](https://travis-ci.org/renzhn/MEOW.png?branch=master)](https://travis-ci.org/renzhn/MEOW)
 
 <pre>
@@ -11,6 +11,11 @@
 </pre>
 
 ## 更新说明
+- 2015-12-03 Version 1.3.4
+
+       * 修正客户端连接未正确关闭 bug
+       * 修正对文件描述符过多错误的判断 (too many open files)
+
 - 2015-11-22 Version 1.3.3
 
        * 增加 `reject` 拒绝连接列表
