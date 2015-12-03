@@ -269,6 +269,35 @@ func (c *clientConn) Close() {
 	c.Conn.Close()
 }
 
+func (c *clientConn) setReadTimeout(msg string) {
+	// Always keep connections alive for meow conn from client for more reuse.
+	// For other client connections, set read timeout so we can close the
+	// connection after a period of idle to reduce number of open connections.
+	if _, ok := c.Conn.(*ss.Conn); !ok {
+		// make actual timeout a little longer than keep-alive value sent to client
+		setConnReadTimeout(c.Conn, clientConnTimeout+2*time.Second, msg)
+	}
+}
+
+func (c *clientConn) unsetReadTimeout(msg string) {
+	if _, ok := c.Conn.(*ss.Conn); !ok {
+		unsetConnReadTimeout(c.Conn, msg)
+	}
+}
+
+func setConnReadTimeout(cn net.Conn, d time.Duration, msg string) {
+	if err := cn.SetReadDeadline(time.Now().Add(d)); err != nil {
+		errl.Println("set readtimeout:", msg, err)
+	}
+}
+
+func unsetConnReadTimeout(cn net.Conn, msg string) {
+	if err := cn.SetReadDeadline(zeroTime); err != nil {
+		// It's possible that conn has been closed, so use debug log.
+		debug.Println("unset readtimeout:", msg, err)
+	}
+}
+
 // Listen address as key, not including port part.
 var selfListenAddr map[string]bool
 

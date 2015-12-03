@@ -567,6 +567,7 @@ func (h *Header) parseHeader(reader *bufio.Reader, raw *bytes.Buffer, url *URL) 
 func parseRequest(c *clientConn, r *Request) (err error) {
 	var s []byte
 	reader := c.bufRd
+	c.setReadTimeout("parseRequest")
 	// parse request line
 	if s, err = reader.ReadSlice('\n'); err != nil {
 		if isErrTimeout(err) {
@@ -574,6 +575,7 @@ func parseRequest(c *clientConn, r *Request) (err error) {
 		}
 		return err
 	}
+	c.unsetReadTimeout("parseRequest")
 	// debug.Printf("Request line %s", s)
 
 	r.reset()
