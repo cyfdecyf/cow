@@ -14,7 +14,7 @@
 - 2015-12-03 Version 1.3.4
 
        * 修正客户端连接未正确关闭 bug
-       * 修正对文件描述符过多错误的判断 (too many open files)
+       * 修正对文件描述符过多错误的判断（too many open files）
 
 - 2015-11-22 Version 1.3.3
 
