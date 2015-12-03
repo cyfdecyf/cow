@@ -716,7 +716,7 @@ func isHttpErrCode(err error) bool {
 
 func isErrConnReset(err error) bool {
 	if ne, ok := err.(*net.OpError); ok {
-		if se, ok := ne.Err.(*os.SyscallError); ok {
+		if se, seok := ne.Err.(*os.SyscallError); seok {
 			return se.Err == syscall.ECONNRESET
 		}
 	}
@@ -725,7 +725,7 @@ func isErrConnReset(err error) bool {
 
 func isErrTooManyOpenFd(err error) bool {
 	if ne, ok := err.(*net.OpError); ok {
-		if se, ok := ne.Err.(*os.SyscallError); ok && (se.Err == syscall.EMFILE || se.Err == syscall.ENFILE) {
+		if se, seok := ne.Err.(*os.SyscallError); seok && (se.Err == syscall.EMFILE || se.Err == syscall.ENFILE) {
 			errl.Println("too many open fd")
 			return true
 		}
