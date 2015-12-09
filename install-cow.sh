@@ -90,11 +90,15 @@ fi
 bin=cow-$os$arch-$version
 tmpdir=`mktemp -d /tmp/cow.XXXXXX`
 tmpbin=$tmpdir/cow
-binary_url="http://dl.chenyufei.info/cow/$version/$bin.gz"
-echo "Downloading cow binary $binary_url to $tmpbin.gz"
-curl -L "$binary_url" -o $tmpbin.gz || \
-    exit_on_fail "Downloading cow binary failed"
-gunzip $tmpbin.gz || exit_on_fail "gunzip $tmpbin.gz failed"
+if [[ -e ./cow ]]; then
+  mv ./cow $tmpdir/
+else
+  binary_url="http://dl.chenyufei.info/cow/$version/$bin.gz"
+  echo "Downloading cow binary $binary_url to $tmpbin.gz"
+  curl -L "$binary_url" -o $tmpbin.gz || \
+      exit_on_fail "Downloading cow binary failed"
+  gunzip $tmpbin.gz || exit_on_fail "gunzip $tmpbin.gz failed"
+fi
 chmod +x $tmpbin ||
     exit_on_fail "Can't chmod for $tmpbin"
 
