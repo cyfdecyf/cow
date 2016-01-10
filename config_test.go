@@ -26,10 +26,11 @@ func TestParseListen(t *testing.T) {
 func TestTunnelAllowedPort(t *testing.T) {
 	initConfig("")
 	parser := configParser{}
-	parser.ParseTunnelAllowedPort("1, 2, 3, 4, 5")
+	parser.ParseTunnelAllowedPort("1, 2, 3, 4, 5, 100-500, 600-888")
 	parser.ParseTunnelAllowedPort("6")
 	parser.ParseTunnelAllowedPort("7")
 	parser.ParseTunnelAllowedPort("8")
+	parser.ParseTunnelAllowedPort("1000-3333")
 
 	testData := []struct {
 		port    string
@@ -41,12 +42,17 @@ func TestTunnelAllowedPort(t *testing.T) {
 		{"3", true},
 		{"5", true},
 		{"7", true},
+		{"342", true},
+		{"777", true},
+		{"2332", true},
+
+		{"523", false},
 		{"8080", false},
 		{"8388", false},
 	}
 
 	for _, td := range testData {
-		allowed := config.TunnelAllowedPort[td.port]
+		allowed := config.IsTunnelAllowedPort(td.port)
 		if allowed != td.allowed {
 			t.Errorf("port %s allowed %v, got %v\n", td.port, td.allowed, allowed)
 		}
