@@ -39,13 +39,19 @@ var defaultTunnelAllowedPort = []string{
 	"2401", "3690", "9418", // cvspserver, svn, git
 }
 
+type portSegment struct {
+	minPort int
+	maxPort int
+}
+
 type Config struct {
 	RcFile      string          // config file
 	LogFile     string          // path for log file
 	AlwaysProxy bool            // whether we should alwyas use parent proxy
 	LoadBalance LoadBalanceMode // select load balance mode
 
-	TunnelAllowedPort map[string]bool // allowed ports to create tunnel
+	TunnelAllowedPortSegment []*portSegment  // allowed port segments to create tunnel
+	TunnelAllowedPort        map[string]bool // allowed ports to create tunnel
 
 	SshServer []string
 
@@ -98,6 +104,7 @@ func initConfig(rcFile string) {
 	config.DialTimeout = defaultDialTimeout
 	config.ReadTimeout = defaultReadTimeout
 
+	config.TunnelAllowedPortSegment = []*portSegment{}
 	config.TunnelAllowedPort = make(map[string]bool)
 	for _, port := range defaultTunnelAllowedPort {
 		config.TunnelAllowedPort[port] = true
@@ -379,14 +386,55 @@ func (p configParser) ParseAddrInPAC(val string) {
 	}
 }
 
+func (c Config) IsTunnelAllowedPort(s string) bool {
+	if config.TunnelAllowedPort[s] {
+		return true
+	}
+	if port, err := strconv.Atoi(s); err == nil {
+		for _, pSeg := range config.TunnelAllowedPortSegment {
+			if port >= pSeg.minPort && port <= pSeg.maxPort {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (p configParser) ParseTunnelAllowedPort(val string) {
 	arr := strings.Split(val, ",")
-	for _, s := range arr {
-		s = strings.TrimSpace(s)
-		if _, err := strconv.Atoi(s); err != nil {
-			Fatal("tunnel allowed ports", err)
+	for i, s := range arr {
+		arr[i] = strings.TrimSpace(s)
+	}
+	for i, s := range arr {
+		var min, max int
+		if strings.Contains(s, "-") {
+			if _, err := fmt.Sscanf(s, "%d-%d", &min, &max); err != nil || min > max {
+				Fatal("tunnel allowed ports segment", err)
+			}
+			if min == max {
+				arr[i] = strconv.Itoa(min)
+			} else {
+				config.TunnelAllowedPortSegment = append(config.TunnelAllowedPortSegment, &portSegment{min, max})
+				arr[i] = ""
+			}
 		}
-		config.TunnelAllowedPort[s] = true
+	}
+	for _, s := range arr {
+		if s != "" {
+			if _, err := strconv.Atoi(s); err != nil {
+				Fatal("tunnel allowed ports", err)
+			}
+			config.TunnelAllowedPort[s] = true
+		}
+	}
+	for s := range config.TunnelAllowedPort {
+		if p1, err := strconv.Atoi(s); err == nil {
+			for _, p2 := range config.TunnelAllowedPortSegment {
+				if p1 >= p2.minPort && p1 <= p2.maxPort {
+					delete(config.TunnelAllowedPort, s)
+				}
+			}
+		}
 	}
 }
 
