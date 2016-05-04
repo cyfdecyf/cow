@@ -74,7 +74,9 @@ listen = http://127.0.0.1:7777
 #
 # shadowsocks:
 #   proxy = ss://encrypt_method:password@1.2.3.4:8388
+#   proxy = ss://encrypt_method-auth:password@1.2.3.4:8388
 #
+#   Append -auth to encrypt_method to enable One Time Auth.
 #   authinfo specifies encryption method and password.
 #   Here are the supported encryption methods:
 #

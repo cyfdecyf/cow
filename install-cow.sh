@@ -1,6 +1,6 @@
 #!/bin/bash
 
-version=0.9.6
+version=0.9.7
 
 arch=`uname -m`
 case $arch in
@@ -90,7 +90,7 @@ fi
 bin=cow-$os$arch-$version
 tmpdir=`mktemp -d /tmp/cow.XXXXXX`
 tmpbin=$tmpdir/cow
-binary_url="http://dl.chenyufei.info/cow/$version/$bin.gz"
+binary_url="https://github.com/cyfdecyf/cow/releases/download/$version/$bin.gz"
 echo "Downloading cow binary $binary_url to $tmpbin.gz"
 curl -L "$binary_url" -o $tmpbin.gz || \
     exit_on_fail "Downloading cow binary failed"
