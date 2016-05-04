@@ -66,7 +66,9 @@ listen = http://127.0.0.1:7777
 #
 # shadowsocks:
 #   proxy = ss://encrypt_method:password@1.2.3.4:8388
+#   proxy = ss://encrypt_method-auth:password@1.2.3.4:8388
 #
+#   encrypt_method 添加 -auth 启用 One Time Auth
 #   authinfo 中指定加密方法和密码，所有支持的加密方法如下：
 #     aes-128-cfb, aes-192-cfb, aes-256-cfb,
 #     bf-cfb, cast5-cfb, des-cfb, rc4-md5,

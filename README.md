@@ -4,7 +4,7 @@ COW 是一个简化穿墙的 HTTP 代理服务器。它能自动检测被墙网�
 
 [English README](README-en.md).
 
-当前版本：0.9.6 [CHANGELOG](CHANGELOG)
+当前版本：0.9.7 [CHANGELOG](CHANGELOG)
 [![Build Status](https://travis-ci.org/cyfdecyf/cow.png?branch=master)](https://travis-ci.org/cyfdecyf/cow)
 
 **欢迎在 develop branch 进行开发并发送 pull request :)**
@@ -29,7 +29,8 @@ COW 的设计目标是自动化，理想情况下用户无需关心哪些网站�
         curl -L git.io/cow | bash
 
   - 环境变量 `COW_INSTALLDIR` 可以指定安装的路径，若该环境变量不是目录则询问用户
-- **Windows:** [点此下载](http://dl.chenyufei.info/cow/)
+  - 所有 binary 在 OS X 上编译获得，若 ARM 版本可能无法工作，请下载 [Go ARM](https://storage.googleapis.com/golang/go1.6.2.linux-amd64.tar.gz) 后从源码安装
+- **Windows:** 从 [release 页面](https://github.com/cyfdecyf/cow/releases)下载
 - 熟悉 Go 的用户可用 `go get github.com/cyfdecyf/cow` 从源码安装
 
 编辑 `~/.cow/rc` (Linux) 或 `rc.txt` (Windows)，简单的配置例子如下：

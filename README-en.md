@@ -2,7 +2,7 @@
 
 COW is a HTTP proxy to simplify bypassing the great firewall. It tries to automatically identify blocked websites and only use parent proxy for those sites.
 
-Current version: 0.9.6 [CHANGELOG](CHANGELOG)
+Current version: 0.9.7 [CHANGELOG](CHANGELOG)
 [![Build Status](https://travis-ci.org/cyfdecyf/cow.png?branch=master)](https://travis-ci.org/cyfdecyf/cow)
 
 ## Features
@@ -22,7 +22,8 @@ Install:
 
         curl -L git.io/cow | bash
 
-- **Windows:** [download](http://dl.chenyufei.info/cow/)
+  - All binaries are compiled on OS X, if ARM binary can't work, please download [Go ARM](https://storage.googleapis.com/golang/go1.6.2.linux-amd64.tar.gz) and install from source.
+- **Windows:** download from the [release page](https://github.com/cyfdecyf/cow/releases)
 - If you are familiar with Go, run `go get github.com/cyfdecyf/cow` to install from source.
 
 Modify configuration file `~/.cow/rc` (OS X or Linux) or `rc.txt` (Windows). A simple example with the most important options:
