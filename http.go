@@ -306,7 +306,10 @@ func ParseRequestURIBytes(rawurl []byte) (*URL, error) {
 			port = "443"
 		}
 	}
-
+        // Fixed wechat image url bug, url like http://[::ffff:183.192.196.102]/mmsns/lVxxxxxx
+        host = strings.TrimPrefix(host, "[::ffff:")
+        host = strings.TrimSuffix(host, "]")
+        hostport = net.JoinHostPort(host, port)
 	return &URL{hostport, host, port, host2Domain(host), path}, nil
 }
 
