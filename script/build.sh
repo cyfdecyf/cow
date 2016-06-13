@@ -54,3 +54,11 @@ pack linux 386
 pack linux arm
 pack windows amd64
 pack windows 386
+
+git checkout gh-pages
+rm -rf dist
+mv bin dist
+git add dist
+git commit -m"version $version"
+git push
+git checkout master
