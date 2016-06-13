@@ -9,7 +9,8 @@ echo "creating MEOW binary version $version"
 
 mkdir -p bin/windows
 
-gox -output="bin/{{.Dir}}-{{.OS}}-{{.Arch}}-$version" -os="darwin linux windows"
+gox -output="bin/{{.Dir}}-{{.OS}}-{{.Arch}}-$version" -os="windows"
+gox -output="bin/{{.Dir}}-{{.OS}}-{{.Arch}}-$version" -osarch="darwin/386 darwin/amd64 linux/386 linux/amd64 linux/arm"
 
 pack() {
     local goos
