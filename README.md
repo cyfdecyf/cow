@@ -4,7 +4,7 @@ COW 是一个简化穿墙的 HTTP 代理服务器。它能自动检测被墙网�
 
 [English README](README-en.md).
 
-当前版本：0.9.7 [CHANGELOG](CHANGELOG)
+当前版本：0.9.8 [CHANGELOG](CHANGELOG)
 [![Build Status](https://travis-ci.org/cyfdecyf/cow.png?branch=master)](https://travis-ci.org/cyfdecyf/cow)
 
 **欢迎在 develop branch 进行开发并发送 pull request :)**

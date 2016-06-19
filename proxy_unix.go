@@ -5,11 +5,12 @@ package main
 import (
 	"net"
 	"syscall"
+	"strings"
 )
 
 func isErrConnReset(err error) bool {
 	if ne, ok := err.(*net.OpError); ok {
-		return ne.Err == syscall.ECONNRESET
+		return strings.Contains(ne.Err.Error(), syscall.ECONNRESET.Error())
 	}
 	return false
 }
