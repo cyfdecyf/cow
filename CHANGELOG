@@ -1,3 +1,11 @@
+0.9.8 (2016-06-19)
+    * Fix OTA support bug in shadowsocks (report by @defia)
+    * Fix WeChat image url problem (by @breath-co2 @haha1903)
+    * Fix connection reset detection (by @fgid)
+
+0.9.7 (2016-05-04)
+    * Support shadowsocks OTA
+
 0.9.6 (2015-06-07)
     * Reload config by sending SIGUSR1 on Unix system
     * Load blocked/direct/stat file from same directory as rc file by default
