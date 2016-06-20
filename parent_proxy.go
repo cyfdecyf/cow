@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/binary"
 	"errors"
@@ -360,6 +361,62 @@ func (hp *httpParent) connect(url *URL) (net.Conn, error) {
 	debug.Printf("connected to: %s via http parent: %s\n",
 		url.HostPort, hp.server)
 	return httpConn{c, hp}, nil
+}
+
+// https parent proxy
+type httpsParent struct {
+	server     string
+	userPasswd string // for upgrade config
+	authHeader []byte
+}
+
+type httpsConn struct {
+	net.Conn
+	parent *httpsParent
+}
+
+func (s httpsConn) String() string {
+	return "https parent proxy " + s.parent.server
+}
+
+func newHttpsParent(server string) *httpsParent {
+	return &httpsParent{server: server}
+}
+
+func (hp *httpsParent) getServer() string {
+	return hp.server
+}
+
+func (hp *httpsParent) genConfig() string {
+	if hp.userPasswd != "" {
+		return fmt.Sprintf("proxy = https://%s@%s", hp.userPasswd, hp.server)
+	} else {
+		return fmt.Sprintf("proxy = https://%s", hp.server)
+	}
+}
+
+func (hp *httpsParent) initAuth(userPasswd string) {
+	if userPasswd == "" {
+		return
+	}
+	hp.userPasswd = userPasswd
+	b64 := base64.StdEncoding.EncodeToString([]byte(userPasswd))
+	hp.authHeader = []byte(headerProxyAuthorization + ": Basic " + b64 + CRLF)
+}
+
+func (hp *httpsParent) connect(url *URL) (net.Conn, error) {
+	c, err := tls.Dial("tcp", hp.server, &tls.Config{
+		InsecureSkipVerify: true,
+	})
+	if err != nil {
+		errl.Printf("can't connect to https parent %s for %s: %v\n",
+			hp.server, url.HostPort, err)
+		return nil, err
+	}
+
+	debug.Printf("connected to: %s via https parent: %s\n",
+		url.HostPort, hp.server)
+	return httpsConn{c, hp}, nil
 }
 
 // shadowsocks parent proxy
