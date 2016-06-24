@@ -1,6 +1,6 @@
 # Design #
 
-## Requst and response handling ##
+## Request and response handling ##
 
 **Update** using the following design, it is actually difficult to correctly support HTTP pipelining. I've come up with a new design inspired by Naruil which should be much cleaner and easier to support HTTP pipelining. But as all major browsers, except Opera, does not enable HTTP pipelining by default, I don't think it's worth the effort to support HTTP pipelining now. I'll try to support it with the new design if the performance benefits of HTTP pipelining becomes significant in the future.
 
