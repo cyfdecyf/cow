@@ -47,6 +47,8 @@ func main() {
 
 	initStat()
 
+	usageFlag := initUsage()
+
 	initParentPool()
 
 	/*
@@ -77,6 +79,11 @@ func main() {
 		go proxy.Serve(&wg, quit)
 	}
 
+	//add the usage recorder
+	if usageFlag {
+		wg.Add(1)
+		go startUsageRecorder(&wg, quit)
+	}
 	wg.Wait()
 
 	if relaunch {

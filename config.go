@@ -76,6 +76,9 @@ type Config struct {
 
 	// not config option
 	saveReqLine bool // for http and cow parent, should save request line from client
+
+	// capacity limitation file
+	UserCapacityFile string
 }
 
 var config Config
@@ -557,6 +560,14 @@ func (p configParser) ParseUserPasswdFile(val string) {
 		Fatal("userPasswdFile:", err)
 	}
 	config.UserPasswdFile = val
+}
+
+func (p configParser) ParseUserCapacityFile(val string) {
+	err := isFileExists(val)
+	if err != nil {
+		Fatal("userCapacityFile:", err)
+	}
+	config.UserCapacityFile = val
 }
 
 func (p configParser) ParseAllowedClient(val string) {
