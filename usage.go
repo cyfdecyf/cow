@@ -214,7 +214,8 @@ func accumulateUsage(r *Request, rp *Response) {
 	}
 	userPasswd := strings.Split(arr[1], ":")
 	if len(userPasswd) != 2 {
-		return errors.New("auth: malformed basic auth user:passwd")
+		err := errors.New("auth: malformed basic auth user:passwd")
+		Fatal(err)
 	}
 	user := arr[0]
 	if _, ok := userUsage.usage[user]; ok {

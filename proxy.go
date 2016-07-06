@@ -1294,7 +1294,7 @@ func (sv *serverConn) doRequest(c *clientConn, r *Request, rp *Response) (err er
 	if err = c.readResponse(sv, r, rp); err == nil {
 		sv.updateVisit()
 		// response received successfully
-		accumulateUsage(&r, &rp)
+		accumulateUsage(r, rp)
 	}
 	return err
 }
