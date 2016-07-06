@@ -184,4 +184,44 @@ func initUsage() bool{
 	return true
 }
 
+func checkUsage(r *Request) bool {
+	arr := strings.SplitN(r.ProxyAuthorization, " ", 2)
+	if len(arr) != 2 {
+		err := errors.New("auth: malformed ProxyAuthorization header: " + r.ProxyAuthorization)
+		Fatal(err)
+	}
+	userPasswd := strings.Split(arr[1], ":")
+	if len(userPasswd) != 2 {
+		err := errors.New("auth: malformed basic auth user:passwd")
+		Fatal(err)
+	}
+	user := arr[0]
+	var capacity int
+	var usage int
+	if val, ok := userUsage.capacity[user]; ok {
+		capacity = val
+	}
+	// don't have to check here
+	usage = userUsage.usage[user]
+	return (usage > capacity)
+}
+
+func accumulateUsage(r *Request, rp *Response) {
+	arr := strings.SplitN(r.ProxyAuthorization, " ", 2)
+	if len(arr) != 2 {
+		err := errors.New("auth: malformed ProxyAuthorization header: " + r.ProxyAuthorization)
+		Fatal(err)
+	}
+	userPasswd := strings.Split(arr[1], ":")
+	if len(userPasswd) != 2 {
+		return errors.New("auth: malformed basic auth user:passwd")
+	}
+	user := arr[0]
+	if _, ok := userUsage.usage[user]; ok {
+		userUsage.usage[user] += len(rp.rawByte) / 1024 / 1024
+	}
+
+
+}
+
 
