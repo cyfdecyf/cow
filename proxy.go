@@ -501,6 +501,14 @@ func (c *clientConn) serve() {
 			return
 		}
 
+		if config.UserCapacityFile != "" {
+			if checkUsage(&r) != true {
+				sendErrorPage(c, statusForbidden, "Run out of capacity",
+					genErrMsg(&r, nil, "Please contact proxy admin."))
+				return
+			}
+		}
+
 		if r.ExpectContinue {
 			sendErrorPage(c, statusExpectFailed, "Expect header not supported",
 				"Please contact COW's developer if you see this.")
@@ -1285,6 +1293,8 @@ func (sv *serverConn) doRequest(c *clientConn, r *Request, rp *Response) (err er
 	r.state = rsSent
 	if err = c.readResponse(sv, r, rp); err == nil {
 		sv.updateVisit()
+		// response received successfully
+		accumulateUsage(&r, &rp)
 	}
 	return err
 }
