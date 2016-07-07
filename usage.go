@@ -103,9 +103,6 @@ func loadUsage() {
 		if err != nil {
 			Fatal(err)
 		}
-		if _, ok := userUsage.usage[u]; ok {
-			Fatal("duplicate record:", line)
-		}
 		userUsage.usage[u] = c
 
 	}
@@ -220,6 +217,7 @@ func accumulateUsage(r *Request, rp *Response) {
 	user := arr[0]
 	if _, ok := userUsage.usage[user]; ok {
 		userUsage.usage[user] += len(rp.rawByte) / 1024 / 1024
+		debug.Printf("user: %s add %d MB, total %d", user, len(rp.rawByte) / 1024 / 1024, userUsage.usage[user])
 	}
 
 
