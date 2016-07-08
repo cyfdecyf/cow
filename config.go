@@ -79,6 +79,7 @@ type Config struct {
 
 	// capacity limitation file
 	UserCapacityFile string
+	UsageResetDate int
 }
 
 var config Config
@@ -568,6 +569,10 @@ func (p configParser) ParseUserCapacityFile(val string) {
 		Fatal("userCapacityFile:", err)
 	}
 	config.UserCapacityFile = val
+}
+
+func (p configParser) ParseUsageResetDate(val string) {
+	config.UsageResetDate = parseInt(val, "usageResetDate")
 }
 
 func (p configParser) ParseAllowedClient(val string) {

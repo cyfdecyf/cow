@@ -17,6 +17,7 @@ var recordPath string
 var userUsage struct {
 	usage map[string]int
 	capacity map[string]int
+	addrToUser map[string]string
 	lastSavedts time.Time
 }
 
@@ -95,6 +96,19 @@ func loadUsage() {
 	r := bufio.NewReader(f)
 	s := bufio.NewScanner(r)
 	for s.Scan() {
+		ts := s.Text()
+		if ts == "" {
+			continue
+		}
+		if t, e := time.Parse(time.ANSIC, ts); e == nil {
+			userUsage.lastSavedts = t
+			break
+		} else {
+			Fatal("incomplete user record, please delete ", recordPath, " and restart: ", e)
+			return
+		}
+	}
+	for s.Scan() {
 		line := s.Text()
 		if line == "" {
 			continue
@@ -110,12 +124,24 @@ func loadUsage() {
 }
 
 func flushLog() {
+	if time.Now().Day() == config.UsageResetDate &&
+		userUsage.lastSavedts.Day() != config.UsageResetDate {
+		//it's time to clear the record of last month
+		for k, _ := range userUsage.usage {
+			userUsage.usage[k] = 0
+		}
+
+	}
 	bakPath := recordPath + ".bak"
 	f, err := os.OpenFile(bakPath, os.O_WRONLY | os.O_CREATE, 0600)
 	if err != nil {
 		Fatal("error opening/creating user record file:", err)
 	}
 	w := bufio.NewWriter(f)
+	t := time.Now()
+	w.WriteString(t.Format(time.ANSIC))
+	w.WriteString("\n")
+	w.Flush()
 	for k, v := range userUsage.usage {
 		r := fmt.Sprintf("%s:%d\n", k, v)
 		w.WriteString(r)
@@ -125,6 +151,7 @@ func flushLog() {
 
 	os.Remove(recordPath)
 	os.Rename(bakPath, recordPath)
+	userUsage.lastSavedts = t
 
 
 }
@@ -158,7 +185,7 @@ func startUsageRecorder(wg *sync.WaitGroup, quit <-chan struct{}) {
 
 func initUsage() bool{
 	if config.UserPasswdFile == "" ||
-		config.UserCapacityFile == "" {
+		config.UserCapacityFile == ""{
 		return false
 	}
 	// get current running path
@@ -172,7 +199,7 @@ func initUsage() bool{
 
 	userUsage.capacity = make(map[string]int)
 	userUsage.usage = make(map[string]int)
-	userUsage.lastSavedts = time.Now()
+	userUsage.addrToUser = make(map[string]string)
 	//load capacity at first
 	loadCapcity(config.UserCapacityFile)
 
@@ -181,46 +208,49 @@ func initUsage() bool{
 	return true
 }
 
-func checkUsage(r *Request) bool {
-	arr := strings.SplitN(r.ProxyAuthorization, " ", 2)
-	if len(arr) != 2 {
-		err := errors.New("auth: malformed ProxyAuthorization header: " + r.ProxyAuthorization)
-		Fatal(err)
-	}
-	userPasswd := strings.Split(arr[1], ":")
-	if len(userPasswd) != 2 {
-		err := errors.New("auth: malformed basic auth user:passwd")
-		Fatal(err)
-	}
-	user := arr[0]
+func checkUsage(addr string) bool {
+	var user string
 	var capacity int
 	var usage int
+	if val, ok := userUsage.addrToUser[addr]; ok {
+		user = val
+	} else {
+		debug.Println("unkonw address: ", addr)
+		return false
+	}
 	if val, ok := userUsage.capacity[user]; ok {
 		capacity = val
+	} else {
+		debug.Println("unkonw user: ", user)
+		return false
 	}
 	// don't have to check here
 	usage = userUsage.usage[user]
-	return (usage > capacity)
+	usageInMB := usage / 1024 / 1024
+	return (usageInMB < capacity)
 }
 
-func accumulateUsage(r *Request, rp *Response) {
-	arr := strings.SplitN(r.ProxyAuthorization, " ", 2)
-	if len(arr) != 2 {
-		err := errors.New("auth: malformed ProxyAuthorization header: " + r.ProxyAuthorization)
-		Fatal(err)
+func accumulateUsage(addr string, rp *Response) {
+	var user string
+	if val, ok := userUsage.addrToUser[addr]; ok {
+		user = val
+	} else {
+		debug.Println("un recorded addr: ", addr)
+		Fatal("un recorded addr: ", addr)
 	}
-	userPasswd := strings.Split(arr[1], ":")
-	if len(userPasswd) != 2 {
-		err := errors.New("auth: malformed basic auth user:passwd")
-		Fatal(err)
-	}
-	user := arr[0]
 	if _, ok := userUsage.usage[user]; ok {
-		userUsage.usage[user] += len(rp.rawByte) / 1024 / 1024
-		debug.Printf("user: %s add %d MB, total %d", user, len(rp.rawByte) / 1024 / 1024, userUsage.usage[user])
+		if rp.ContLen > 0 {
+			userUsage.usage[user] += int(rp.ContLen)
+			debug.Printf("user: %s add %d BYTE, total %d", user, int(rp.ContLen), userUsage.usage[user])
+		}
 	}
 
 
 }
 
+func updateAddrToUser(addr string, user string)  {
+	userUsage.addrToUser[addr] = user
+	// add record
+	debug.Println("add addr: ", addr, "to user: ", user)
+}
 

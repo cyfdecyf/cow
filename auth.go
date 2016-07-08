@@ -47,7 +47,10 @@ var auth struct {
 
 	allowedClient []netAddr
 
-	authed *TimeoutSet // cache authenticated users based on ip
+	// cache authenticated users based on ip and port
+	// add port to identify the users behind one ip address
+	// this may cause a user auth more than once
+	authed *TimeoutSet
 
 	template *template.Template
 }
@@ -181,16 +184,19 @@ func initAuth() {
 // authentication is needed, and should be passed back on subsequent call.
 func Authenticate(conn *clientConn, r *Request) (err error) {
 	clientIP, _, _ := net.SplitHostPort(conn.RemoteAddr().String())
-	if auth.authed.has(clientIP) {
-		debug.Printf("%s has already authed\n", clientIP)
+	if auth.authed.has(conn.RemoteAddr().String()) {
+		debug.Printf("%s has already authed\n", conn.RemoteAddr().String())
 		return
 	}
 	if authIP(clientIP) { // IP is allowed
 		return
 	}
-	err = authUserPasswd(conn, r)
-	if err == nil {
-		auth.authed.add(clientIP)
+	err, user := authUserPasswd(conn, r)
+	if err == nil && user != ""{
+		auth.authed.add(conn.RemoteAddr().String())
+		// update the map of address to userid in usage
+		updateAddrToUser(conn.RemoteAddr().String(), user)
+
 	}
 	return
 }
@@ -231,14 +237,14 @@ func calcRequestDigest(kv map[string]string, ha1, method string) string {
 	return md5sum(strings.Join(arr, ":"))
 }
 
-func checkProxyAuthorization(conn *clientConn, r *Request) error {
+func checkProxyAuthorization(conn *clientConn, r *Request) (error, string) {
 	if debug {
 		debug.Printf("cli(%s) authorization: %s\n", conn.RemoteAddr(), r.ProxyAuthorization)
 	}
 
 	arr := strings.SplitN(r.ProxyAuthorization, " ", 2)
 	if len(arr) != 2 {
-		return errors.New("auth: malformed ProxyAuthorization header: " + r.ProxyAuthorization)
+		return errors.New("auth: malformed ProxyAuthorization header: " + r.ProxyAuthorization), ""
 	}
 	authMethod := strings.ToLower(strings.TrimSpace(arr[0]))
 	if authMethod == "digest" {
@@ -246,7 +252,7 @@ func checkProxyAuthorization(conn *clientConn, r *Request) error {
 	} else if authMethod == "basic" {
 		return authBasic(conn, arr[1])
 	}
-	return errors.New("auth: method " + arr[0] + " unsupported, must use digest")
+	return errors.New("auth: method " + arr[0] + " unsupported, must use digest"), ""
 }
 
 func authPort(conn *clientConn, user string, au *authUser) error {
@@ -262,73 +268,76 @@ func authPort(conn *clientConn, user string, au *authUser) error {
 	return nil
 }
 
-func authBasic(conn *clientConn, userPasswd string) error {
+func authBasic(conn *clientConn, userPasswd string) (error, string) {
 	b64, err := base64.StdEncoding.DecodeString(userPasswd)
 	if err != nil {
-		return errors.New("auth:" + err.Error())
+		return errors.New("auth:" + err.Error()), ""
 	}
 	arr := strings.Split(string(b64), ":")
 	if len(arr) != 2 {
-		return errors.New("auth: malformed basic auth user:passwd")
+		return errors.New("auth: malformed basic auth user:passwd"), ""
 	}
 	user := arr[0]
 	passwd := arr[1]
 
 	au, ok := auth.user[user]
 	if !ok || au.passwd != passwd {
-		return errAuthRequired
+		return errAuthRequired, user
 	}
-	return authPort(conn, user, au)
+	if ret := authPort(conn, user, au); ret != nil {
+		return ret, user
+	}
+	return nil, user
 }
 
-func authDigest(conn *clientConn, r *Request, keyVal string) error {
+func authDigest(conn *clientConn, r *Request, keyVal string) (error, string) {
 	authHeader := parseKeyValueList(keyVal)
 	if len(authHeader) == 0 {
-		return errors.New("auth: empty authorization list")
+		return errors.New("auth: empty authorization list"), ""
 	}
 	nonceTime, err := strconv.ParseInt(authHeader["nonce"], 16, 64)
 	if err != nil {
-		return fmt.Errorf("auth: nonce %v", err)
+		return fmt.Errorf("auth: nonce %v", err), ""
 	}
 	// If nonce time too early, reject. iOS will create a new connection to do
 	// authentication.
 	if time.Now().Sub(time.Unix(nonceTime, 0)) > time.Minute {
-		return errAuthRequired
+		return errAuthRequired, ""
 	}
 
 	user := authHeader["username"]
 	au, ok := auth.user[user]
 	if !ok {
 		errl.Printf("cli(%s) auth: no such user: %s\n", conn.RemoteAddr(), authHeader["username"])
-		return errAuthRequired
+		return errAuthRequired, "user"
 	}
 
 	if err = authPort(conn, user, au); err != nil {
-		return err
+		return err, user
 	}
 	if authHeader["qop"] != "auth" {
-		return errors.New("auth: qop wrong: " + authHeader["qop"])
+		return errors.New("auth: qop wrong: " + authHeader["qop"]), user
 	}
 	response, ok := authHeader["response"]
 	if !ok {
-		return errors.New("auth: no request-digest response")
+		return errors.New("auth: no request-digest response"), user
 	}
 
 	au.initHA1(user)
 	digest := calcRequestDigest(authHeader, au.ha1, r.Method)
 	if response != digest {
 		errl.Printf("cli(%s) auth: digest not match, maybe password wrong", conn.RemoteAddr())
-		return errAuthRequired
+		return errAuthRequired, user
 	}
-	return nil
+	return nil, user
 }
 
-func authUserPasswd(conn *clientConn, r *Request) (err error) {
+func authUserPasswd(conn *clientConn, r *Request) (err error, user string) {
 	if r.ProxyAuthorization != "" {
 		// client has sent authorization header
-		err = checkProxyAuthorization(conn, r)
-		if err == nil {
-			return
+		err, user = checkProxyAuthorization(conn, r)
+		if err == nil && user != ""{
+			return nil, user
 		} else if err != errAuthRequired {
 			sendErrorPage(conn, statusBadReq, "Bad authorization request", err.Error())
 			return
@@ -344,13 +353,13 @@ func authUserPasswd(conn *clientConn, r *Request) (err error) {
 	}
 	buf := new(bytes.Buffer)
 	if err := auth.template.Execute(buf, data); err != nil {
-		return fmt.Errorf("error generating auth response: %v", err)
+		return fmt.Errorf("error generating auth response: %v", err), ""
 	}
 	if bool(debug) && verbose {
 		debug.Printf("authorization response:\n%s", buf.String())
 	}
 	if _, err := conn.Write(buf.Bytes()); err != nil {
-		return fmt.Errorf("send auth response error: %v", err)
+		return fmt.Errorf("send auth response error: %v", err), ""
 	}
-	return errAuthRequired
+	return errAuthRequired, ""
 }
