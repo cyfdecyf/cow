@@ -117,6 +117,9 @@ func parseAllowedClient(val string) {
 			mask = NewNbitIPv4Mask(32)
 		}
 		auth.allowedClient[i] = netAddr{ip.Mask(mask), mask}
+
+		// TODO: add mask here, add record in usage
+		addAllowedClient(ipAndMask[0])
 	}
 }
 

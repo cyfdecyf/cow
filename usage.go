@@ -262,3 +262,11 @@ func updateAddrToUser(addr string, user string)  {
 	debug.Println("add addr: ", addr, "to user: ", user)
 }
 
+func addAllowedClient(addr string) {
+	if _, ok := userUsage.addrToUser[addr]; ok {
+		debug.Println("duplicated allowed client ip: ", addr)
+		return
+	}
+
+	userUsage[addr] = addr
+}
