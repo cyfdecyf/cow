@@ -41,13 +41,15 @@ func main() {
 
 	initSelfListenAddr()
 	initLog()
+    
+	usageFlag := initUsage()
+
 	initAuth()
 	initSiteStat()
 	initPAC() // initPAC uses siteStat, so must init after site stat
 
 	initStat()
 
-	usageFlag := initUsage()
 
 	initParentPool()
 

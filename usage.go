@@ -268,5 +268,5 @@ func addAllowedClient(addr string) {
 		return
 	}
 
-	userUsage[addr] = addr
+	userUsage.addrToUser[addr] = addr
 }
