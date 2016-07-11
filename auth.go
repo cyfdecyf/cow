@@ -184,7 +184,7 @@ func initAuth() {
 // authentication is needed, and should be passed back on subsequent call.
 func Authenticate(conn *clientConn, r *Request) (err error) {
 	clientIP, _, _ := net.SplitHostPort(conn.RemoteAddr().String())
-	if auth.authed.has(conn.RemoteAddr().String()) {
+	if auth.authed.has(clientIP) {
 		debug.Printf("%s has already authed\n", conn.RemoteAddr().String())
 		return
 	}
@@ -193,9 +193,9 @@ func Authenticate(conn *clientConn, r *Request) (err error) {
 	}
 	err, user := authUserPasswd(conn, r)
 	if err == nil && user != ""{
-		auth.authed.add(conn.RemoteAddr().String())
+		auth.authed.add(clientIP)
 		// update the map of address to userid in usage
-		updateAddrToUser(conn.RemoteAddr().String(), user)
+		updateAddrToUser(clientIP, user)
 
 	}
 	return

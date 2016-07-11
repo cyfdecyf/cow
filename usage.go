@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"fmt"
 	"sync"
+	"net"
 )
 
 var recordPath string
@@ -125,6 +126,7 @@ func loadUsage() {
 
 func flushLog() {
 	if time.Now().Day() == config.UsageResetDate &&
+		config.UsageResetDate != -1 &&
 		userUsage.lastSavedts.Day() != config.UsageResetDate {
 		//it's time to clear the record of last month
 		for k, _ := range userUsage.usage {
@@ -188,6 +190,10 @@ func initUsage() bool{
 		config.UserCapacityFile == ""{
 		return false
 	}
+
+	if config.UsageResetDate == 0 || config.UsageResetDate > 30 {
+		Fatal("wrong UsageResetDate: ", config.UsageResetDate)
+	}
 	// get current running path
 	dir, err := os.Getwd()
 	if err != nil {
@@ -209,19 +215,20 @@ func initUsage() bool{
 }
 
 func checkUsage(addr string) bool {
+	clientIP, _, _ := net.SplitHostPort(addr)
 	var user string
 	var capacity int
 	var usage int
-	if val, ok := userUsage.addrToUser[addr]; ok {
+	if val, ok := userUsage.addrToUser[clientIP]; ok {
 		user = val
 	} else {
-		debug.Println("unkonw address: ", addr)
+		errl.Println("unkonw address: ", addr)
 		return false
 	}
 	if val, ok := userUsage.capacity[user]; ok {
 		capacity = val
 	} else {
-		debug.Println("unkonw user: ", user)
+		errl.Println("unkonw user: ", user)
 		return false
 	}
 	// don't have to check here
@@ -230,18 +237,19 @@ func checkUsage(addr string) bool {
 	return (usageInMB < capacity)
 }
 
-func accumulateUsage(addr string, rp *Response) {
+func accumulateUsage(addr string, size int) {
+	clientIP, _, _ := net.SplitHostPort(addr)
 	var user string
-	if val, ok := userUsage.addrToUser[addr]; ok {
+	if val, ok := userUsage.addrToUser[clientIP]; ok {
 		user = val
 	} else {
 		debug.Println("un recorded addr: ", addr)
 		Fatal("un recorded addr: ", addr)
 	}
 	if _, ok := userUsage.usage[user]; ok {
-		if rp.ContLen > 0 {
-			userUsage.usage[user] += int(rp.ContLen)
-			debug.Printf("user: %s add %d BYTE, total %d", user, int(rp.ContLen), userUsage.usage[user])
+		if size > 0 {
+			userUsage.usage[user] += size
+			debug.Printf("user: %s add %d BYTE, total %d", user, size, userUsage.usage[user])
 		}
 	}
 

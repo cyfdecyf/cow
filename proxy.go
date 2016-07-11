@@ -1038,6 +1038,8 @@ func copyServer2Client(sv *serverConn, c *clientConn, r *Request) (err error) {
 		// set state to rsRecvBody to indicate the request has partial response sent to client
 		r.state = rsRecvBody
 		sv.state = svSendRecvResponse
+		// update usage for user
+		accumulateUsage(c.RemoteAddr().String(), n)
 		if total > directThreshold {
 			sv.updateVisit()
 		}
@@ -1294,7 +1296,7 @@ func (sv *serverConn) doRequest(c *clientConn, r *Request, rp *Response) (err er
 	if err = c.readResponse(sv, r, rp); err == nil {
 		sv.updateVisit()
 		// response received successfully
-		accumulateUsage(c.RemoteAddr().String(), rp)
+		accumulateUsage(c.RemoteAddr().String(), int(rp.ContLen))
 	}
 	return err
 }
