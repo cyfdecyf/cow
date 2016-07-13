@@ -501,6 +501,14 @@ func (c *clientConn) serve() {
 			return
 		}
 
+		if usageFlag {
+			if checkUsage(c.RemoteAddr().String()) != true {
+				sendErrorPage(c, statusForbidden, "Run out of capacity",
+					genErrMsg(&r, nil, "Please contact proxy admin."))
+				return
+			}
+		}
+
 		if r.ExpectContinue {
 			sendErrorPage(c, statusExpectFailed, "Expect header not supported",
 				"Please contact COW's developer if you see this.")
@@ -1030,6 +1038,10 @@ func copyServer2Client(sv *serverConn, c *clientConn, r *Request) (err error) {
 		// set state to rsRecvBody to indicate the request has partial response sent to client
 		r.state = rsRecvBody
 		sv.state = svSendRecvResponse
+		// update usage for user
+		if (usageFlag) {
+			accumulateUsage(c.RemoteAddr().String(), n)
+		}
 		if total > directThreshold {
 			sv.updateVisit()
 		}
@@ -1285,6 +1297,10 @@ func (sv *serverConn) doRequest(c *clientConn, r *Request, rp *Response) (err er
 	r.state = rsSent
 	if err = c.readResponse(sv, r, rp); err == nil {
 		sv.updateVisit()
+		// response received successfully
+		if (usageFlag) {
+			accumulateUsage(c.RemoteAddr().String(), int(rp.ContLen))
+		}
 	}
 	return err
 }

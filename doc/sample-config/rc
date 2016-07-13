@@ -115,6 +115,18 @@ listen = http://127.0.0.1:7777
 # 注意：如有重复用户，COW 会报错退出
 #userPasswdFile = /path/to/file
 
+# 如需开启用户流量监控，必须使用文件来管理用户名密码， 
+# 同时在另一个文件中设定每个用户的流量，流量为整数，以MB为单位, 每行内容如下
+#   username:capacity
+# 这里的username必须与密码文件中的username对应
+# 同时设定该文件的路径
+# 以及自动重置用量的日期
+# 若不需要重置，请将日期设置为-1
+# 如果添加了allowedClient，并且要对其限流，则需要将IP作为username和对应的流量加入到userCapacityFile中
+# 暂时只支持单个IP的记录
+#userCapacityFile = /path/to/file
+#usageResetDate = 12
+
 # 认证失效时间
 # 语法：2h3m4s 表示 2 小时 3 分钟 4 秒
 #authTimeout = 2h
