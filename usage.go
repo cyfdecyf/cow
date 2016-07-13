@@ -178,7 +178,7 @@ func startUsageRecorder(wg *sync.WaitGroup, quit <-chan struct{}) {
 		if exit {
 			break
 		}
-		if interval > 7200 {
+		if interval > 1800 {
 			flushLog()
 			interval = 0
 		}
