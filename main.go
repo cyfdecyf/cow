@@ -16,6 +16,8 @@ var (
 	relaunch bool
 )
 
+var usageFlag bool
+
 // This code is from goagain
 func lookPath() (argv0 string, err error) {
 	argv0, err = exec.LookPath(os.Args[0])
@@ -29,6 +31,7 @@ func lookPath() (argv0 string, err error) {
 }
 
 func main() {
+	usageFlag = false
 	quit = make(chan struct{})
 	// Parse flags after load config to allow override options in config
 	cmdLineConfig := parseCmdLineConfig()
@@ -42,7 +45,7 @@ func main() {
 	initSelfListenAddr()
 	initLog()
     
-	usageFlag := initUsage()
+	usageFlag = initUsage()
 
 	initAuth()
 	initSiteStat()

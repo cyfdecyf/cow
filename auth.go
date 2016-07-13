@@ -119,7 +119,9 @@ func parseAllowedClient(val string) {
 		auth.allowedClient[i] = netAddr{ip.Mask(mask), mask}
 
 		// TODO: add mask here, add record in usage
-		addAllowedClient(ipAndMask[0])
+		if (usageFlag) {
+			addAllowedClient(ipAndMask[0])
+		}
 	}
 }
 

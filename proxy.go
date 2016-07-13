@@ -501,7 +501,7 @@ func (c *clientConn) serve() {
 			return
 		}
 
-		if config.UserCapacityFile != "" {
+		if usageFlag {
 			if checkUsage(c.RemoteAddr().String()) != true {
 				sendErrorPage(c, statusForbidden, "Run out of capacity",
 					genErrMsg(&r, nil, "Please contact proxy admin."))
@@ -1039,7 +1039,9 @@ func copyServer2Client(sv *serverConn, c *clientConn, r *Request) (err error) {
 		r.state = rsRecvBody
 		sv.state = svSendRecvResponse
 		// update usage for user
-		accumulateUsage(c.RemoteAddr().String(), n)
+		if (usageFlag) {
+			accumulateUsage(c.RemoteAddr().String(), n)
+		}
 		if total > directThreshold {
 			sv.updateVisit()
 		}
@@ -1296,7 +1298,9 @@ func (sv *serverConn) doRequest(c *clientConn, r *Request, rp *Response) (err er
 	if err = c.readResponse(sv, r, rp); err == nil {
 		sv.updateVisit()
 		// response received successfully
-		accumulateUsage(c.RemoteAddr().String(), int(rp.ContLen))
+		if (usageFlag) {
+			accumulateUsage(c.RemoteAddr().String(), int(rp.ContLen))
+		}
 	}
 	return err
 }
