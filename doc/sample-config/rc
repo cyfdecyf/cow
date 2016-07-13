@@ -122,7 +122,7 @@ listen = http://127.0.0.1:7777
 # 同时设定该文件的路径
 # 以及自动重置用量的日期
 # 若不需要重置，请将日期设置为-1
-# 如果添加了allowedClient，并且要对其限流，则需要将IP和对应的流量加入到userCapacityFile中
+# 如果添加了allowedClient，并且要对其限流，则需要将IP作为username和对应的流量加入到userCapacityFile中
 # 暂时只支持单个IP的记录
 #userCapacityFile = /path/to/file
 #usageResetDate = 12
