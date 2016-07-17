@@ -1,6 +1,6 @@
 var direct = 'DIRECT';
 var httpProxy = 'PROXY';
-
+httpProxy = 'DIRECT; ' + httpProxy;
 var directList = [
 	"", // corresponds to simple host name and ip address
 	"taobao.com",
