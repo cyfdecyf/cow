@@ -20,7 +20,13 @@ var userUsage struct {
 	capacity map[string]int
 	addrToUser map[string]string
 	lastSavedts time.Time
+
+	// channel for update
+	updateMsg chan string
+	updateSig chan bool
 }
+
+// var tempUsage map[string]int
 
 func parseCapacity(line string) (user string, capacity int, err error) {
 	arr := strings.Split(line, ":")
@@ -167,8 +173,12 @@ func startUsageRecorder(wg *sync.WaitGroup, quit <-chan struct{}) {
 	var exit bool
 	go func() {
 		<-quit
+		userUsage.updateSig <- true
 		exit=true
 	}()
+
+	go updateUsage(userUsage.updateMsg, userUsage.updateSig)
+
 
 	debug.Println("start usage recording!")
 	interval := 0
@@ -206,6 +216,10 @@ func initUsage() bool{
 	userUsage.capacity = make(map[string]int)
 	userUsage.usage = make(map[string]int)
 	userUsage.addrToUser = make(map[string]string)
+	// tempUsage = make(map[string]int)
+
+	userUsage.updateMsg = make(chan string, 1000)
+	userUsage.updateSig = make(chan bool)
 	//load capacity at first
 	loadCapcity(config.UserCapacityFile)
 
@@ -238,27 +252,28 @@ func checkUsage(addr string) bool {
 }
 
 func accumulateUsage(addr string, size int) {
-	clientIP, _, _ := net.SplitHostPort(addr)
-	var user string
-	if val, ok := userUsage.addrToUser[clientIP]; ok {
-		user = val
-	} else {
-		debug.Println("un recorded addr: ", addr)
-		Fatal("un recorded addr: ", addr)
-	}
-	if _, ok := userUsage.usage[user]; ok {
-		if size > 0 {
-			userUsage.usage[user] += size
-			debug.Printf("user: %s add %d BYTE, total %d", user, size, userUsage.usage[user])
-		}
-	}
+	msg := addr + "-" + strconv.Itoa(size)
+	userUsage.updateMsg <- msg
+	return
+	// clientIP, _, _ := net.SplitHostPort(addr)
+	// if _, ok := userUsage.addrToUser[clientIP]; !ok {
+	// 	errl.Println("un recorded addr: ", addr)
+	// 	return
+	// }
 
-
+	// if _, ok := tempUsage[addr]; ok {
+	// 	tempUsage[addr] += size
+	// } else {
+	// 	tempUsage[addr] = size
+	// }
 }
 
 func updateAddrToUser(addr string, user string)  {
 	userUsage.addrToUser[addr] = user
 	// add record
+	if _, ok := userUsage.capacity[user]; !ok {
+		errl.Println("un restricted user: ", user, " check user password file and user capcity file")
+	}
 	debug.Println("add addr: ", addr, "to user: ", user)
 }
 
@@ -269,4 +284,25 @@ func addAllowedClient(addr string) {
 	}
 
 	userUsage.addrToUser[addr] = addr
+}
+
+func updateUsage(msgChan chan string, sigChan chan bool) {
+	for {
+		select {
+		case msg := <- msgChan:
+			arr := strings.Split(msg, "-")
+			addr := arr[0]
+			size, _ := strconv.Atoi(arr[1])
+			clientIP, _, _ := net.SplitHostPort(addr)
+			if user, ok := userUsage.addrToUser[clientIP]; ok {
+				userUsage.usage[user] += size
+			} else {
+				errl.Println("un recorded addr: ", addr)
+			}
+
+		case  <- sigChan:
+			return
+		}
+	}
+
 }

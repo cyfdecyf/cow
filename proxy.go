@@ -993,8 +993,13 @@ var connectBuf = leakybuf.NewLeakyBuf(512, connectBufSize)
 
 func copyServer2Client(sv *serverConn, c *clientConn, r *Request) (err error) {
 	buf := connectBuf.Get()
+	total := 0
 	defer func() {
 		connectBuf.Put(buf)
+		// update usage for user
+		if (usageFlag) {
+			accumulateUsage(c.RemoteAddr().String(), total)
+		}
 	}()
 
 	/*
@@ -1005,7 +1010,6 @@ func copyServer2Client(sv *serverConn, c *clientConn, r *Request) (err error) {
 		}
 	*/
 
-	total := 0
 	const directThreshold = 8192
 	readTimeoutSet := false
 	for {
@@ -1038,10 +1042,6 @@ func copyServer2Client(sv *serverConn, c *clientConn, r *Request) (err error) {
 		// set state to rsRecvBody to indicate the request has partial response sent to client
 		r.state = rsRecvBody
 		sv.state = svSendRecvResponse
-		// update usage for user
-		if (usageFlag) {
-			accumulateUsage(c.RemoteAddr().String(), n)
-		}
 		if total > directThreshold {
 			sv.updateVisit()
 		}

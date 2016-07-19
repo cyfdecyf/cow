@@ -200,7 +200,9 @@ func Authenticate(conn *clientConn, r *Request) (err error) {
 	if err == nil && user != ""{
 		auth.authed.add(clientIP)
 		// update the map of address to userid in usage
-		updateAddrToUser(clientIP, user)
+		if usageFlag {
+			updateAddrToUser(clientIP, user)
+		}
 
 	}
 	return
