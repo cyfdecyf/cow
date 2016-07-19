@@ -501,6 +501,14 @@ func (c *clientConn) serve() {
 			return
 		}
 
+		if usageFlag {
+			if checkUsage(c.RemoteAddr().String()) != true {
+				sendErrorPage(c, statusForbidden, "Run out of capacity",
+					genErrMsg(&r, nil, "Please contact proxy admin."))
+				return
+			}
+		}
+
 		if r.ExpectContinue {
 			sendErrorPage(c, statusExpectFailed, "Expect header not supported",
 				"Please contact COW's developer if you see this.")
@@ -985,8 +993,13 @@ var connectBuf = leakybuf.NewLeakyBuf(512, connectBufSize)
 
 func copyServer2Client(sv *serverConn, c *clientConn, r *Request) (err error) {
 	buf := connectBuf.Get()
+	total := 0
 	defer func() {
 		connectBuf.Put(buf)
+		// update usage for user
+		if (usageFlag) {
+			accumulateUsage(c.RemoteAddr().String(), total)
+		}
 	}()
 
 	/*
@@ -997,7 +1010,6 @@ func copyServer2Client(sv *serverConn, c *clientConn, r *Request) (err error) {
 		}
 	*/
 
-	total := 0
 	const directThreshold = 8192
 	readTimeoutSet := false
 	for {
@@ -1285,6 +1297,10 @@ func (sv *serverConn) doRequest(c *clientConn, r *Request, rp *Response) (err er
 	r.state = rsSent
 	if err = c.readResponse(sv, r, rp); err == nil {
 		sv.updateVisit()
+		// response received successfully
+		if (usageFlag) {
+			accumulateUsage(c.RemoteAddr().String(), int(rp.ContLen))
+		}
 	}
 	return err
 }
