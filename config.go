@@ -174,14 +174,12 @@ func (p proxyParser) ProxySocks5(val string) {
 func (pp proxyParser) ProxyHttp(val string) {
 	var userPasswd, server string
 
-	arr := strings.Split(val, "@")
-	if len(arr) == 1 {
-		server = arr[0]
-	} else if len(arr) == 2 {
-		userPasswd = arr[0]
-		server = arr[1]
+	idx := strings.LastIndex(val, "@")
+	if idx == -1 {
+		server = val
 	} else {
-		Fatal("http parent proxy contains more than one @:", val)
+		userPasswd = val[:idx]
+		server = val[idx+1:]
 	}
 
 	if err := checkServerAddr(server); err != nil {
@@ -198,14 +196,12 @@ func (pp proxyParser) ProxyHttp(val string) {
 func (pp proxyParser) ProxyHttps(val string) {
 	var userPasswd, server string
 
-	arr := strings.Split(val, "@")
-	if len(arr) == 1 {
-		server = arr[0]
-	} else if len(arr) == 2 {
-		userPasswd = arr[0]
-		server = arr[1]
+	idx := strings.LastIndex(val, "@")
+	if idx == -1 {
+		server = val
 	} else {
-		Fatal("http parent proxy contains more than one @:", val)
+		userPasswd = val[:idx]
+		server = val[idx+1:]
 	}
 
 	if err := checkServerAddr(server); err != nil {
