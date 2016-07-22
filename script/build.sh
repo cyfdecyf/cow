@@ -55,6 +55,9 @@ pack linux arm
 pack windows amd64
 pack windows 386
 
+git config --global user.name "renzhn"
+git config --global user.email "renzhen999@gmail.com"
+
 git checkout gh-pages
 rm -rf dist
 mv bin dist
