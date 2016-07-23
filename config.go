@@ -80,6 +80,8 @@ type Config struct {
 	// capacity limitation file
 	UserCapacityFile string
 	UsageResetDate int
+
+	RestartInterval time.Duration
 }
 
 var config Config
@@ -581,6 +583,10 @@ func (p configParser) ParseAllowedClient(val string) {
 
 func (p configParser) ParseAuthTimeout(val string) {
 	config.AuthTimeout = parseDuration(val, "authTimeout")
+}
+
+func (p configParser) ParseRestartInterval(val string) {
+	config.RestartInterval = parseDuration(val, "restartInterval")
 }
 
 func (p configParser) ParseCore(val string) {

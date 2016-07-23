@@ -30,6 +30,7 @@ func lookPath() (argv0 string, err error) {
 	return
 }
 
+
 func main() {
 	usageFlag = false
 	quit = make(chan struct{})
@@ -88,6 +89,13 @@ func main() {
 	if usageFlag {
 		wg.Add(1)
 		go startUsageRecorder(&wg, quit)
+	}
+
+	// start restart deamon
+	if config.RestartInterval != 0 {
+		wg.Add(1)
+		pid := os.Getpid()
+		go restartDeamon(pid, &wg, quit)
 	}
 	wg.Wait()
 

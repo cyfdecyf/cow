@@ -150,6 +150,10 @@ listen = http://127.0.0.1:7777
 # Syntax: 2h3m4s means 2 hours 3 minutes 4 seconds
 #authTimeout = 2h
 
+# Time interval to restart proxy.
+# Syntax: 2h3m4s means 2 hours 3 minutes 4 seconds
+#restartInterval = 2h
+
 #############################
 # Advanced options
 #############################

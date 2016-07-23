@@ -6,6 +6,8 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
+	"sync"
 )
 
 func sigHandler() {
@@ -27,4 +29,32 @@ func sigHandler() {
 			pprof.StopCPUProfile()
 		}
 	*/
+}
+
+func restartDeamon(pid int, wg *sync.WaitGroup, quit <-chan struct{}) {
+	defer func() {
+		wg.Done()
+	}()
+
+	duration := int(config.RestartInterval.Seconds())
+	interval := 0
+	debug.Println("Pid: ", pid, "restart interval: ", duration)
+	for {
+		select {
+		case <- quit:
+			debug.Println("exit the restart deamon")
+			return
+		default:
+			time.Sleep(time.Second)
+			interval += 1
+			if (interval > duration) {
+				info.Println("Restart proxy now!")
+				// connPool.CloseAll()
+				syscall.Kill(pid, syscall.SIGUSR1)
+				return
+			}
+		}
+	}
+
+
 }

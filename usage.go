@@ -218,7 +218,7 @@ func initUsage() bool{
 	userUsage.addrToUser = make(map[string]string)
 	// tempUsage = make(map[string]int)
 
-	userUsage.updateMsg = make(chan string, 1000)
+	userUsage.updateMsg = make(chan string, 5000)
 	userUsage.updateSig = make(chan bool)
 	//load capacity at first
 	loadCapcity(config.UserCapacityFile)
