@@ -998,7 +998,7 @@ func copyServer2Client(sv *serverConn, c *clientConn, r *Request) (err error) {
 		connectBuf.Put(buf)
 		// update usage for user
 		if (usageFlag) {
-			accumulateUsage(c.RemoteAddr().String(), total)
+			go accumulateUsage(c.RemoteAddr().String(), total)
 		}
 	}()
 
