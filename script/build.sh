@@ -5,6 +5,7 @@ set -e
 cd "$( dirname "${BASH_SOURCE[0]}" )/.."
 
 version=`grep '^version=' ./install.sh | sed -s 's/version=//'`
+go_version=`go version`
 echo "creating MEOW binary version $version"
 
 mkdir -p bin/windows
@@ -62,6 +63,6 @@ git checkout gh-pages
 rm -rf dist
 mv bin dist
 git add dist
-git commit -m"version $version"
+git commit -m"version $version $go_version"
 git push
 git checkout master
