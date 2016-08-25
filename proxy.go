@@ -714,15 +714,6 @@ func isHttpErrCode(err error) bool {
 	return false
 }
 
-func isErrConnReset(err error) bool {
-	if ne, ok := err.(*net.OpError); ok {
-		if se, seok := ne.Err.(*os.SyscallError); seok {
-			return se.Err == syscall.WSAECONNRESET || se.Err == syscall.ECONNRESET
-		}
-	}
-	return false
-}
-
 func isErrTooManyOpenFd(err error) bool {
 	if ne, ok := err.(*net.OpError); ok {
 		if se, seok := ne.Err.(*os.SyscallError); seok && (se.Err == syscall.EMFILE || se.Err == syscall.ENFILE) {
