@@ -61,13 +61,13 @@ while true; do
         break
     fi
     if [ ! -d $install_dir ]; then
-        echo "Directory $install_dir does not exists"
+        echo "Directory $install_dir does not exist"
     else
         break
     fi
 done
 
-# Ask OS X user whehter to start COW upon login
+# Ask OS X user whether to start COW upon login
 start_on_login="n"
 if [ $os == "mac" ]; then
     while true; do
