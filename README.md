@@ -69,6 +69,7 @@ COW 的设计目标是自动化，理想情况下用户无需关心哪些网站�
 - Windows
   - 双击 `cow-taskbar.exe`，隐藏到托盘执行
   - 双击 `cow-hide.exe`，隐藏为后台程序执行
+  - 双击 `cow-boot.exe`，隐藏到托盘执行，可设置为开机启动/自动配置系统代理
   - 以上两者都会启动 `cow.exe`
 
 PAC url 为 `http://<listen address>/pac`，也可将浏览器的 HTTP/HTTPS 代理设置为 `listen address` 使所有网站都通过 COW 访问。
