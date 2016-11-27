@@ -659,7 +659,7 @@ func (c *clientConn) readResponse(sv *serverConn, r *Request, rp *Response) (err
 		}
 	*/
 
-	if err = parseResponse(sv, r, rp); err != nil {
+	if err = parseResponse(sv, c, r, rp); err != nil {
 		return c.handleServerReadError(r, sv, err, "parse response")
 	}
 	dbgPrintRep(c, r, rp)
@@ -953,6 +953,11 @@ func (sv *serverConn) setReadTimeout(msg string) {
 	} else if sv.siteInfo.AsDirect() {
 		to = maxTimeout
 	}
+	setConnReadTimeout(sv.Conn, to, msg)
+}
+
+func (sv *serverConn) setCometReadTimeout(msg string) {
+	to := 60 * time.Second
 	setConnReadTimeout(sv.Conn, to, msg)
 }
 
