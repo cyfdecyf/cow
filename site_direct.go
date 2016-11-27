@@ -13,6 +13,10 @@ var directDomainList = []string{
 	"soku.com", // 优酷
 	"youku.com",
 	"ykimg.com",
+	
+	// 音乐
+	"kugou.com",
+	"xiami.com",
 
 	"ku6.cn", // 酷六
 	"ku6.com",
