@@ -367,6 +367,10 @@ func (c *clientConn) serveSelfURL(r *Request) (err error) {
 		// client connection.
 		return errPageSent
 	}
+	if strings.HasPrefix(r.URL.Path, "/site") {
+		sendSite(c, r)
+		return errPageSent
+	}
 end:
 	sendErrorPage(c, "404 not found", "Page not found",
 		genErrMsg(r, nil, "Serving request to COW proxy."))
