@@ -1,0 +1,18 @@
+author: ""
+description: ""
+filesets:
+  includes:
+  - README.md
+  - LICENSE
+  - rc
+  - rc.txt
+  excludes:
+  - \.git
+  - .*\.go
+settings:
+  targetdir: ""
+  outfiles: []
+  build: |
+      cp ./doc/sample-config/rc ./
+      test "X$GOOS" = "Xwindows" && mv rc rc.txt
+      go install -v
