@@ -160,12 +160,14 @@ func (hp *httpProxy) Serve(wg *sync.WaitGroup, quit <-chan struct{}) {
 	}()
 	host, _, _ := net.SplitHostPort(hp.addr)
 	var pacURL string
-	if host == "" || host == "0.0.0.0" {
-		pacURL = fmt.Sprintf("http://<hostip>:%s/pac", hp.port)
-	} else if hp.addrInPAC == "" {
-		pacURL = fmt.Sprintf("http://%s/pac", hp.addr)
-	} else {
+	if hp.addrInPAC != "" {
 		pacURL = fmt.Sprintf("http://%s/pac", hp.addrInPAC)
+	} else {
+		if host == "" || host == "0.0.0.0" {
+			pacURL = fmt.Sprintf("http://<hostip>:%s/pac", hp.port)
+		} else {
+			pacURL = fmt.Sprintf("http://%s/pac", hp.addrInPAC)
+		}
 	}
 	info.Printf("COW %s listen http %s, PAC url %s\n", version, hp.addr, pacURL)
 
