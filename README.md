@@ -85,6 +85,4 @@
 ## 致谢
 
 - @cyfdecyf - COW author
-- Github - Github Student Pack
 - https://www.pandafan.org/pac/index.html - Domain White List
-- https://github.com/Leask/Flora_Pac - CN IP Data
