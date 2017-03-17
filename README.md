@@ -82,7 +82,6 @@
 强制使用代理连接的域名列表保存在 `~/.meow/proxy` (OS X, Linux) 或 `proxy.txt` (Windows)，语法格式与直连列表相同
 （注意：匹配的是域名**按 . 分隔的后两部分**或者**整个域名**）
 
-## 致谢
-
-- @cyfdecyf - COW author
-- https://www.pandafan.org/pac/index.html - Domain White List
+## 推广
+- 简单好用的安卓桌面 http://coolapk.com/apk/net.ohrz.coldlauncher
+- 淘宝天猫购物券分享 https://www.youquan.info
