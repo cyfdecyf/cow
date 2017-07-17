@@ -1,0 +1,9 @@
+Package: cow-proxy
+Version: __version__
+Section: utils
+Priority: optional
+Architecture: __arch__
+Depends: sudo
+Installed-Size: __size__
+Maintainer: zcchen <chen.bill.bill@gmail.com>
+Description: COW proxy, Cross Over the Wall

@@ -1,0 +1,3 @@
+echo "Please copy the example config file "
+echo "        from /usr/share/doc/cow-proxy/rc"
+echo '        to ${HOME}/.cow/rc'

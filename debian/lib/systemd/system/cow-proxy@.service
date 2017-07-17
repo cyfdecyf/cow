@@ -1,0 +1,14 @@
+[Unit]
+Description=COW proxy for user %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=10
+User=%i
+ExecStart=/usr/bin/cow-proxy
+
+[Install]
+Alias=multi-user.target.wants/cow-proxy@%i.service
