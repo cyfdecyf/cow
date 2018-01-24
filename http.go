@@ -306,9 +306,9 @@ func ParseRequestURIBytes(rawurl []byte) (*URL, error) {
 			port = "443"
 		}
 	}
-        // Fixed wechat image url bug, url like http://[::ffff:183.192.196.102]/mmsns/lVxxxxxx
-        host = strings.TrimSuffix(strings.TrimPrefix(host, "[::ffff:"), "]")
-        hostport = net.JoinHostPort(host, port)
+	// Fixed wechat image url bug, url like http://[::ffff:183.192.196.102]/mmsns/lVxxxxxx
+	host = strings.TrimSuffix(strings.TrimPrefix(host, "[::ffff:"), "]")
+	hostport = net.JoinHostPort(host, port)
 	return &URL{hostport, host, port, host2Domain(host), path}, nil
 }
 
@@ -732,7 +732,7 @@ func parseResponse(sv *serverConn, r *Request, rp *Response) (err error) {
 			// Use chunked encoding to pass content back to client.
 			debug.Println("add chunked encoding to close connection response", r, rp)
 			rp.raw.WriteString(fullHeaderTransferEncoding)
-		} else {
+		} else if !(rp.Status == 304 || rp.Status == 204) {
 			debug.Println("add content-length 0 to close connection response", r, rp)
 			rp.raw.WriteString("Content-Length: 0\r\n")
 		}
