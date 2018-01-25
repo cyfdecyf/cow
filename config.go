@@ -76,6 +76,12 @@ type Config struct {
 
 	// not config option
 	saveReqLine bool // for http and cow parent, should save request line from client
+
+	// capacity limitation file
+	UserCapacityFile string
+	UsageResetDate int
+
+	RestartInterval time.Duration
 }
 
 var config Config
@@ -559,12 +565,28 @@ func (p configParser) ParseUserPasswdFile(val string) {
 	config.UserPasswdFile = val
 }
 
+func (p configParser) ParseUserCapacityFile(val string) {
+	err := isFileExists(val)
+	if err != nil {
+		Fatal("userCapacityFile:", err)
+	}
+	config.UserCapacityFile = val
+}
+
+func (p configParser) ParseUsageResetDate(val string) {
+	config.UsageResetDate = parseInt(val, "usageResetDate")
+}
+
 func (p configParser) ParseAllowedClient(val string) {
 	config.AllowedClient = val
 }
 
 func (p configParser) ParseAuthTimeout(val string) {
 	config.AuthTimeout = parseDuration(val, "authTimeout")
+}
+
+func (p configParser) ParseRestartInterval(val string) {
+	config.RestartInterval = parseDuration(val, "restartInterval")
 }
 
 func (p configParser) ParseCore(val string) {

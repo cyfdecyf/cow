@@ -16,6 +16,8 @@ var (
 	relaunch bool
 )
 
+var usageFlag bool
+
 // This code is from goagain
 func lookPath() (argv0 string, err error) {
 	argv0, err = exec.LookPath(os.Args[0])
@@ -28,7 +30,9 @@ func lookPath() (argv0 string, err error) {
 	return
 }
 
+
 func main() {
+	usageFlag = false
 	quit = make(chan struct{})
 	// Parse flags after load config to allow override options in config
 	cmdLineConfig := parseCmdLineConfig()
@@ -41,11 +45,15 @@ func main() {
 
 	initSelfListenAddr()
 	initLog()
+    
+	usageFlag = initUsage()
+
 	initAuth()
 	initSiteStat()
 	initPAC() // initPAC uses siteStat, so must init after site stat
 
 	initStat()
+
 
 	initParentPool()
 
@@ -77,6 +85,18 @@ func main() {
 		go proxy.Serve(&wg, quit)
 	}
 
+	//add the usage recorder
+	if usageFlag {
+		wg.Add(1)
+		go startUsageRecorder(&wg, quit)
+	}
+
+	// start restart deamon
+	if config.RestartInterval != 0 {
+		wg.Add(1)
+		pid := os.Getpid()
+		go restartDeamon(pid, &wg, quit)
+	}
 	wg.Wait()
 
 	if relaunch {

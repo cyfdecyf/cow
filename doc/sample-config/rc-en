@@ -134,9 +134,25 @@ listen = http://127.0.0.1:7777
 # COW will report error and exit if there's duplicated user.
 #userPasswdFile = /path/to/file
 
+# To enable data transfer recording, the userPasswdFile must be enabled.
+# List all those content in another file like this:
+#   username:capacity
+# The username here should match those in userPasswd file.
+# Set the path to the capacity file
+# and usage reset date.
+# Set the reset date to -1 if it is unnecessary.
+# If the allowedClient is enable and their capcity is limited, the IP address(as username) and capacity must been added to userCapacityFile
+# The sub-network is not supported yet.
+#userCapacityFile = /path/to/file
+#usageResetDate = 12
+
 # Time interval to keep authentication information.
 # Syntax: 2h3m4s means 2 hours 3 minutes 4 seconds
 #authTimeout = 2h
+
+# Time interval to restart proxy.
+# Syntax: 2h3m4s means 2 hours 3 minutes 4 seconds
+#restartInterval = 2h
 
 #############################
 # Advanced options
