@@ -158,7 +158,7 @@ listen = http://127.0.0.1:7777
 #     ssh, http, https, rsync, imap, pop, jabber, cvs, git, svn
 #
 # Limiting ports for tunneling prevents exposing internal services to outside.
-#tunnelAllowedPort = 80, 443
+#tunnelAllowedPort = 80, 443, 100-500, 2333-6666
 
 # GFW may timeout DNS query, or return wrong server address which can connect
 # but blocks on read forever.
