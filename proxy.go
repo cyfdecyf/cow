@@ -143,6 +143,33 @@ func (proxy *httpProxy) Addr() string {
 	return proxy.addr
 }
 
+var deniedLocalAddresses []string
+
+func getLocalAddresses() {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return
+	}
+
+	for _, i := range ifaces {
+	    addrs, er := i.Addrs()
+	    if er != nil{
+	    	return
+	    }
+
+	    for _, addr := range addrs {
+	        var ip net.IP
+	        switch v := addr.(type) {
+	        case *net.IPNet:
+	                ip = v.IP
+	        case *net.IPAddr:
+	                ip = v.IP
+	        }
+	        deniedLocalAddresses = append(deniedLocalAddresses, ip.String())
+	    }
+	}
+}
+
 func (hp *httpProxy) Serve(wg *sync.WaitGroup, quit <-chan struct{}) {
 	defer func() {
 		wg.Done()
@@ -167,6 +194,7 @@ func (hp *httpProxy) Serve(wg *sync.WaitGroup, quit <-chan struct{}) {
 	} else {
 		pacURL = fmt.Sprintf("http://%s/pac", hp.addrInPAC)
 	}
+	getLocalAddresses()
 	info.Printf("COW %s listen http %s, PAC url %s\n", version, hp.addr, pacURL)
 
 	for {
@@ -739,6 +767,18 @@ func (c *clientConn) getServerConn(r *Request) (*serverConn, error) {
 }
 
 func connectDirect2(url *URL, siteInfo *VisitCnt, recursive bool) (net.Conn, error) {
+	addrs, er := net.LookupHost(url.Host);
+	if er == nil {
+		for _, addr := range addrs {
+			for _, denied := range deniedLocalAddresses {
+				if addr == denied {
+					return nil, errors.New(
+						"Connecting to local is prohibited.")
+				}
+			}
+		}
+	}
+
 	var c net.Conn
 	var err error
 	if siteInfo.AlwaysDirect() {
