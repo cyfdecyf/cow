@@ -7,10 +7,11 @@ import (
 )
 
 const (
-	rcFname      = "rc"
-	blockedFname = "blocked"
-	directFname  = "direct"
-	statFname    = "stat"
+	rcFname        = "rc"
+	blockedFname   = "blocked"
+	directFname    = "direct"
+	statFname      = "stat"
+	autoProxyFname = "autoproxy.pac"
 
 	newLine = "\n"
 )

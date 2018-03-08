@@ -176,10 +176,11 @@ listen = http://127.0.0.1:7777
 # Only consider this option when GFW is making middle man attack.
 #detectSSLErr = false
 
-# Change the stat/blocked/direct file position, defaults to files under directory
+# Change the stat/blocked/direct/autoproxy.pac file position, defaults to files under directory
 # containing rc file.
 # The cow user must write access to directory containing the stat file in order
 # to update stat.
 #statFile = <dir to rc file>/stat
 #blockedFile = <dir to rc file>/blocked
 #directFile = <dir to rc file>/direct
+#pacFile = <dir to rc file>/autoproxy.pac

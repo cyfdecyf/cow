@@ -6,10 +6,11 @@ import (
 )
 
 const (
-	rcFname      = "rc.txt"
-	blockedFname = "blocked.txt"
-	directFname  = "direct.txt"
-	statFname    = "stat.txt"
+	rcFname        = "rc.txt"
+	blockedFname   = "blocked.txt"
+	directFname    = "direct.txt"
+	statFname      = "stat.txt"
+	autoProxyFname = "autoproxy.pac"
 
 	newLine = "\r\n"
 )

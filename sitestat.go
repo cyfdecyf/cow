@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/cyfdecyf/bufio"
+	"github.com/jackwakefield/gopac"
 )
 
 func init() {
@@ -172,6 +173,8 @@ type SiteStat struct {
 	Vcnt   map[string]*VisitCnt `json:"site_info"` // Vcnt uses host as key
 	vcLock sync.RWMutex
 
+	pacParser *gopac.Parser
+
 	// Whether a domain has blocked host. Used to avoid considering a domain as
 	// direct though it has blocked hosts.
 	hasBlockedHost map[string]bool
@@ -231,6 +234,7 @@ func (ss *SiteStat) TempBlocked(url *URL) {
 }
 
 var alwaysDirectVisitCnt = newVisitCnt(userCnt, 0)
+var alwaysBlockedVisitCnt = newVisitCnt(0, userCnt)
 
 func (ss *SiteStat) GetVisitCnt(url *URL) (vcnt *VisitCnt) {
 	if parentProxy.empty() { // no way to retry, so always visit directly
@@ -239,6 +243,19 @@ func (ss *SiteStat) GetVisitCnt(url *URL) (vcnt *VisitCnt) {
 	if url.Domain == "" { // simple host or private ip
 		return alwaysDirectVisitCnt
 	}
+
+	// autoproxy.pac check
+	if ss.pacParser != nil {
+		if rt, err := ss.pacParser.FindProxy("", url.Host); err != nil {
+			debug.Println("find proxy error:", err)
+		} else {
+			if rt != "DIRECT" && rt != "" {
+				debug.Println("used autoproxy.pac to visit host:", url.Host)
+				return alwaysBlockedVisitCnt
+			}
+		}
+	}
+
 	if vcnt = ss.get(url.Host); vcnt != nil {
 		return
 	}
@@ -378,6 +395,15 @@ func (ss *SiteStat) load(file string) (err error) {
 			}
 		}
 	}()
+
+	// load autoproxy.pac
+	parser := new(gopac.Parser)
+	if err := parser.Parse(config.AutoProxyFile); err != nil {
+		errl.Println("parser autoproxy.pac error:", err)
+	} else {
+		ss.pacParser = parser
+	}
+
 	if file == "" {
 		return
 	}

@@ -64,10 +64,11 @@ type Config struct {
 
 	HttpErrorCode int
 
-	dir         string // directory containing config file
-	StatFile    string // Path for stat file
-	BlockedFile string // blocked sites specified by user
-	DirectFile  string // direct sites specified by user
+	dir           string // directory containing config file
+	StatFile      string // Path for stat file
+	BlockedFile   string // blocked sites specified by user
+	DirectFile    string // direct sites specified by user
+	AutoProxyFile string // used pac file
 
 	// not configurable in config file
 	PrintVer        bool
@@ -90,6 +91,7 @@ func initConfig(rcFile string) {
 	config.BlockedFile = path.Join(config.dir, blockedFname)
 	config.DirectFile = path.Join(config.dir, directFname)
 	config.StatFile = path.Join(config.dir, statFname)
+	config.AutoProxyFile = path.Join(config.dir, autoProxyFname)
 
 	config.DetectSSLErr = false
 	config.AlwaysProxy = false
@@ -472,6 +474,13 @@ func (p configParser) ParseDirectFile(val string) {
 	config.DirectFile = expandTilde(val)
 	if err := isFileExists(config.DirectFile); err != nil {
 		Fatal("direct file:", err)
+	}
+}
+
+func (p configParser) ParsePacFile(val string) {
+	config.AutoProxyFile = expandTilde(val)
+	if err := isFileExists(config.AutoProxyFile); err != nil {
+		Fatal("autoproxy file:", err)
 	}
 }
 

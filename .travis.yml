@@ -8,6 +8,7 @@ install:
   - go get github.com/cyfdecyf/bufio
   - go get github.com/cyfdecyf/leakybuf
   - go get github.com/cyfdecyf/color
+  - go get github.com/jackwakefield/gopac
 script:
   - pushd $TRAVIS_BUILD_DIR
   - go test -v

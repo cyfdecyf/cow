@@ -1,3 +1,4 @@
 *.sublime*
 cow-proxy
 bin
+.idea
