@@ -692,7 +692,7 @@ func parseResponse(sv *serverConn, r *Request, rp *Response) (err error) {
 	}
 
 	proto := f[0]
-	if !bytes.Equal(proto[0:7], []byte("HTTP/1.")) {
+	if !(bytes.Equal(proto[0:7], []byte("HTTP/1.")) || bytes.Equal(proto[0:7], []byte("HTTP/2."))) {
 		return fmt.Errorf("invalid response status line: %s request %v", string(f[0]), r)
 	}
 	if proto[7] == '1' {
