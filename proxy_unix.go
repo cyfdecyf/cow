@@ -4,8 +4,8 @@ package main
 
 import (
 	"net"
-	"syscall"
 	"strings"
+	"syscall"
 )
 
 func isErrConnReset(err error) bool {
