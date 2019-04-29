@@ -13,7 +13,7 @@ var headRawTmpl = "HTTP/1.1 {{.CodeReason}}\r\n" +
 	"Connection: keep-alive\r\n" +
 	"Cache-Control: no-cache\r\n" +
 	"Pragma: no-cache\r\n" +
-	"Content-Type: text/html\r\n" +
+	"Content-Type: text/html;charset=utf-8\r\n" +
 	"Content-Length: {{.Length}}\r\n"
 
 var errPageTmpl, headTmpl *template.Template
@@ -32,6 +32,7 @@ func init() {
 		{{.Msg}}
 		<hr />
 		<i>你电脑经过了代理, 如果是非预期记得关闭代理(系统, 终端等)设置</i> <br />
+		Host <i>` + hostName + `</i> <br />
 		{{.T}}
 	</body>
 </html>
