@@ -345,7 +345,7 @@ func isSelfRequest(r *Request) bool {
 	// But if client PAC setting is using cow server's DNS name, we can't
 	// decide if the request is for cow itself (need reverse lookup).
 	// So if request path seems like getting PAC, simply return true.
-	if r.URL.Path == "/pac" || strings.HasPrefix(r.URL.Path, "/pac?") {
+	if r.URL.Path == "/pac" || r.URL.Path == "/proxy.pac" || strings.HasPrefix(r.URL.Path, "/pac?") {
 		return true
 	}
 	r.URL.ParseHostPort(r.Header.Host)
@@ -363,7 +363,7 @@ func (c *clientConn) serveSelfURL(r *Request) (err error) {
 	if r.Method != "GET" {
 		goto end
 	}
-	if r.URL.Path == "/pac" || strings.HasPrefix(r.URL.Path, "/pac?") {
+	if r.URL.Path == "/pac" || r.URL.Path == "/proxy.pac" || strings.HasPrefix(r.URL.Path, "/pac?") {
 		sendPAC(c)
 		// PAC header contains connection close, send non nil error to close
 		// client connection.
