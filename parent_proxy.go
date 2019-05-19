@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
 	"hash/crc32"
 	"io"
 	"math/rand"
@@ -14,6 +13,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	ss "github.com/shadowsocks/shadowsocks-go/shadowsocks"
 )
 
 // Interface that all types of parent proxies should support.
@@ -399,14 +400,15 @@ func (sp *shadowsocksParent) genConfig() string {
 	return fmt.Sprintf("proxy = ss://%s:%s@%s", method, sp.passwd, sp.server)
 }
 
-func (sp *shadowsocksParent) initCipher(method, passwd string) {
+func (sp *shadowsocksParent) initCipher(method, passwd string) error {
 	sp.method = method
 	sp.passwd = passwd
 	cipher, err := ss.NewCipher(method, passwd)
 	if err != nil {
-		Fatal("create shadowsocks cipher:", err)
+		return err
 	}
 	sp.cipher = cipher
+	return nil
 }
 
 func (sp *shadowsocksParent) connect(url *URL) (net.Conn, error) {
