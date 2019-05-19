@@ -248,8 +248,17 @@ func (pp proxyParser) ProxySs(val string) {
 		Fatal("shadowsocks parent", err)
 	}
 	parent := newShadowsocksParent(server)
-	parent.initCipher(method, passwd)
-	parentProxy.add(parent)
+	if err = parent.initCipher(method, passwd); err != nil {
+		info.Printf("create shadowsocks2 cipher: %v, trying shadowsocks2...\n", err)
+		parent2 := newShadowsocks2Parent(server)
+		if err = parent2.initCipher(method, passwd); err != nil {
+			Fatal("create shadowsocks2 cipher:", err)
+		} else {
+			parentProxy.add(parent2)
+		}
+	} else {
+		parentProxy.add(parent)
+	}
 }
 
 func (pp proxyParser) ProxyCow(val string) {
