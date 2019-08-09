@@ -4,21 +4,13 @@ import (
 	"fmt"
 	"net"
 	"strings"
-	"syscall"
 )
 
 var _ = fmt.Println
 
 func isErrConnReset(err error) bool {
-	// fmt.Printf("calling isErrConnReset for err type: %v Error() %s\n",
-	// reflect.TypeOf(err), err.Error())
 	if ne, ok := err.(*net.OpError); ok {
-		// fmt.Println("isErrConnReset net.OpError.Err type:", reflect.TypeOf(ne))
-		if errno, enok := ne.Err.(syscall.Errno); enok {
-			// I got these number by print. Only tested on XP.
-			// fmt.Printf("isErrConnReset errno: %d\n", errno)
-			return errno == 64 || errno == 10054
-		}
+		return strings.Contains(ne.Err.Error(), "An existing connection was forcibly closed by the remote host.")
 	}
 	return false
 }
