@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/cyfdecyf/bufio"
+	"net/url"
 )
 
 const (
@@ -198,7 +199,11 @@ func (pp proxyParser) ProxyHttp(val string) {
 	if len(arr) == 1 {
 		server = arr[0]
 	} else if len(arr) == 2 {
-		userPasswd = arr[0]
+		var err error
+		if userPasswd, err = url.QueryUnescape(arr[0]); err != nil {
+			fmt.Println("urldecode failed, please check your username and password")
+			userPasswd = arr[0]
+		}
 		server = arr[1]
 	} else {
 		Fatal("http parent proxy contains more than one @:", val)
