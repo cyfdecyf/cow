@@ -30,6 +30,8 @@ Modify configuration file `~/.cow/rc` (OS X or Linux) or `rc.txt` (Windows). A s
 
     # Line starting with # is comment and will be ignored
     # Local proxy listen address
+    # If cow is deployed behind Loadbalancer, you should specified PAC address(eg. foo.bar.com) like this
+    # listen = http://127.0.0.1:7777 foo.bar.com:7777
     listen = http://127.0.0.1:7777
 
     # SOCKS5 parent proxy
